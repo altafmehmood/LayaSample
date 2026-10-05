@@ -11,7 +11,7 @@ using UglyToad.PdfPig.Writer;
 namespace LayaSample.Tests;
 
 /// <summary>Builds small sample documents in code so no binary fixtures are checked in.</summary>
-internal static class DocumentFixtures
+public static class DocumentFixtures
 {
     private const string LongText =
         "This agreement describes the terms under which the supplier delivers goods to the customer.";

@@ -1,0 +1,191 @@
+# Manual tests for POST /api/documents/analyze. See README.md for the expected result of each.
+# dispatch=false skips the agent; remove it to see the stub agent's response.
+
+@host = http://localhost:5091
+
+### Text PDF -> Markdown
+POST {{host}}/api/documents/analyze?dispatch=false
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="text.pdf"
+Content-Type: application/pdf
+
+< ./pdf/text.pdf
+--sample--
+
+### Scanned PDF with text -> page image + OCR
+POST {{host}}/api/documents/analyze?dispatch=false
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="scanned-ocr.pdf"
+Content-Type: application/pdf
+
+< ./pdf/scanned-ocr.pdf
+--sample--
+
+### Blank scan -> page image, no OCR text
+POST {{host}}/api/documents/analyze?dispatch=false
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="scanned-blank.pdf"
+Content-Type: application/pdf
+
+< ./pdf/scanned-blank.pdf
+--sample--
+
+### Mixed text/scan -> per-page
+POST {{host}}/api/documents/analyze?dispatch=false
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="mixed.pdf"
+Content-Type: application/pdf
+
+< ./pdf/mixed.pdf
+--sample--
+
+### Filled AcroForm -> PNG + field values JSON
+POST {{host}}/api/documents/analyze?dispatch=false
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="form-filled.pdf"
+Content-Type: application/pdf
+
+< ./pdf/form-filled.pdf
+--sample--
+
+### Fill & Sign annotation -> PNG
+POST {{host}}/api/documents/analyze?dispatch=false
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="annotated-fill-and-sign.pdf"
+Content-Type: application/pdf
+
+< ./pdf/annotated-fill-and-sign.pdf
+--sample--
+
+### Dynamic XFA -> datasets XML
+POST {{host}}/api/documents/analyze?dispatch=false
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="xfa-dynamic.pdf"
+Content-Type: application/pdf
+
+< ./pdf/xfa-dynamic.pdf
+--sample--
+
+### PDF with embedded e-invoice XML
+POST {{host}}/api/documents/analyze?dispatch=false
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="e-invoice-with-xml.pdf"
+Content-Type: application/pdf
+
+< ./pdf/e-invoice-with-xml.pdf
+--sample--
+
+### Multi-page fax TIFF -> images + OCR
+POST {{host}}/api/documents/analyze?dispatch=false
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="fax-ocr.tif"
+Content-Type: image/tiff
+
+< ./images/fax-ocr.tif
+--sample--
+
+### PNG scan -> image + OCR
+POST {{host}}/api/documents/analyze?dispatch=false
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="scan-ocr.png"
+Content-Type: image/png
+
+< ./images/scan-ocr.png
+--sample--
+
+### Excel -> markdown table
+POST {{host}}/api/documents/analyze?dispatch=false
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="orders.xlsx"
+Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+
+< ./office/orders.xlsx
+--sample--
+
+### Word -> markdown
+POST {{host}}/api/documents/analyze?dispatch=false
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="report.docx"
+Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document
+
+< ./office/report.docx
+--sample--
+
+### Override: render a text PDF to PNG
+POST {{host}}/api/documents/analyze?dispatch=false&strategy=RenderToPng
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="text.pdf"
+Content-Type: application/pdf
+
+< ./pdf/text.pdf
+--sample--
+
+### Override: original bytes as-is
+POST {{host}}/api/documents/analyze?dispatch=false&strategy=AsIs
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="report.docx"
+Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document
+
+< ./office/report.docx
+--sample--
+
+### Rejected (400): Markdown does not apply to images
+POST {{host}}/api/documents/analyze?dispatch=false&strategy=Markdown
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="scan-ocr.png"
+Content-Type: image/png
+
+< ./images/scan-ocr.png
+--sample--
+
+### Rejected (415): plain text, whatever it is called
+POST {{host}}/api/documents/analyze?dispatch=false
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="notes.txt"
+Content-Type: application/pdf
+
+< ./unsupported/notes.txt
+--sample--
+
+### Rejected (415): legacy / password-protected Office
+POST {{host}}/api/documents/analyze?dispatch=false
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="legacy.doc"
+Content-Type: application/msword
+
+< ./unsupported/legacy.doc
+--sample--

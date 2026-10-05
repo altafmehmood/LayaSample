@@ -1,0 +1,1 @@
+Plain text is rejected with 415, whatever the file is called.
