@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/LayaSample.Api/LayaSample.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/LayaSample.Tests/LayaSample.Tests.csproj" />
+  </Folder>
+</Solution>
