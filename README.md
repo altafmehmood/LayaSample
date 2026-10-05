@@ -34,13 +34,13 @@ that flips upside-down lines, and a recognizer that reads characters from a dict
 
 | `OcrModel` | Languages | Size | Source |
 |---|---|---|---|
-| `PPOCRv5Latin` | Latin script | ~14 MB | Bundled in the NuGet package |
+| `PPOCRv5Latin` (default) | Latin script (English and Western European languages) | ~14 MB | Bundled in the NuGet package |
 | `PPOCRv6Tiny` | Multilingual (Latin, CJK and more) | ~6 MB | `scripts/download-models.sh` |
 | `PPOCRv6Small` | Multilingual | ~31 MB | `scripts/download-models.sh` |
-| `PPOCRv6Medium` (default) | Multilingual, most accurate, slowest (~4x v5 per page) | ~138 MB | `scripts/download-models.sh` |
+| `PPOCRv6Medium` | Multilingual, slowest (~4x v5 per page) | ~138 MB | `scripts/download-models.sh` |
 
-    scripts/download-models.sh ocr PPOCRv6Medium    # once, before the first run; the build copies them
-    DocumentAnalysis__OcrModel=PPOCRv5Latin dotnet run --project src/LayaSample.Api   # or skip it: bundled, faster
+    scripts/download-models.sh ocr PPOCRv6Small     # into src/LayaSample.Api/ocr-models; the build copies them
+    DocumentAnalysis__OcrModel=PPOCRv6Small dotnet run --project src/LayaSample.Api
 
 Downloads are pinned and SHA-256 verified. If the configured models are missing, documents that need OCR get a 503
 rather than being reported as unreadable.
@@ -48,13 +48,13 @@ rather than being reported as unreadable.
 ## Docker
 The image bakes in every model, so the container never downloads anything and can run offline.
 
-    docker build -t laya-sample .                                       # PP-OCRv6 medium OCR (multilingual)
-    docker build -t laya-sample --build-arg OCR_MODEL=PPOCRv5Latin .    # smaller and faster, Latin only
+    docker build -t laya-sample .                                       # PP-OCRv5 Latin OCR
+    docker build -t laya-sample --build-arg OCR_MODEL=PPOCRv6Small .    # multilingual OCR
     docker run --rm -p 8080:8080 laya-sample
 
-The image is about 1.3 GB of content (850 MB of it is the Laya weights, 140 MB the OCR models; Docker Desktop
-reports roughly double, counting compressed and unpacked layers). It runs as a non-root user in the Production environment, so Scalar is off.
-Model downloads use a BuildKit cache, so rebuilds don't fetch them again.
+The image is about 1.2 GB of content (850 MB of it is the Laya weights; Docker Desktop reports roughly double,
+counting compressed and unpacked layers). It runs as a non-root user in the Production environment, so Scalar is
+off. Model downloads use a BuildKit cache, so rebuilds don't fetch them again.
 
 ## Test
     dotnet test

@@ -1,13 +1,13 @@
 # syntax=docker/dockerfile:1
 #
-#   docker build -t laya-sample .                                       # PP-OCRv6 medium, multilingual
-#   docker build -t laya-sample --build-arg OCR_MODEL=PPOCRv5Latin .    # smaller, faster, Latin script only
+#   docker build -t laya-sample .                                       # PP-OCRv5 Latin OCR
+#   docker build -t laya-sample --build-arg OCR_MODEL=PPOCRv6Medium .   # multilingual, ~4x slower per page
 #   docker run --rm -p 8080:8080 laya-sample
 #
 # All models are baked into the image, so the container never downloads at startup and runs offline.
 
 # DocumentAnalysis:OcrModel value: PPOCRv5Latin (bundled in the NuGet), PPOCRv6Tiny, PPOCRv6Small or PPOCRv6Medium.
-ARG OCR_MODEL=PPOCRv6Medium
+ARG OCR_MODEL=PPOCRv5Latin
 
 # ---- Models: pinned revisions, SHA-256 verified. Downloads land in a BuildKit cache that outlives layer rebuilds,
 # so editing the script or switching OCR_MODEL only fetches files that are missing or changed.
