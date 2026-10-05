@@ -130,6 +130,14 @@ public class DocumentClassifierTests
     }
 
     [Fact]
+    public void Image_declaring_a_huge_size_is_rejected_before_decoding()
+    {
+        var ex = Assert.Throws<DocumentException>(() => Classify(DocumentFixtures.OversizedPngHeader()));
+        Assert.Equal(422, ex.StatusCode);
+        Assert.Contains("out of range", ex.InnerException?.Message);
+    }
+
+    [Fact]
     public void Xlsx_is_converted_to_markdown()
     {
         var result = Classify(DocumentFixtures.Xlsx());

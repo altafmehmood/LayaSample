@@ -144,6 +144,65 @@ public static class DocumentFixtures
         return data.ToArray();
     }
 
+    /// <summary>A landscape JPEG tagged to display rotated 90° clockwise, as phone cameras store portrait photos.</summary>
+    public static byte[] SidewaysJpeg(uint width = 200, uint height = 100)
+    {
+        // Magick writes the tag only from a non-empty EXIF profile, and overwrites it from Orientation on write.
+        using var image = new MagickImage(MagickColors.White, width, height);
+        var exif = new ExifProfile();
+        exif.SetValue(ExifTag.Orientation, (ushort)OrientationType.RightTop);
+        image.SetProfile(exif);
+        image.Orientation = OrientationType.RightTop;
+        return image.ToByteArray(MagickFormat.Jpeg);
+    }
+
+    /// <summary>A PNG header that declares a huge size: a decompression bomb, as far as a decoder can tell.</summary>
+    public static byte[] OversizedPngHeader(uint width = 100_000, uint height = 100_000)
+    {
+        var ms = new MemoryStream();
+        ms.Write([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+        var ihdr = new byte[13];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(ihdr, width);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(ihdr.AsSpan(4), height);
+        ihdr[8] = 8; // 8-bit greyscale
+        PngChunk(ms, "IHDR", ihdr);
+        PngChunk(ms, "IDAT", [0x78, 0x9C, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01]);
+        PngChunk(ms, "IEND", []);
+        return ms.ToArray();
+    }
+
+    private static void PngChunk(Stream stream, string type, byte[] data)
+    {
+        var typed = Encoding.ASCII.GetBytes(type).Concat(data).ToArray();
+        var header = new byte[4];
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(header, data.Length);
+        stream.Write(header);
+        stream.Write(typed);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(header, Crc32(typed));
+        stream.Write(header);
+    }
+
+    private static uint Crc32(byte[] data)
+    {
+        var crc = 0xFFFFFFFFu;
+        foreach (var b in data)
+        {
+            crc ^= b;
+            for (var k = 0; k < 8; k++) crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320u : crc >> 1;
+        }
+        return ~crc;
+    }
+
+    /// <summary>Page 1 has no text layer (rendered), page 2 is text (markdown).</summary>
+    public static byte[] BlankThenTextPdf()
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(UglyToad.PdfPig.Fonts.Standard14Fonts.Standard14Font.Helvetica);
+        builder.AddPage(595, 842);
+        builder.AddPage(595, 842).AddText(LongText, 12, new UglyToad.PdfPig.Core.PdfPoint(50, 700), font);
+        return builder.Build();
+    }
+
     public static byte[] Xlsx()
     {
         using var wb = new XLWorkbook();

@@ -130,6 +130,23 @@ public class DocumentPreparerTests
     }
 
     [Fact]
+    public void Jpeg_is_turned_upright_from_its_exif_orientation()
+    {
+        var ocr = new FakeOcr();
+        Prepare(DocumentFixtures.SidewaysJpeg(width: 200, height: 100), ocr: ocr);
+        Assert.Equal((100, 200), Assert.Single(ocr.Calls));
+    }
+
+    [Fact]
+    public void Text_pages_after_the_render_cap_are_still_included()
+    {
+        var prepared = Prepare(DocumentFixtures.BlankThenTextPdf(), options: new DocumentAnalysisOptions { MaxPages = 0 });
+
+        Assert.Equal(PreparationStrategy.PerPage, prepared.Strategy);
+        Assert.Equal((PartRole.PageText, 2), (Assert.Single(prepared.Parts).Role, prepared.Parts[0].Page));
+    }
+
+    [Fact]
     public void Markdown_is_rejected_for_images()
     {
         var ex = Assert.Throws<DocumentException>(() => Prepare(DocumentFixtures.Png(), PreparationStrategy.Markdown));

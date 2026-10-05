@@ -7,6 +7,8 @@ namespace LayaSample.Api.Services.Documents.Pdf;
 /// <summary>Helpers for reading low-level PDF objects that PdfPig does not expose through its high-level API.</summary>
 internal static class PdfTokens
 {
+    private const int MaxDecodedBytes = 64 * 1024 * 1024;
+
     public static IToken? Resolve(PdfDocument pdf, IToken? token)
     {
         for (var depth = 0; token is IndirectReferenceToken reference && depth < 16; depth++)
@@ -39,7 +41,14 @@ internal static class PdfTokens
 
         using var input = new ZLibStream(new MemoryStream(raw), CompressionMode.Decompress);
         using var output = new MemoryStream();
-        input.CopyTo(output);
+        var buffer = new byte[81920];
+        int read;
+        while ((read = input.Read(buffer)) > 0)
+        {
+            // Deflate reaches ~1000:1, so a small upload could otherwise inflate to gigabytes.
+            if (output.Length + read > MaxDecodedBytes) throw new InvalidDataException("decoded stream is too large");
+            output.Write(buffer, 0, read);
+        }
         return output.ToArray();
     }
 

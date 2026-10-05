@@ -32,7 +32,9 @@ public static class PdfSignatureVerifier
             return new(fieldName, nameFromDict, timeFromDict, false, null, $"unsupported signature format '{subFilter}'");
 
         var range = PdfTokens.Get<ArrayToken>(pdf, sig, "ByteRange")?.Data.OfType<NumericToken>().Select(n => n.Long).ToArray();
-        if (range is not { Length: 4 } || range.Any(v => v < 0) || range[0] + range[1] > file.Length || range[2] + range[3] > file.Length)
+        // Compared as "length > file - offset" so huge values cannot overflow past the check.
+        if (range is not { Length: 4 } || range.Any(v => v < 0 || v > file.Length)
+            || range[1] > file.Length - range[0] || range[3] > file.Length - range[2])
             return Fail("invalid ByteRange");
         var covers = range[0] == 0 && range[2] + range[3] == file.Length;
 
@@ -52,7 +54,8 @@ public static class PdfSignatureVerifier
         {
             var cms = new SignedCms(new ContentInfo(signed), detached: true);
             // /Contents is zero-padded to a fixed size; decode only the DER-encoded part.
-            cms.Decode(contents.AsSpan(0, Math.Min(DerLength(contents), contents.Length)));
+            cms.Decode(contents.AsSpan(0, DerLength(contents)));
+            if (cms.SignerInfos.Count == 0) return Fail("signature has no signer", covers);
             cms.CheckSignature(verifySignatureOnly: true);
 
             var signer = cms.SignerInfos[0];
@@ -70,15 +73,16 @@ public static class PdfSignatureVerifier
         }
     }
 
+    /// <summary>Length of the leading DER SEQUENCE, never more than the buffer.</summary>
     private static int DerLength(ReadOnlySpan<byte> der)
     {
         if (der.Length < 2 || der[0] != 0x30) return der.Length;
-        if (der[1] < 0x80) return 2 + der[1];
+        if (der[1] < 0x80) return Math.Min(2 + der[1], der.Length);
         var count = der[1] & 0x7F;
         if (count > 4 || der.Length < 2 + count) return der.Length;
-        var length = 0;
+        long length = 0;
         for (var i = 0; i < count; i++) length = (length << 8) | der[2 + i];
-        return 2 + count + length;
+        return (int)Math.Min(2 + count + length, der.Length);
     }
 
     /// <summary>Parses a PDF date string such as <c>D:20240131120000+01'00'</c>.</summary>
@@ -100,6 +104,8 @@ public static class PdfSignatureVerifier
         {
             var mm = rest.Length >= 6 && int.TryParse(rest.AsSpan(4, 2), out var m) ? m : 0;
             offset = new TimeSpan(hh, mm, 0) * (rest[0] == '-' ? -1 : 1);
+            // DateTimeOffset only accepts offsets up to ±14:00.
+            if (mm > 59 || offset.Duration() > TimeSpan.FromHours(14)) offset = TimeSpan.Zero;
         }
         return new DateTimeOffset(local, offset);
     }

@@ -39,7 +39,11 @@ public sealed class RapidOcrEngine(IOptions<DocumentAnalysisOptions> options) : 
         ct.ThrowIfCancellationRequested();
         using var scaled = Downscale(image);
         lock (_gate)
+        {
+            // Requests queue here behind each other; don't start one whose caller has gone.
+            ct.ThrowIfCancellationRequested();
             return _ocr.Value.Detect(scaled ?? image, RapidOcrOptions.Default).StrRes.Trim();
+        }
     }
 
     /// <returns>Null when the image is already small enough.</returns>

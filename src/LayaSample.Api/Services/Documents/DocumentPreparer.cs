@@ -32,7 +32,7 @@ public sealed class DocumentPreparer(IOptions<DocumentAnalysisOptions> options, 
             return new PreparedDocument(strategy, PrepareParts(StreamBytes.Read(stream), classification, strategy, includeAttachments: true, ct));
         }
         // The container was valid enough to classify, but the libraries reject its content.
-        catch (Exception ex) when (ex is not (DocumentException or OperationCanceledException or ArgumentOutOfRangeException))
+        catch (Exception ex) when (ex is not (DocumentException or OperationCanceledException))
         {
             throw new DocumentException("document content could not be read", StatusCodes.Status422UnprocessableEntity, ex);
         }
@@ -97,8 +97,9 @@ public sealed class DocumentPreparer(IOptions<DocumentAnalysisOptions> options, 
                 parts.Add(Markdown(page.Number, $"## Page {page.Number}\n\n{pdf.GetPage(page.Number).Text.Trim()}\n"));
                 continue;
             }
-            if (pageStrategy is not (PreparationStrategy.RenderToPng or PreparationStrategy.Hybrid)) continue;
-            if (rendered++ >= _options.MaxPages) break;
+            // The cap applies to renders only; markdown pages after it are still included.
+            if (pageStrategy is not (PreparationStrategy.RenderToPng or PreparationStrategy.Hybrid) || rendered >= _options.MaxPages) continue;
+            rendered++;
 
             using var bitmap = Render(bytes, page);
             parts.Add(Png(bitmap, page.Number));
@@ -139,7 +140,8 @@ public sealed class DocumentPreparer(IOptions<DocumentAnalysisOptions> options, 
             return PrepareParts(bytes, classification, classification.Strategy, includeAttachments: false, ct)
                 .Select(p => p with { Source = name });
         }
-        catch (DocumentException)
+        // A corrupt embedded file must not fail the document that carries it.
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return [];
         }
