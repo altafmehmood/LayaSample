@@ -1,8 +1,7 @@
 using ElBruno.LocalLLMs.Decisions;
+using LayaSample.Rendering;
 
 namespace LayaSample.Api.Services;
-
-public enum WarmupState { Loading, Ready, Failed }
 
 /// <summary>
 /// Loads the Laya model at startup so the first request doesn't pay the download/load cost. A failed load (usually a

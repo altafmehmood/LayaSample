@@ -2,7 +2,7 @@ using Microsoft.Extensions.Options;
 using RapidOcrNet;
 using SkiaSharp;
 
-namespace LayaSample.Api.Services.Documents.Ocr;
+namespace LayaSample.Rendering;
 
 public interface IOcrEngine
 {
@@ -31,9 +31,6 @@ public enum OcrModel
     PPOCRv6Medium
 }
 
-/// <summary>The OCR engine is misconfigured (a server problem, not a problem with the document).</summary>
-public sealed class OcrUnavailableException(string message, Exception? inner = null) : Exception(message, inner);
-
 /// <summary>
 /// RapidOCR (PaddleOCR models via ONNX Runtime). Models load at startup (<see cref="OcrWarmup"/>) or on first use;
 /// a failed load is retried on the next call rather than remembered. Calls are serialised because a
@@ -48,7 +45,7 @@ public sealed class RapidOcrEngine : IOcrEngine, IDisposable
     private readonly int _maxSide;
     private RapidOcr? _ocr;
 
-    public RapidOcrEngine(IOptions<DocumentAnalysisOptions> options)
+    public RapidOcrEngine(IOptions<RenderingOptions> options)
     {
         var o = options.Value;
         _maxSide = o.OcrMaxSide;

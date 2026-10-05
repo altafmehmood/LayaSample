@@ -1,20 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
-  <PropertyGroup>
-    <!-- PDFtoImage is annotated with a platform list that excludes nothing we deploy to. -->
-    <NoWarn>$(NoWarn);CA1416</NoWarn>
-  </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="ClosedXML" />
     <PackageReference Include="DocumentFormat.OpenXml" />
     <PackageReference Include="ElBruno.LocalLLMs.Decisions" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="PdfPig" />
-    <PackageReference Include="PDFtoImage" />
     <PackageReference Include="Scalar.AspNetCore" />
-    <PackageReference Include="RapidOcrNet" />
-    <PackageReference Include="Magick.NET-Q8-AnyCPU" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>
 
@@ -23,9 +15,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Optional PP-OCRv6 models fetched by scripts/download-models.sh, copied to models/v6 next to the v5 set the
-         NuGet copies. Not kept in models/ here: on a case-insensitive file system that is the C# Models folder. -->
-    <None Update="ocr-models/v6/*" Link="models/v6/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- Contracts and the remote client; the native renderer is used in-process only in development. -->
+    <ProjectReference Include="..\LayaSample.Rendering\LayaSample.Rendering.csproj" />
   </ItemGroup>
 
 </Project>

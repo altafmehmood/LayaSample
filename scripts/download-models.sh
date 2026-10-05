@@ -2,7 +2,7 @@
 # Downloads model files at pinned revisions and verifies their SHA-256. POSIX sh, so it also runs in Alpine.
 #
 #   scripts/download-models.sh ocr <OcrModel> [models-dir]   PP-OCRv6 files into <models-dir>/v6
-#                                                            (default src/LayaSample.Api/ocr-models; the build copies
+#                                                            (default src/LayaSample.Rendering/ocr-models; the build copies
 #                                                            them to models/v6 next to the binary)
 #   scripts/download-models.sh laya [dir]                    Laya classifier (~850 MB) into <dir>
 #                                                            (default src/LayaSample.Api/model-cache/laya-onnx;
@@ -40,7 +40,7 @@ fetch() {
 }
 
 ocr() {
-    dir=${2:-src/LayaSample.Api/ocr-models}/v6
+    dir=${2:-src/LayaSample.Rendering/ocr-models}/v6
     case "$1" in
         PPOCRv5Latin) echo "PPOCRv5Latin ships in the RapidOcrNet NuGet; nothing to download"; return ;;
         PPOCRv6Tiny)

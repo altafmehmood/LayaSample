@@ -8,10 +8,10 @@ TIFF/fax, PNG, JPEG), prepares them for an AI agent (page images, markdown, OCR 
 ## Run
     dotnet run --project src/LayaSample.Api
 
-The API listens on http://localhost:5091. The first start downloads the Laya model (~850 MB, can take several
-minutes). `GET /health/live` answers as soon as the process is up; `GET /health/ready` (also `/health`) returns 503
-until the Laya and OCR models are loaded, and 200 `Degraded` if one of them failed to load for good, since the rest of
-the service still works.
+The API listens on http://localhost:5091 and renders documents in-process (development only; see Architecture). The
+first start downloads the Laya model (~850 MB, can take several minutes). `GET /health/live` answers as soon as the
+process is up; `GET /health/ready` (also `/health`) returns 503 until the models are loaded, and 200 `Degraded` if one
+failed to load for good or the renderer is unreachable, since the rest of the service still works.
 
     curl -X POST localhost:5091/api/feedback/analyze -H 'content-type: application/json' \
       -d '{"text":"Room was filthy and the staff were rude."}'
@@ -24,6 +24,28 @@ unclear or not dissatisfied), `confidence`. Errors are problem details (`applica
 
 Documents go to `POST /api/documents/analyze`; see [docs/samples](docs/samples/README.md) for sample files and the
 expected results.
+
+## Architecture
+Untrusted PDFs and images are parsed by native C/C++ libraries (PDFium, ImageMagick, Skia, ONNX Runtime for OCR).
+Those run only in a separate **renderer** service, so a malicious or malformed file that crashes or takes over a
+parser cannot take down the API or reach its data:
+
+| | `LayaSample.Api` | `LayaSample.Renderer` |
+|---|---|---|
+| Does | File-type detection, PDF classification and text (PdfPig, managed), Office conversion, form data, signatures, Laya, routing | Page rendering (PDFium), image decoding (ImageMagick), PNG encoding, OCR |
+| Sees untrusted bytes in native code | No | Yes, isolated: no network egress, read-only file system, no capabilities, own memory/CPU limits |
+
+The API calls the renderer over HTTP (`DocumentAnalysis:RendererUrl`). If the renderer dies on a document, that
+request gets 502 and the renderer restarts; if it is down, documents that need it get 503 with `Retry-After` while
+text PDFs, Office files and feedback analysis keep working, and the API's readiness reports the renderer as
+`Degraded`. Shared code is in `src/LayaSample.Rendering`.
+
+In development (`dotnet run`) the API renders in-process, because `appsettings.Development.json` sets
+`DocumentAnalysis:AllowInProcessRendering`. Without that setting or a `RendererUrl`, the API refuses to start, so a
+production deployment cannot fall back to in-process rendering by accident. To run the renderer locally as well:
+
+    dotnet run --project src/LayaSample.Renderer                  # http://localhost:5092
+    DocumentAnalysis__RendererUrl=http://localhost:5092 dotnet run --project src/LayaSample.Api
 
 ## Limits
 Document analysis is CPU-bound, so each request runs within limits set under `DocumentAnalysis`:
@@ -62,24 +84,28 @@ that flips upside-down lines, and a recognizer that reads characters from a dict
 | `PPOCRv6Small` | Multilingual | ~31 MB | `scripts/download-models.sh` |
 | `PPOCRv6Medium` | Multilingual, slowest (~4x v5 per page) | ~138 MB | `scripts/download-models.sh` |
 
-    scripts/download-models.sh ocr PPOCRv6Small     # into src/LayaSample.Api/ocr-models; the build copies them
+    scripts/download-models.sh ocr PPOCRv6Small     # into src/LayaSample.Rendering/ocr-models; the build copies them
     DocumentAnalysis__OcrModel=PPOCRv6Small dotnet run --project src/LayaSample.Api
 
 Downloads are pinned and SHA-256 verified. If the configured models are missing, documents that need OCR get a 503
 rather than being reported as unreadable.
 
 ## Docker
-The image bakes in every model, so the container never downloads anything and can run offline.
+`docker-compose.yml` runs the API and the hardened renderer. Both images bake in their models (Laya in the API, OCR
+in the renderer), so containers never download anything and run offline.
 
-    docker build -t laya-sample .                                       # PP-OCRv5 Latin OCR
-    docker build -t laya-sample --build-arg OCR_MODEL=PPOCRv6Small .    # multilingual OCR
-    docker run --rm -p 8080:8080 --memory 4g --cpus 4 laya-sample
+    docker compose up --build                                  # http://localhost:8080
+    OCR_MODEL=PPOCRv6Small docker compose up --build           # multilingual OCR
 
-The image is about 1.2 GB of content (850 MB of it is the Laya weights; Docker Desktop reports roughly double,
-counting compressed and unpacked layers). It runs as a non-root user in the Production environment, so Scalar is
-off. Model downloads use a BuildKit cache, so rebuilds don't fetch them again. A `HEALTHCHECK` polls
-`/health/ready`. Set memory and CPU limits: PDFium, ImageMagick and Skia parse untrusted files in-process, and the
-runtime sizes its heap and thread pool from them.
+The renderer is on an internal network with no route out, has a read-only file system (`/tmp` is a tmpfs), drops
+all Linux capabilities, and has its own memory, CPU and process limits; it restarts automatically after a crash.
+Both run as non-root users in the Production environment (so Scalar is off) and have a `HEALTHCHECK` on
+`/health/ready`. The images are built from one `Dockerfile` (`--target api` / `--target renderer`); model downloads
+use a BuildKit cache, so rebuilds don't fetch them again.
+
+On Kubernetes, run the renderer as its own Deployment and Service (or as a sidecar the API reaches on localhost), with
+a NetworkPolicy that denies its egress, `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, dropped
+capabilities and resource limits; set `DocumentAnalysis__RendererUrl` on the API.
 
 ## Test
     dotnet test

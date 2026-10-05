@@ -2,7 +2,11 @@ using System.ComponentModel.DataAnnotations;
 
 namespace LayaSample.Api.Services.Documents;
 
-public sealed class DocumentAnalysisOptions
+/// <summary>
+/// Settings for classification and preparation. Rendering and OCR settings (OcrModel, OcrMaxSide) are in
+/// <see cref="LayaSample.Rendering.RenderingOptions"/>, bound from the same section.
+/// </summary>
+public sealed class DocumentAnalysisOptions : IValidatableObject
 {
     public const string Section = "DocumentAnalysis";
 
@@ -63,14 +67,21 @@ public sealed class DocumentAnalysisOptions
     [Range(0, 1000)]
     public int MaxAttachments { get; set; } = 10;
 
+    /// <summary>Ask for OCR of pages without a usable text layer. The renderer can also have OCR switched off.</summary>
     public bool EnableOcr { get; set; } = true;
 
-    /// <summary>OCR model family. Only PP-OCRv5 Latin ships with the app; v6 models are fetched by scripts/download-models.sh.</summary>
-    public Ocr.OcrModel OcrModel { get; set; } = Ocr.OcrModel.PPOCRv5Latin;
+    /// <summary>
+    /// Base URL of the renderer service (LayaSample.Renderer), which renders, decodes and OCRs pages in an isolated
+    /// process. Required unless <see cref="AllowInProcessRendering"/> is set.
+    /// </summary>
+    [Url]
+    public string? RendererUrl { get; set; }
 
-    /// <summary>OCR input is downscaled so its longer side is at most this many pixels.</summary>
-    [Range(256, 16384)]
-    public int OcrMaxSide { get; set; } = 2560;
+    /// <summary>
+    /// Render inside the API process when no <see cref="RendererUrl"/> is set. For development and tests only: it puts
+    /// untrusted documents in front of native parsers (PDFium, ImageMagick) in the API process.
+    /// </summary>
+    public bool AllowInProcessRendering { get; set; }
 
     /// <summary>
     /// Documents analysed at the same time. Analysis is CPU-bound (rendering, decoding, OCR), so more than the core
@@ -89,6 +100,14 @@ public sealed class DocumentAnalysisOptions
 
     public int EffectiveMaxConcurrentAnalyses =>
         MaxConcurrentAnalyses > 0 ? MaxConcurrentAnalyses : Math.Max(1, Environment.ProcessorCount / 2);
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (string.IsNullOrWhiteSpace(RendererUrl) && !AllowInProcessRendering)
+            yield return new ValidationResult(
+                $"Set {Section}:RendererUrl to the renderer service, or {Section}:AllowInProcessRendering=true for development.",
+                [nameof(RendererUrl), nameof(AllowInProcessRendering)]);
+    }
 }
 
 /// <summary>A problem with the uploaded document that maps to a specific HTTP status.</summary>

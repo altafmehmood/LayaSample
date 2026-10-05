@@ -1,4 +1,4 @@
-using LayaSample.Api.Services.Documents.Ocr;
+using LayaSample.Rendering;
 using SkiaSharp;
 
 namespace LayaSample.Tests;

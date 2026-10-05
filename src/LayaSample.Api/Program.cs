@@ -4,7 +4,7 @@ using ElBruno.LocalLLMs.Decisions;
 using LayaSample.Api.Models;
 using LayaSample.Api.Services;
 using LayaSample.Api.Services.Documents;
-using LayaSample.Api.Services.Documents.Ocr;
+using LayaSample.Rendering;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -28,7 +28,6 @@ builder.Services.AddOptions<DocumentAnalysisOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
-builder.Services.AddSingleton<IOcrEngine, RapidOcrEngine>();
 builder.Services.AddSingleton<IDocumentClassifier, DocumentClassifier>();
 builder.Services.AddSingleton<IDocumentPreparer, DocumentPreparer>();
 builder.Services.AddSingleton<IDocumentRouter, DocumentRouter>();
@@ -37,14 +36,38 @@ foreach (var route in DocumentRoutes.All)
     builder.Services.AddSingleton<IDocumentAgent>(new StubDocumentAgent(route));
 builder.Services.AddSingleton<ModelWarmup>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ModelWarmup>());
-builder.Services.AddSingleton<OcrWarmup>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<OcrWarmup>());
-builder.Services.AddHealthChecks()
-    .AddCheck<LayaHealthCheck>("laya", tags: [HealthChecks.Ready])
-    .AddCheck<OcrHealthCheck>("ocr", tags: [HealthChecks.Ready]);
+var healthChecks = builder.Services.AddHealthChecks().AddCheck<LayaHealthCheck>("laya", tags: [HealthReporting.Ready]);
 
-// Endpoint limits are fixed when the pipeline is built, so they are read here; ValidateOnStart still checks them.
+// Endpoint limits and where rendering runs are fixed when the app is built, so the options are read here;
+// ValidateOnStart still checks them (and refuses to start with neither a renderer nor in-process rendering allowed).
 var documentOptions = builder.Configuration.GetSection(DocumentAnalysisOptions.Section).Get<DocumentAnalysisOptions>() ?? new();
+if (!string.IsNullOrWhiteSpace(documentOptions.RendererUrl))
+{
+    // Untrusted bytes reach PDFium, ImageMagick and OCR only inside the isolated renderer service.
+    builder.Services.AddHttpClient(RemotePageRasterizer.HttpClientName, c =>
+    {
+        c.BaseAddress = new Uri(documentOptions.RendererUrl.TrimEnd('/') + "/");
+        // Bounded by the request's own token instead, which carries the request timeout.
+        c.Timeout = Timeout.InfiniteTimeSpan;
+    });
+    builder.Services.AddSingleton<RemotePageRasterizer>();
+    builder.Services.AddSingleton<IPageRasterizer>(sp => sp.GetRequiredService<RemotePageRasterizer>());
+    healthChecks.AddCheck<RendererHealthCheck>("renderer", tags: [HealthReporting.Ready], timeout: TimeSpan.FromSeconds(5));
+}
+else
+{
+    // Development and tests only: AllowInProcessRendering must be set (see DocumentAnalysisOptions.Validate).
+    builder.Services.AddOptions<RenderingOptions>()
+        .Bind(builder.Configuration.GetSection(RenderingOptions.Section))
+        .ValidateDataAnnotations()
+        .ValidateOnStart();
+    builder.Services.AddSingleton<IOcrEngine, RapidOcrEngine>();
+    builder.Services.AddSingleton<IPageRasterizer, LocalPageRasterizer>();
+    builder.Services.AddSingleton<OcrWarmup>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<OcrWarmup>());
+    healthChecks.AddCheck<OcrHealthCheck>("ocr", tags: [HealthReporting.Ready]);
+}
+
 const string DocumentsPolicy = "documents";
 builder.Services.AddRequestTimeouts();
 builder.Services.AddRateLimiter(o =>
@@ -91,8 +114,8 @@ const int MaxTextLength = 4000;
 static IResult Problem(int status, string detail) => Results.Problem(detail: detail, statusCode: status);
 
 // Liveness: the process is up. Readiness: the models are loaded (Degraded, still 200, when one failed for good).
-app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false, ResponseWriter = HealthChecks.WriteJson });
-var readiness = new HealthCheckOptions { Predicate = c => c.Tags.Contains(HealthChecks.Ready), ResponseWriter = HealthChecks.WriteJson };
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false, ResponseWriter = HealthReporting.WriteJson });
+var readiness = new HealthCheckOptions { Predicate = c => c.Tags.Contains(HealthReporting.Ready), ResponseWriter = HealthReporting.WriteJson };
 app.MapHealthChecks("/health/ready", readiness);
 app.MapHealthChecks("/health", readiness);
 
@@ -128,6 +151,7 @@ app.MapPost("/api/documents/analyze", async (
     IOptions<DocumentAnalysisOptions> options,
     DocumentMetrics metrics,
     ILogger<Program> logger,
+    HttpContext httpContext,
     CancellationToken ct) =>
 {
     if (file is null || file.Length == 0)
@@ -153,9 +177,9 @@ app.MapPost("/api/documents/analyze", async (
             return elapsed;
         }
 
-        classification = classifier.Classify(stream, ct);
+        classification = await classifier.ClassifyAsync(stream, ct);
         Lap("classify");
-        var prepared = preparer.Prepare(stream, classification, strategy ?? classification.Strategy, ct);
+        var prepared = await preparer.PrepareAsync(stream, classification, strategy ?? classification.Strategy, ct);
         Lap("prepare");
         var agent = dispatch == false ? null : await router.RouteAsync(classification, prepared, ct);
         Lap("route");
@@ -185,6 +209,20 @@ app.MapPost("/api/documents/analyze", async (
         metrics.RecordDocument(classification?.Kind.ToString() ?? "unclassified", "none", StatusCodes.Status503ServiceUnavailable);
         return Problem(StatusCodes.Status503ServiceUnavailable, "OCR is unavailable; retry later or use ?strategy=RenderToPng");
     }
+    catch (RendererUnavailableException ex)
+    {
+        logger.LogWarning(ex, "Renderer is unavailable");
+        metrics.RecordDocument(classification?.Kind.ToString() ?? "unclassified", "none", StatusCodes.Status503ServiceUnavailable);
+        httpContext.Response.Headers.RetryAfter = "10";
+        return Problem(StatusCodes.Status503ServiceUnavailable, "document rendering is unavailable; retry later");
+    }
+    catch (RenderingFailedException ex)
+    {
+        // Most likely this document crashed the renderer; retrying it would crash it again.
+        logger.LogError(ex, "Renderer failed on a {Bytes}-byte {Kind} document", file.Length, classification?.Kind.ToString() ?? "unclassified");
+        metrics.RecordDocument(classification?.Kind.ToString() ?? "unclassified", "none", StatusCodes.Status502BadGateway);
+        return Problem(StatusCodes.Status502BadGateway, "document could not be rendered");
+    }
 })
 .DisableAntiforgery()
 .Accepts<IFormFile>("multipart/form-data")
@@ -196,6 +234,7 @@ app.MapPost("/api/documents/analyze", async (
 .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
 .ProducesProblem(StatusCodes.Status415UnsupportedMediaType)
 .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+.ProducesProblem(StatusCodes.Status502BadGateway)
 .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
 .ProducesProblem(StatusCodes.Status504GatewayTimeout)
 .WithMetadata(new RequestSizeLimitAttribute(maxBodyBytes), new RequestFormLimitsAttribute { MultipartBodyLengthLimit = maxBodyBytes })

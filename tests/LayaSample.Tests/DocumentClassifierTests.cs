@@ -1,5 +1,6 @@
 using LayaSample.Api.Models;
 using LayaSample.Api.Services.Documents;
+using LayaSample.Rendering;
 using Microsoft.Extensions.Options;
 
 namespace LayaSample.Tests;
@@ -8,9 +9,13 @@ public class DocumentClassifierTests
 {
     private static readonly IOptions<DocumentAnalysisOptions> Options = Microsoft.Extensions.Options.Options.Create(new DocumentAnalysisOptions());
 
+    internal static DocumentClassifier Classifier(IOptions<DocumentAnalysisOptions> options) =>
+        new(options, new LocalPageRasterizer(new FakeOcr(), Microsoft.Extensions.Options.Options.Create(new RenderingOptions())));
+
+    // The in-process rasterizer completes synchronously, so blocking here cannot deadlock.
     private static DocumentClassification Classify(byte[] bytes, DocumentAnalysisOptions? options = null) =>
-        new DocumentClassifier(options is null ? Options : Microsoft.Extensions.Options.Options.Create(options))
-            .Classify(new MemoryStream(bytes), TestContext.Current.CancellationToken);
+        Classifier(options is null ? Options : Microsoft.Extensions.Options.Options.Create(options))
+            .ClassifyAsync(new MemoryStream(bytes), TestContext.Current.CancellationToken).GetAwaiter().GetResult();
 
     [Fact]
     public void Filled_form_pdf_is_rendered_to_png()
@@ -70,8 +75,7 @@ public class DocumentClassifierTests
     [Fact]
     public void Scanned_pdf_is_only_rendered_when_ocr_is_disabled()
     {
-        var result = new DocumentClassifier(Microsoft.Extensions.Options.Options.Create(new DocumentAnalysisOptions { EnableOcr = false }))
-            .Classify(new MemoryStream(DocumentFixtures.BlankPdf()), TestContext.Current.CancellationToken);
+        var result = Classify(DocumentFixtures.BlankPdf(), new DocumentAnalysisOptions { EnableOcr = false });
 
         Assert.Equal(PreparationStrategy.RenderToPng, result.Strategy);
     }
@@ -265,12 +269,12 @@ public class DocumentClassifierTests
     }
 
     [Fact]
-    public void Classification_stops_when_cancelled()
+    public async Task Classification_stops_when_cancelled()
     {
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
-        Assert.ThrowsAny<OperationCanceledException>(() =>
-            new DocumentClassifier(Options).Classify(new MemoryStream(DocumentFixtures.TextPdf()), cts.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            Classifier(Options).ClassifyAsync(new MemoryStream(DocumentFixtures.TextPdf()), cts.Token));
     }
 }

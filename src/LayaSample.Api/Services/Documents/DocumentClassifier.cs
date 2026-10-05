@@ -1,7 +1,7 @@
 using System.IO.Compression;
 using LayaSample.Api.Models;
-using LayaSample.Api.Services.Documents.Images;
 using LayaSample.Api.Services.Documents.Pdf;
+using LayaSample.Rendering;
 using Microsoft.Extensions.Options;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Exceptions;
@@ -12,7 +12,9 @@ public interface IDocumentClassifier
 {
     /// <summary>Classifies the document from its content (not its name or client-supplied content type).</summary>
     /// <exception cref="DocumentException">Unsupported (415) or unreadable/encrypted/oversized (422) document.</exception>
-    DocumentClassification Classify(Stream stream, CancellationToken ct = default);
+    /// <exception cref="RendererUnavailableException">Images are inspected by the renderer, which is unreachable.</exception>
+    /// <exception cref="RenderingFailedException">The renderer failed while inspecting an image.</exception>
+    Task<DocumentClassification> ClassifyAsync(Stream stream, CancellationToken ct = default);
 }
 
 public static class DocumentRoutes
@@ -25,7 +27,7 @@ public static class DocumentRoutes
     public static readonly string[] All = [Form, Vision, Text, Spreadsheet];
 }
 
-public sealed class DocumentClassifier(IOptions<DocumentAnalysisOptions> options) : IDocumentClassifier
+public sealed class DocumentClassifier(IOptions<DocumentAnalysisOptions> options, IPageRasterizer rasterizer) : IDocumentClassifier
 {
     private const string Unsupported = "unsupported document type; expected PDF, .xlsx, .docx, TIFF, PNG or JPEG";
 
@@ -42,7 +44,7 @@ public sealed class DocumentClassifier(IOptions<DocumentAnalysisOptions> options
 
     private readonly DocumentAnalysisOptions _options = options.Value;
 
-    public DocumentClassification Classify(Stream stream, CancellationToken ct = default)
+    public async Task<DocumentClassification> ClassifyAsync(Stream stream, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
         stream.Position = 0;
@@ -52,7 +54,7 @@ public sealed class DocumentClassifier(IOptions<DocumentAnalysisOptions> options
             DocumentSniffer.Pdf => ClassifyPdf(StreamBytes.Read(stream), ct),
             DocumentSniffer.Xlsx => Office(stream, DocumentKind.Spreadsheet, mediaType, DocumentRoutes.Spreadsheet, "Excel workbook; convert sheets to markdown tables"),
             DocumentSniffer.Docx => Office(stream, DocumentKind.WordDocument, mediaType, DocumentRoutes.Text, "Word document; convert to markdown"),
-            _ when DocumentSniffer.IsImage(mediaType) => ClassifyImage(StreamBytes.Read(stream), mediaType),
+            _ when DocumentSniffer.IsImage(mediaType) => await ClassifyImageAsync(StreamBytes.Read(stream), mediaType, ct),
             DocumentSniffer.Ole => throw new DocumentException(
                 "legacy (.xls/.doc) or password-protected Office files are not supported; save as unprotected .xlsx/.docx",
                 StatusCodes.Status415UnsupportedMediaType),
@@ -93,14 +95,15 @@ public sealed class DocumentClassifier(IOptions<DocumentAnalysisOptions> options
         }
     }
 
-    private DocumentClassification ClassifyImage(byte[] bytes, string mediaType)
+    private async Task<DocumentClassification> ClassifyImageAsync(byte[] bytes, string mediaType, CancellationToken ct)
     {
         IReadOnlyList<RasterPage> pages;
         try
         {
-            pages = RasterImages.Inspect(bytes, mediaType, _options.MaxImageFrames + 1);
+            // Image headers are parsed by native code, so the renderer reads them.
+            pages = await rasterizer.InspectImageAsync(bytes, mediaType, _options.MaxImageFrames + 1, ct);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (InvalidDataException ex)
         {
             throw new DocumentException("image could not be read", StatusCodes.Status422UnprocessableEntity, ex);
         }

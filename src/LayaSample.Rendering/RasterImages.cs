@@ -2,15 +2,13 @@ using System.Runtime.InteropServices;
 using ImageMagick;
 using SkiaSharp;
 
-namespace LayaSample.Api.Services.Documents.Images;
-
-public sealed record RasterPage(int Width, int Height, bool IsFax);
+namespace LayaSample.Rendering;
 
 /// <summary>Reads TIFF (including multi-page fax), PNG and JPEG via ImageMagick.</summary>
-public static class RasterImages
+internal static class RasterImages
 {
     // Guards against decompression bombs: a 300 dpi A3 scan is ~17M pixels.
-    private const long MaxPixels = 60_000_000;
+    public const long MaxPixels = 60_000_000;
 
     private static readonly HashSet<CompressionMethod> FaxCompressions =
         [CompressionMethod.Fax, CompressionMethod.Group4, CompressionMethod.JBIG1, CompressionMethod.JBIG2];
@@ -104,9 +102,9 @@ public static class RasterImages
     {
         Format = mediaType switch
         {
-            DocumentSniffer.Tiff => MagickFormat.Tiff,
-            DocumentSniffer.Png => MagickFormat.Png,
-            DocumentSniffer.Jpeg => MagickFormat.Jpeg,
+            MediaTypes.Tiff => MagickFormat.Tiff,
+            MediaTypes.Png => MagickFormat.Png,
+            MediaTypes.Jpeg => MagickFormat.Jpeg,
             _ => throw new InvalidDataException($"{mediaType} is not a supported image type")
         }
     };

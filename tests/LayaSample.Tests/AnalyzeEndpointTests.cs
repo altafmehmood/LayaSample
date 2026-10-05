@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using LayaSample.Api.Models;
 using LayaSample.Api.Services;
+using LayaSample.Rendering;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -72,5 +73,5 @@ public class AnalyzeEndpointTests : IClassFixture<AnalyzeEndpointTests.Factory>
     // A model that failed for good leaves the rest of the service usable, so the instance stays in rotation.
     [InlineData(WarmupState.Failed, "Degraded")]
     public void Model_state_maps_to_health(WarmupState state, string status) =>
-        Assert.Equal(status, HealthChecks.FromState(state, "feature").Status.ToString());
+        Assert.Equal(status, HealthReporting.FromState(state, "feature").Status.ToString());
 }

@@ -485,7 +485,7 @@ $RECYCLE.BIN/
 src/LayaSample.Api/model-cache/
 
 # Optional PP-OCRv6 models (scripts/download-models.sh)
-src/LayaSample.Api/ocr-models/
+src/LayaSample.Rendering/ocr-models/
 
 # Test run output
 TestResults/

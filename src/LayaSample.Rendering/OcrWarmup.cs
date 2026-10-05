@@ -1,12 +1,14 @@
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace LayaSample.Api.Services.Documents.Ocr;
+namespace LayaSample.Rendering;
 
 /// <summary>
 /// Loads the OCR models at startup, so a missing or broken model shows up in readiness and the logs instead of on
 /// the first scanned document. A failure is not final: <see cref="RapidOcrEngine"/> retries on the next call.
 /// </summary>
-public sealed class OcrWarmup(IOcrEngine ocr, IOptions<DocumentAnalysisOptions> options, ILogger<OcrWarmup> logger) : BackgroundService
+public sealed class OcrWarmup(IOcrEngine ocr, IOptions<RenderingOptions> options, ILogger<OcrWarmup> logger) : BackgroundService
 {
     private volatile WarmupState _state;
 

@@ -1,0 +1,51 @@
+# The API plus the isolated renderer.
+#
+#   docker compose up --build                                   # http://localhost:8080
+#   OCR_MODEL=PPOCRv6Medium docker compose up --build           # multilingual OCR
+#
+# Only the renderer parses PDFs and images with native code (PDFium, ImageMagick, OCR). It sits on an internal
+# network with no route out, a read-only file system, no Linux capabilities and its own memory/CPU/process limits,
+# so a malicious document that crashes or takes over a parser can neither reach the network nor touch the API.
+
+name: laya-sample
+
+services:
+  api:
+    build:
+      context: .
+      target: api
+    image: laya-sample-api
+    ports:
+      - "8080:8080"
+    environment:
+      DocumentAnalysis__RendererUrl: http://renderer:8080
+    networks: [public, internal]
+    mem_limit: 3g
+    cpus: 4
+    restart: unless-stopped
+
+  renderer:
+    build:
+      context: .
+      target: renderer
+      args:
+        OCR_MODEL: ${OCR_MODEL:-PPOCRv5Latin}
+    image: laya-sample-renderer
+    networks: [internal]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    cpus: 4
+    pids_limit: 512
+    # A document that crashes the renderer fails its own request (502 from the API); the renderer comes straight back.
+    restart: always
+
+networks:
+  public: {}
+  internal:
+    # No outbound access from this network: the renderer can only answer the API.
+    internal: true

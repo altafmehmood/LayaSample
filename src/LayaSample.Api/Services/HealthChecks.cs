@@ -1,46 +1,26 @@
-using System.Text.Json;
-using LayaSample.Api.Services.Documents.Ocr;
+using LayaSample.Rendering;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace LayaSample.Api.Services;
 
-/// <summary>
-/// Readiness per model. Still loading is Unhealthy (keep traffic away while starting up). Failed is Degraded: the
-/// instance still serves everything that does not need that model, so it should stay in rotation.
-/// </summary>
 public sealed class LayaHealthCheck(ModelWarmup warmup) : IHealthCheck
 {
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken ct = default) =>
-        Task.FromResult(HealthChecks.FromState(warmup.State, "feedback analysis"));
+        Task.FromResult(HealthReporting.FromState(warmup.State, "feedback analysis"));
 }
 
-public sealed class OcrHealthCheck(OcrWarmup warmup) : IHealthCheck
+/// <summary>
+/// The renderer service's own readiness. A renderer that is down or not ready makes this instance Degraded, not
+/// Unhealthy: text PDFs, Office files and feedback analysis still work, and the renderer is usually shared, so taking
+/// every API instance out of rotation would turn a partial outage into a full one.
+/// </summary>
+public sealed class RendererHealthCheck(RemotePageRasterizer renderer) : IHealthCheck
 {
-    public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken ct = default) =>
-        Task.FromResult(warmup.Enabled
-            ? HealthChecks.FromState(warmup.State, "OCR of scanned pages and images")
-            : HealthCheckResult.Healthy("disabled"));
-}
-
-public static class HealthChecks
-{
-    public const string Ready = "ready";
-
-    public static HealthCheckResult FromState(WarmupState state, string feature) => state switch
-    {
-        WarmupState.Ready => HealthCheckResult.Healthy("ready"),
-        WarmupState.Loading => HealthCheckResult.Unhealthy("loading"),
-        _ => HealthCheckResult.Degraded($"failed to load; {feature} is unavailable")
-    };
-
-    /// <summary>Writes <c>{ "status": "Healthy", "checks": { "laya": { "status": ..., "description": ... } } }</c>.</summary>
-    public static Task WriteJson(HttpContext context, HealthReport report)
-    {
-        context.Response.ContentType = "application/json";
-        return JsonSerializer.SerializeAsync(context.Response.Body, new
+    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken ct = default) =>
+        await renderer.GetReadinessAsync(ct) switch
         {
-            status = report.Status.ToString(),
-            checks = report.Entries.ToDictionary(e => e.Key, e => new { status = e.Value.Status.ToString(), description = e.Value.Description })
-        }, cancellationToken: context.RequestAborted);
-    }
+            null => HealthCheckResult.Degraded("unreachable; scanned pages, images and page images are unavailable"),
+            "Healthy" => HealthCheckResult.Healthy("ready"),
+            var status => HealthCheckResult.Degraded($"renderer is {status}")
+        };
 }

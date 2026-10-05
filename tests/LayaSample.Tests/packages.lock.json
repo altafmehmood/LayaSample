@@ -582,13 +582,25 @@
           "ClosedXML": "[0.105.1, )",
           "DocumentFormat.OpenXml": "[3.5.1, )",
           "ElBruno.LocalLLMs.Decisions": "[0.22.0, )",
-          "Magick.NET-Q8-AnyCPU": "[14.17.2, )",
+          "LayaSample.Rendering": "[1.0.0, )",
           "Microsoft.AspNetCore.OpenApi": "[10.0.12, )",
-          "PDFtoImage": "[5.4.0, )",
           "PdfPig": "[0.1.16, )",
-          "RapidOcrNet": "[4.2.0, )",
           "Scalar.AspNetCore": "[2.17.13, )",
           "System.Security.Cryptography.Pkcs": "[10.0.12, )"
+        }
+      },
+      "layasample.renderer": {
+        "type": "Project",
+        "dependencies": {
+          "LayaSample.Rendering": "[1.0.0, )"
+        }
+      },
+      "layasample.rendering": {
+        "type": "Project",
+        "dependencies": {
+          "Magick.NET-Q8-AnyCPU": "[14.17.2, )",
+          "PDFtoImage": "[5.4.0, )",
+          "RapidOcrNet": "[4.2.0, )"
         }
       },
       "ClosedXML": {

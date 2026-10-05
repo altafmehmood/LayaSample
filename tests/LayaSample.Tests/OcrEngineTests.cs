@@ -1,5 +1,4 @@
-using LayaSample.Api.Services.Documents;
-using LayaSample.Api.Services.Documents.Ocr;
+using LayaSample.Rendering;
 using SkiaSharp;
 
 namespace LayaSample.Tests;
@@ -21,10 +20,29 @@ public class OcrEngineTests
         Assert.SkipWhen(missing.Count == 0, "all PP-OCRv6 models are installed");
         var (model, recognizer) = missing[0];
 
-        using var engine = new RapidOcrEngine(Microsoft.Extensions.Options.Options.Create(new DocumentAnalysisOptions { OcrModel = model }));
+        using var engine = new RapidOcrEngine(Microsoft.Extensions.Options.Options.Create(new RenderingOptions { OcrModel = model }));
         using var image = new SKBitmap(10, 10);
 
         var ex = Assert.Throws<OcrUnavailableException>(() => engine.Recognize(image, TestContext.Current.CancellationToken));
         Assert.Contains(recognizer, ex.Message);
+    }
+
+    [Fact]
+    public void Bundled_model_reads_text()
+    {
+        // Real OCR with the PP-OCRv5 models the NuGet bundles: catches models that stop being copied next to the binary.
+        using var engine = new RapidOcrEngine(Microsoft.Extensions.Options.Options.Create(new RenderingOptions()));
+        using var image = new SKBitmap(1200, 300);
+        using (var canvas = new SKCanvas(image))
+        using (var font = new SKFont(SKTypeface.Default, 64))
+        using (var paint = new SKPaint { Color = SKColors.Black, IsAntialias = true })
+        {
+            canvas.Clear(SKColors.White);
+            canvas.DrawText("INVOICE 2026-0417", 60, 180, SKTextAlign.Left, font, paint);
+        }
+
+        var text = engine.Recognize(image, TestContext.Current.CancellationToken);
+
+        Assert.Contains("INVOICE", text);
     }
 }

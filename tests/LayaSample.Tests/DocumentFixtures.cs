@@ -176,6 +176,12 @@ public static class DocumentFixtures
         return bytes;
     }
 
+    /// <summary>A blank page declaring the largest size PDF allows (200 x 200 inches).</summary>
+    public static byte[] HugePagePdf() => BuildPdf(
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 14400 14400] >>");
+
     /// <summary>A valid .xlsx with an extra part that unpacks to <paramref name="paddingBytes"/> of zeros.</summary>
     public static byte[] XlsxWithPadding(int paddingBytes)
     {

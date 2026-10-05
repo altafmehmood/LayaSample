@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using LayaSample.Api.Models;
 using LayaSample.Api.Services.Documents;
-using LayaSample.Api.Services.Documents.Ocr;
+using LayaSample.Rendering;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

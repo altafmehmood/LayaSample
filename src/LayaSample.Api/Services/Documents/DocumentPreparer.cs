@@ -5,12 +5,9 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using LayaSample.Api.Models;
-using LayaSample.Api.Services.Documents.Images;
-using LayaSample.Api.Services.Documents.Ocr;
 using LayaSample.Api.Services.Documents.Pdf;
+using LayaSample.Rendering;
 using Microsoft.Extensions.Options;
-using PDFtoImage;
-using SkiaSharp;
 using UglyToad.PdfPig;
 
 namespace LayaSample.Api.Services.Documents;
@@ -19,11 +16,18 @@ public interface IDocumentPreparer
 {
     /// <summary>Converts the document into the form the downstream agent should receive.</summary>
     /// <exception cref="DocumentException">The strategy does not apply to this kind of document (400), or its content is unreadable (422).</exception>
-    PreparedDocument Prepare(Stream stream, DocumentClassification classification, PreparationStrategy strategy, CancellationToken ct = default);
+    /// <exception cref="OcrUnavailableException"/>
+    /// <exception cref="RendererUnavailableException"/>
+    /// <exception cref="RenderingFailedException"/>
+    Task<PreparedDocument> PrepareAsync(Stream stream, DocumentClassification classification, PreparationStrategy strategy, CancellationToken ct = default);
 }
 
+/// <summary>
+/// Prepares documents. Page images and OCR come from <see cref="IPageRasterizer"/> (the renderer service in
+/// production); text layers, form data and Office conversion are read here with managed libraries.
+/// </summary>
 public sealed class DocumentPreparer(
-    IOptions<DocumentAnalysisOptions> options, IDocumentClassifier classifier, IOcrEngine ocr, ILogger<DocumentPreparer> logger)
+    IOptions<DocumentAnalysisOptions> options, IDocumentClassifier classifier, IPageRasterizer rasterizer, ILogger<DocumentPreparer> logger)
     : IDocumentPreparer
 {
     private readonly DocumentAnalysisOptions _options = options.Value;
@@ -41,20 +45,26 @@ public sealed class DocumentPreparer(
         }
     }
 
-    public PreparedDocument Prepare(Stream stream, DocumentClassification classification, PreparationStrategy strategy, CancellationToken ct = default)
+    public async Task<PreparedDocument> PrepareAsync(Stream stream, DocumentClassification classification, PreparationStrategy strategy,
+        CancellationToken ct = default)
     {
         Validate(classification.Kind, strategy);
         try
         {
             var budget = new Budget(_options.MaxPages);
-            return new PreparedDocument(strategy, PrepareParts(StreamBytes.Read(stream), classification, strategy, budget, includeAttachments: true, ct));
+            return new PreparedDocument(strategy,
+                await PreparePartsAsync(StreamBytes.Read(stream), classification, strategy, budget, includeAttachments: true, ct));
         }
-        // The container was valid enough to classify, but the libraries reject its content.
-        catch (Exception ex) when (ex is not (DocumentException or OperationCanceledException or OcrUnavailableException))
+        // The container was valid enough to classify, but the libraries (or the renderer) reject its content.
+        catch (Exception ex) when (!IsServerProblem(ex) && ex is not DocumentException)
         {
             throw new DocumentException("document content could not be read", StatusCodes.Status422UnprocessableEntity, ex);
         }
     }
+
+    /// <summary>Failures that say nothing about the document, so they must not turn into 422 or be skipped.</summary>
+    private static bool IsServerProblem(Exception ex) =>
+        ex is OperationCanceledException or OcrUnavailableException or RendererUnavailableException or RenderingFailedException;
 
     private static void Validate(DocumentKind kind, PreparationStrategy strategy)
     {
@@ -71,8 +81,8 @@ public sealed class DocumentPreparer(
         if (error is not null) throw new DocumentException(error, StatusCodes.Status400BadRequest);
     }
 
-    private List<PreparedPart> PrepareParts(byte[] bytes, DocumentClassification classification, PreparationStrategy strategy, Budget budget,
-        bool includeAttachments, CancellationToken ct)
+    private async Task<List<PreparedPart>> PreparePartsAsync(byte[] bytes, DocumentClassification classification, PreparationStrategy strategy,
+        Budget budget, bool includeAttachments, CancellationToken ct)
     {
         if (strategy == PreparationStrategy.AsIs)
             return [new PreparedPart(PartRole.Original, classification.MediaType, null, null, bytes)];
@@ -81,32 +91,40 @@ public sealed class DocumentPreparer(
         {
             DocumentKind.Spreadsheet => [Markdown(null, SpreadsheetToMarkdown(new MemoryStream(bytes, writable: false), ct))],
             DocumentKind.WordDocument => [Markdown(null, WordToMarkdown(new MemoryStream(bytes, writable: false)))],
-            DocumentKind.Image => PrepareImage(bytes, classification, strategy, budget, ct),
-            _ => PreparePdf(bytes, classification, strategy, budget, includeAttachments, ct)
+            DocumentKind.Image => await PrepareImageAsync(bytes, classification, strategy, budget, ct),
+            _ => await PreparePdfAsync(bytes, classification, strategy, budget, includeAttachments, ct)
         };
     }
 
-    private List<PreparedPart> PrepareImage(byte[] bytes, DocumentClassification classification, PreparationStrategy strategy, Budget budget,
-        CancellationToken ct)
+    private async Task<List<PreparedPart>> PrepareImageAsync(byte[] bytes, DocumentClassification classification, PreparationStrategy strategy,
+        Budget budget, CancellationToken ct)
     {
-        var parts = new List<PreparedPart>();
+        var requests = new List<PageRequest>();
         foreach (var page in classification.Pages)
         {
-            ct.ThrowIfCancellationRequested();
             if (!budget.TryRender()) break;
-            using var bitmap = RasterImages.Decode(bytes, classification.MediaType, page.Number - 1);
-            parts.Add(Png(bitmap, page));
-            if (strategy == PreparationStrategy.Hybrid && Ocr(bitmap, page.Number, ct) is { } text) parts.Add(text);
+            requests.Add(new PageRequest(page.Number, Grayscale: page.Content == PageContent.Fax,
+                Ocr: strategy == PreparationStrategy.Hybrid && _options.EnableOcr));
+        }
+
+        var parts = new List<PreparedPart>();
+        foreach (var page in await RenderAsync(bytes, classification.MediaType, requests, ct))
+        {
+            parts.Add(PageImage(page));
+            if (OcrText(page) is { } text) parts.Add(text);
         }
         return parts;
     }
 
-    private List<PreparedPart> PreparePdf(byte[] bytes, DocumentClassification classification, PreparationStrategy strategy, Budget budget,
-        bool includeAttachments, CancellationToken ct)
+    private async Task<List<PreparedPart>> PreparePdfAsync(byte[] bytes, DocumentClassification classification, PreparationStrategy strategy,
+        Budget budget, bool includeAttachments, CancellationToken ct)
     {
         using var pdf = PdfDocument.Open(bytes);
-        var parts = new List<PreparedPart>();
 
+        // First decide each page: markdown from the text layer here, or a render (with OCR where the text layer is
+        // missing or unusable). All renders then go to the rasterizer as one job.
+        var slots = new List<(PageClassification Page, PreparationStrategy Strategy, PreparedPart? Markdown)>();
+        var requests = new List<PageRequest>();
         // StructuredData skips the pages entirely (for dynamic XFA they are only a viewer placeholder).
         IReadOnlyList<PageClassification> pages = strategy == PreparationStrategy.StructuredData ? [] : classification.Pages;
         foreach (var page in pages)
@@ -115,15 +133,34 @@ public sealed class DocumentPreparer(
             var pageStrategy = strategy == PreparationStrategy.PerPage ? page.Strategy : strategy;
             if (pageStrategy is PreparationStrategy.Markdown)
             {
-                parts.Add(Markdown(page.Number, $"## Page {page.Number}\n\n{pdf.GetPage(page.Number).Text.Trim()}\n"));
+                slots.Add((page, pageStrategy, Markdown(page.Number, $"## Page {page.Number}\n\n{pdf.GetPage(page.Number).Text.Trim()}\n")));
                 continue;
             }
             // The budget applies to renders only; markdown pages after it are still included.
             if (pageStrategy is not (PreparationStrategy.RenderToPng or PreparationStrategy.Hybrid) || !budget.TryRender()) continue;
 
-            using var bitmap = Render(bytes, page);
-            parts.Add(Png(bitmap, page));
-            if (pageStrategy == PreparationStrategy.Hybrid && HybridText(pdf, page, bitmap, ct) is { } text) parts.Add(text);
+            slots.Add((page, pageStrategy, null));
+            requests.Add(new PageRequest(page.Number, page.RenderDpi ?? _options.PngDpi, Grayscale: page.Content == PageContent.Fax,
+                Ocr: pageStrategy == PreparationStrategy.Hybrid && NeedsOcr(page) && _options.EnableOcr));
+        }
+
+        var rendered = (await RenderAsync(bytes, DocumentSniffer.Pdf, requests, ct)).ToDictionary(p => p.Number);
+        var parts = new List<PreparedPart>();
+        foreach (var (page, pageStrategy, markdown) in slots)
+        {
+            if (markdown is not null)
+            {
+                parts.Add(markdown);
+                continue;
+            }
+            if (!rendered.TryGetValue(page.Number, out var image))
+                throw new RenderingFailedException($"renderer did not return page {page.Number}");
+
+            parts.Add(PageImage(image));
+            if (pageStrategy != PreparationStrategy.Hybrid) continue;
+            // The text layer when it is usable (exact), otherwise the OCR text.
+            var text = NeedsOcr(page) ? OcrText(image) : TextLayer(pdf, page.Number);
+            if (text is not null) parts.Add(text);
         }
 
         // Machine-readable data complements the pages whatever the strategy: field values are exact where a render is not.
@@ -134,7 +171,7 @@ public sealed class DocumentPreparer(
         if (includeAttachments)
         {
             foreach (var (name, data) in PdfStructuredData.ReadAttachments(pdf).Take(_options.MaxAttachments))
-                parts.AddRange(PrepareAttachment(name, data.ToArray(), structuredOnly: strategy == PreparationStrategy.StructuredData, budget, ct));
+                parts.AddRange(await PrepareAttachmentAsync(name, data.ToArray(), structuredOnly: strategy == PreparationStrategy.StructuredData, budget, ct));
         }
 
         if (strategy == PreparationStrategy.StructuredData && parts.Count == 0)
@@ -143,11 +180,17 @@ public sealed class DocumentPreparer(
         return parts;
     }
 
+    private static bool NeedsOcr(PageClassification page) => page.Content is PageContent.Scanned or PageContent.Fax or PageContent.BrokenText;
+
+    private async Task<IReadOnlyList<RenderedPage>> RenderAsync(byte[] bytes, string mediaType, List<PageRequest> requests, CancellationToken ct) =>
+        requests.Count == 0 ? [] : await rasterizer.RenderAsync(new RenderJob(bytes, mediaType, requests), ct);
+
     /// <summary>
     /// Textual attachments (e-invoice XML, JSON) are passed through; embedded documents are classified and prepared
     /// with their own default strategy. Attachments that cannot be prepared are still listed in the classification.
     /// </summary>
-    private IEnumerable<PreparedPart> PrepareAttachment(string name, byte[] bytes, bool structuredOnly, Budget budget, CancellationToken ct)
+    private async Task<IEnumerable<PreparedPart>> PrepareAttachmentAsync(string name, byte[] bytes, bool structuredOnly, Budget budget,
+        CancellationToken ct)
     {
         var mediaType = DocumentSniffer.Sniff(bytes);
         if (DocumentSniffer.IsTextual(mediaType))
@@ -156,12 +199,13 @@ public sealed class DocumentPreparer(
 
         try
         {
-            var classification = classifier.Classify(new MemoryStream(bytes, writable: false), ct);
-            return PrepareParts(bytes, classification, classification.Strategy, budget, includeAttachments: false, ct)
+            var classification = await classifier.ClassifyAsync(new MemoryStream(bytes, writable: false), ct);
+            return (await PreparePartsAsync(bytes, classification, classification.Strategy, budget, includeAttachments: false, ct))
                 .Select(p => p with { Source = name });
         }
         // A corrupt embedded file must not fail the document that carries it; it stays listed in the classification.
-        catch (Exception ex) when (ex is not (OperationCanceledException or OcrUnavailableException))
+        // That includes one that crashes the renderer, but not an unreachable renderer or missing OCR models.
+        catch (Exception ex) when (ex is RenderingFailedException || !IsServerProblem(ex))
         {
             logger.LogWarning(ex, "Embedded file {Attachment} could not be prepared and was skipped", name);
             return [];
@@ -186,38 +230,16 @@ public sealed class DocumentPreparer(
         return Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF');
     }
 
-    private SKBitmap Render(byte[] bytes, PageClassification page)
+    private static PreparedPart? TextLayer(PdfDocument pdf, int page)
     {
-        // Render what a person sees: WithFormFill draws AcroForm field values, WithAnnotations draws
-        // Fill & Sign text, signatures and stamps. Without them a filled-in PDF renders blank.
-        var render = new RenderOptions(Dpi: page.RenderDpi ?? _options.PngDpi, WithAnnotations: true, WithFormFill: true);
-        return Conversion.ToImage(new MemoryStream(bytes, writable: false), page: page.Number - 1, options: render);
+        var text = pdf.GetPage(page).Text.Trim();
+        return text.Length == 0 ? null : new PreparedPart(PartRole.PageText, DocumentSniffer.Text, page, text, null);
     }
 
-    /// <summary>The text layer when it is usable (exact), otherwise OCR of the rendered page.</summary>
-    private PreparedPart? HybridText(PdfDocument pdf, PageClassification page, SKBitmap bitmap, CancellationToken ct)
-    {
-        if (page.Content is PageContent.Scanned or PageContent.Fax or PageContent.BrokenText)
-            return Ocr(bitmap, page.Number, ct);
+    private static PreparedPart PageImage(RenderedPage page) => new(PartRole.PageImage, DocumentSniffer.Png, page.Number, null, page.Png);
 
-        var text = pdf.GetPage(page.Number).Text.Trim();
-        return text.Length == 0 ? null : new PreparedPart(PartRole.PageText, DocumentSniffer.Text, page.Number, text, null);
-    }
-
-    private PreparedPart? Ocr(SKBitmap bitmap, int page, CancellationToken ct)
-    {
-        if (!_options.EnableOcr) return null;
-        var text = ocr.Recognize(bitmap, ct);
-        return text.Length == 0 ? null : new PreparedPart(PartRole.OcrText, DocumentSniffer.Text, page, text, null);
-    }
-
-    private static PreparedPart Png(SKBitmap bitmap, PageClassification page)
-    {
-        // Fax pages are black and white: a greyscale PNG is a fraction of the RGBA size and loses nothing.
-        using var gray = page.Content == PageContent.Fax ? bitmap.Copy(SKColorType.Gray8) : null;
-        using var data = (gray ?? bitmap).Encode(SKEncodedImageFormat.Png, 100);
-        return new PreparedPart(PartRole.PageImage, DocumentSniffer.Png, page.Number, null, data.ToArray());
-    }
+    private static PreparedPart? OcrText(RenderedPage page) =>
+        page.OcrText is { Length: > 0 } text ? new PreparedPart(PartRole.OcrText, DocumentSniffer.Text, page.Number, text, null) : null;
 
     private static PreparedPart Markdown(int? page, string text) => new(PartRole.PageText, "text/markdown", page, text, null);
 

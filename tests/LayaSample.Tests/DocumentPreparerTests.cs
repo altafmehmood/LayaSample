@@ -1,5 +1,6 @@
 using LayaSample.Api.Models;
 using LayaSample.Api.Services.Documents;
+using LayaSample.Rendering;
 using Microsoft.Extensions.Options;
 
 namespace LayaSample.Tests;
@@ -11,10 +12,14 @@ public class DocumentPreparerTests
     private static PreparedDocument Prepare(byte[] bytes, PreparationStrategy? strategy = null, DocumentAnalysisOptions? options = null, FakeOcr? ocr = null)
     {
         var opts = Microsoft.Extensions.Options.Options.Create(options ?? new DocumentAnalysisOptions());
-        var classifier = new DocumentClassifier(opts);
+        var rasterizer = new LocalPageRasterizer(ocr ?? new FakeOcr(), Microsoft.Extensions.Options.Options.Create(new RenderingOptions()));
+        var classifier = new DocumentClassifier(opts, rasterizer);
+        var preparer = new DocumentPreparer(opts, classifier, rasterizer, Microsoft.Extensions.Logging.Abstractions.NullLogger<DocumentPreparer>.Instance);
+        var ct = TestContext.Current.CancellationToken;
         using var stream = new MemoryStream(bytes);
-        var classification = classifier.Classify(stream, TestContext.Current.CancellationToken);
-        return new DocumentPreparer(opts, classifier, ocr ?? new FakeOcr(), Microsoft.Extensions.Logging.Abstractions.NullLogger<DocumentPreparer>.Instance).Prepare(stream, classification, strategy ?? classification.Strategy, TestContext.Current.CancellationToken);
+        // The in-process rasterizer completes synchronously, so blocking here cannot deadlock.
+        var classification = classifier.ClassifyAsync(stream, ct).GetAwaiter().GetResult();
+        return preparer.PrepareAsync(stream, classification, strategy ?? classification.Strategy, ct).GetAwaiter().GetResult();
     }
 
     [Fact]

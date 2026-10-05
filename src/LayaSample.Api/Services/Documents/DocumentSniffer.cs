@@ -5,15 +5,15 @@ namespace LayaSample.Api.Services.Documents;
 /// <summary>Identifies a file's media type from its content; names and client-supplied types are never trusted.</summary>
 public static class DocumentSniffer
 {
-    public const string Pdf = "application/pdf";
+    public const string Pdf = LayaSample.Rendering.MediaTypes.Pdf;
     public const string Xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     public const string Docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     public const string Zip = "application/zip";
     /// <summary>OLE compound file: legacy .xls/.doc, or a password-protected .xlsx/.docx.</summary>
     public const string Ole = "application/x-ole-storage";
-    public const string Tiff = "image/tiff";
-    public const string Png = "image/png";
-    public const string Jpeg = "image/jpeg";
+    public const string Tiff = LayaSample.Rendering.MediaTypes.Tiff;
+    public const string Png = LayaSample.Rendering.MediaTypes.Png;
+    public const string Jpeg = LayaSample.Rendering.MediaTypes.Jpeg;
     public const string Xml = "application/xml";
     public const string Json = "application/json";
     public const string Text = "text/plain";
