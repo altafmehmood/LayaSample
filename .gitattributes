@@ -1,0 +1,5 @@
+# Normalise text files to LF in the repository; Git detects binaries (PDF, TIFF, PNG, xlsx...) and leaves them alone.
+* text=auto
+
+# Shell scripts run inside Linux containers: CRLF (Git for Windows' default checkout) breaks them.
+*.sh text eol=lf

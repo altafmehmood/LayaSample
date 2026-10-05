@@ -20,6 +20,8 @@ ARG OCR_MODEL=PPOCRv5Latin
 FROM alpine:3.22 AS model-tools
 RUN apk add --no-cache curl
 COPY scripts/download-models.sh /download-models.sh
+# A Windows checkout may have CRLF line endings, which sh cannot run; .gitattributes prevents that for new checkouts.
+RUN sed -i 's/\r$//' /download-models.sh
 
 FROM model-tools AS laya-model
 RUN --mount=type=cache,target=/cache sh /download-models.sh laya /cache/laya && mkdir -p /models && cp -r /cache/laya /models/laya
