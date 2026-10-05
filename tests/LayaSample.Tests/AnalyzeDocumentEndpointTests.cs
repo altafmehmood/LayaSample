@@ -171,4 +171,71 @@ public class AnalyzeDocumentEndpointTests : IClassFixture<AnalyzeDocumentEndpoin
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, res.StatusCode);
     }
+
+    [Fact]
+    public async Task Errors_are_problem_details()
+    {
+        var res = await Post("hello"u8.ToArray(), "notes.txt");
+
+        Assert.Equal("application/problem+json", res.Content.Headers.ContentType?.MediaType);
+        using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(415, doc.RootElement.GetProperty("status").GetInt32());
+        Assert.Contains("unsupported document type", doc.RootElement.GetProperty("detail").GetString());
+    }
+
+    [Fact]
+    public async Task Binary_data_can_be_left_out()
+    {
+        var res = await Post(DocumentFixtures.Png(), "scan.png", "?dispatch=false&includeData=false");
+
+        var body = await res.Content.ReadFromJsonAsync<AnalyzeDocumentResponse>(Json, TestContext.Current.CancellationToken);
+        Assert.NotNull(body);
+        Assert.Contains(body.Parts, p => p.Role == PartRole.PageImage);
+        Assert.All(body.Parts, p => Assert.Null(p.DataBase64));
+    }
+
+    private static async Task<HttpResponseMessage> PostTo(HttpClient client, byte[] bytes, string fileName)
+    {
+        using var form = new MultipartFormDataContent { { new ByteArrayContent(bytes), "file", fileName } };
+        return await client.PostAsync("/api/documents/analyze?dispatch=false", form, TestContext.Current.CancellationToken);
+    }
+
+    private WebApplicationFactory<Program> WithBlockingOcr(BlockingOcr ocr, params (string Key, string Value)[] settings) =>
+        _factory.WithWebHostBuilder(b =>
+        {
+            foreach (var (key, value) in settings) b.UseSetting(key, value);
+            b.ConfigureServices(s =>
+            {
+                s.RemoveAll<IOcrEngine>();
+                s.AddSingleton<IOcrEngine>(ocr);
+            });
+        });
+
+    [Fact]
+    public async Task Requests_beyond_the_concurrency_limit_are_turned_away()
+    {
+        var ocr = new BlockingOcr();
+        using var factory = WithBlockingOcr(ocr, ("DocumentAnalysis:MaxConcurrentAnalyses", "1"), ("DocumentAnalysis:MaxQueuedAnalyses", "0"));
+        var client = factory.CreateClient();
+
+        var first = PostTo(client, DocumentFixtures.BlankPdf(), "scan.pdf");
+        await ocr.Entered.WaitAsync(TestContext.Current.CancellationToken); // the first request holds the only slot
+        var second = await PostTo(client, DocumentFixtures.TextPdf(), "text.pdf");
+        ocr.Release();
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, second.StatusCode);
+        Assert.NotNull(second.Headers.RetryAfter);
+        Assert.Equal(HttpStatusCode.OK, (await first).StatusCode);
+    }
+
+    [Fact]
+    public async Task Analysis_that_runs_too_long_times_out()
+    {
+        var ocr = new BlockingOcr();
+        using var factory = WithBlockingOcr(ocr, ("DocumentAnalysis:RequestTimeoutSeconds", "1"));
+
+        var res = await PostTo(factory.CreateClient(), DocumentFixtures.BlankPdf(), "scan.pdf");
+
+        Assert.Equal(HttpStatusCode.GatewayTimeout, res.StatusCode);
+    }
 }

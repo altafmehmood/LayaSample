@@ -1,7 +1,10 @@
 @host = http://localhost:5091
 
-### Model readiness (503 until loaded)
-GET {{host}}/health
+### Liveness (200 whenever the process is up)
+GET {{host}}/health/live
+
+### Readiness (503 while models load; 200 Degraded if one failed to load)
+GET {{host}}/health/ready
 
 ### Negative feedback
 POST {{host}}/api/feedback/analyze

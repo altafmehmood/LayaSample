@@ -9,7 +9,9 @@ TIFF/fax, PNG, JPEG), prepares them for an AI agent (page images, markdown, OCR 
     dotnet run --project src/LayaSample.Api
 
 The API listens on http://localhost:5091. The first start downloads the Laya model (~850 MB, can take several
-minutes); `GET /health` returns 503 until it is loaded.
+minutes). `GET /health/live` answers as soon as the process is up; `GET /health/ready` (also `/health`) returns 503
+until the Laya and OCR models are loaded, and 200 `Degraded` if one of them failed to load for good, since the rest of
+the service still works.
 
     curl -X POST localhost:5091/api/feedback/analyze -H 'content-type: application/json' \
       -d '{"text":"Room was filthy and the staff were rude."}'
@@ -17,12 +19,33 @@ minutes); `GET /health` returns 503 until it is loaded.
 Interactive API docs (Development only): http://localhost:5091/scalar/v1 (OpenAPI JSON at `/openapi/v1.json`).
 
 Response: `dissatisfied`, `dissatisfactionScore` (P(dissatisfied), 0–1), `rating` (1–5 dissatisfaction),
-`level` (None/Mild/Moderate/Severe), `primaryDriver` (null when unclear or not dissatisfied), `confidence`.
+`level` (None when not dissatisfied, otherwise Mild/Moderate/Severe from the rating), `primaryDriver` (null when
+unclear or not dissatisfied), `confidence`. Errors are problem details (`application/problem+json`).
 
 Documents go to `POST /api/documents/analyze`; see [docs/samples](docs/samples/README.md) for sample files and the
 expected results.
 
+## Limits
+Document analysis is CPU-bound, so each request runs within limits set under `DocumentAnalysis`:
+
+| Setting | Default | Effect |
+|---|---|---|
+| `MaxFileBytes` | 20 MB | Larger uploads get 413 |
+| `MaxPages` | 20 | Page renders per request, embedded documents included |
+| `MaxPdfPages` / `MaxImageFrames` | 2000 / 200 | Longer PDFs / TIFFs get 422 |
+| `MaxOfficeUncompressedBytes` | 256 MB | .xlsx/.docx that unpack larger (zip bombs) get 422 |
+| `MaxConcurrentAnalyses` | half the cores | Analyses running at once |
+| `MaxQueuedAnalyses` | 20 | Requests waiting for a slot; beyond that, 503 with `Retry-After` |
+| `RequestTimeoutSeconds` | 120 | Waiting plus analysis; then 504 |
+
+Invalid settings stop the app at startup. `?includeData=false` leaves base64 page images out of the response.
+
+Durations per stage and documents by kind and outcome are published on the `LayaSample.Documents` meter
+(`dotnet-counters monitor -n LayaSample.Api --counters LayaSample.Documents`).
+
 ## Notes
+- The endpoints have no authentication. Put the service behind an authenticating gateway, or add authentication,
+  before exposing it beyond a trusted network.
 - Model settings go under the `Laya` section of `appsettings.json` (`ModelRepository`, `ModelPath`, `CacheDirectory`, `IntraOpNumThreads`, `DecisionThreshold`). `ModelPath` loads a local copy and skips the download.
 - Confidences are **uncalibrated**; tune thresholds on your own labeled feedback before relying on them.
 
@@ -50,11 +73,17 @@ The image bakes in every model, so the container never downloads anything and ca
 
     docker build -t laya-sample .                                       # PP-OCRv5 Latin OCR
     docker build -t laya-sample --build-arg OCR_MODEL=PPOCRv6Small .    # multilingual OCR
-    docker run --rm -p 8080:8080 laya-sample
+    docker run --rm -p 8080:8080 --memory 4g --cpus 4 laya-sample
 
 The image is about 1.2 GB of content (850 MB of it is the Laya weights; Docker Desktop reports roughly double,
 counting compressed and unpacked layers). It runs as a non-root user in the Production environment, so Scalar is
-off. Model downloads use a BuildKit cache, so rebuilds don't fetch them again.
+off. Model downloads use a BuildKit cache, so rebuilds don't fetch them again. A `HEALTHCHECK` polls
+`/health/ready`. Set memory and CPU limits: PDFium, ImageMagick and Skia parse untrusted files in-process, and the
+runtime sizes its heap and thread pool from them.
 
 ## Test
     dotnet test
+
+CI (`.github/workflows/ci.yml`) restores in locked mode (`packages.lock.json`), builds with warnings as errors,
+runs the tests, fails on vulnerable packages or licences outside `.github/allowed-licenses.json`, and builds the
+Docker image. After changing a package, run `dotnet restore` and commit the updated lock files.

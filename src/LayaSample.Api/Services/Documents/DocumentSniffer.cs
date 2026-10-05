@@ -37,12 +37,14 @@ public static class DocumentSniffer
         stream.Position = start;
         var head = buffer.AsSpan(0, read);
 
-        if (head.IndexOf("%PDF-"u8) >= 0) return Pdf;
+        // Signatures at offset 0 first: "%PDF-" may sit anywhere in the first 1 KB, so it can also turn up inside
+        // another format's metadata (a PNG text chunk, a JPEG comment).
         if (head.StartsWith("PK\u0003\u0004"u8)) return SniffZip(stream, start);
         if (head.StartsWith((ReadOnlySpan<byte>)[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1])) return Ole;
         if (head.StartsWith("II*\0"u8) || head.StartsWith("MM\0*"u8)) return Tiff;
         if (head.StartsWith((ReadOnlySpan<byte>)[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])) return Png;
         if (head.StartsWith((ReadOnlySpan<byte>)[0xFF, 0xD8, 0xFF])) return Jpeg;
+        if (head.IndexOf("%PDF-"u8) >= 0) return Pdf;
 
         if (head.Length == 0 || head.Contains((byte)0)) return Binary;
         var text = head.StartsWith((ReadOnlySpan<byte>)[0xEF, 0xBB, 0xBF]) ? head[3..] : head;

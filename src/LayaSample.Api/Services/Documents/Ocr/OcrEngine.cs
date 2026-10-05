@@ -9,6 +9,10 @@ public interface IOcrEngine
     /// <summary>Recognises the text in an image, one line per detected text block.</summary>
     /// <exception cref="OcrUnavailableException">The OCR models are missing or cannot be loaded.</exception>
     string Recognize(SKBitmap image, CancellationToken ct = default);
+
+    /// <summary>Loads the models now, so the first document does not pay for it.</summary>
+    /// <exception cref="OcrUnavailableException">The OCR models are missing or cannot be loaded.</exception>
+    void EnsureLoaded() { }
 }
 
 /// <summary>
@@ -31,15 +35,18 @@ public enum OcrModel
 public sealed class OcrUnavailableException(string message, Exception? inner = null) : Exception(message, inner);
 
 /// <summary>
-/// RapidOCR (PaddleOCR models via ONNX Runtime). Models load on first use; calls are serialised
-/// because a <see cref="RapidOcr"/> instance is not documented as thread-safe.
+/// RapidOCR (PaddleOCR models via ONNX Runtime). Models load at startup (<see cref="OcrWarmup"/>) or on first use;
+/// a failed load is retried on the next call rather than remembered. Calls are serialised because a
+/// <see cref="RapidOcr"/> instance is not documented as thread-safe; ONNX Runtime already spreads one call over the
+/// cores.
 /// </summary>
 public sealed class RapidOcrEngine : IOcrEngine, IDisposable
 {
-    private readonly Lazy<RapidOcr> _ocr;
+    private readonly OcrModel _model;
     private readonly RapidOcrOptions _detectOptions;
-    private readonly Lock _gate = new();
+    private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly int _maxSide;
+    private RapidOcr? _ocr;
 
     public RapidOcrEngine(IOptions<DocumentAnalysisOptions> options)
     {
@@ -47,7 +54,20 @@ public sealed class RapidOcrEngine : IOcrEngine, IDisposable
         _maxSide = o.OcrMaxSide;
         // v6 detectors were exported for short-side adaptive resizing; Default's 1024 cap and border starve them.
         _detectOptions = o.OcrModel == OcrModel.PPOCRv5Latin ? RapidOcrOptions.Default : RapidOcrOptions.PPOCRv6;
-        _ocr = new Lazy<RapidOcr>(() => Load(o.OcrModel));
+        _model = o.OcrModel;
+    }
+
+    public void EnsureLoaded()
+    {
+        _gate.Wait();
+        try
+        {
+            _ocr ??= Load(_model);
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     private static RapidOcr Load(OcrModel model)
@@ -91,9 +111,17 @@ public sealed class RapidOcrEngine : IOcrEngine, IDisposable
     {
         ct.ThrowIfCancellationRequested();
         using var scaled = Downscale(image);
-        lock (_gate)
-            // The token is also checked inside each ONNX run, so a cancelled request stops mid-page.
-            return _ocr.Value.Detect(scaled ?? image, _detectOptions, ct).StrRes.Trim();
+        // A cancelled request stops waiting for its turn; the token is also checked inside each ONNX run.
+        _gate.Wait(ct);
+        try
+        {
+            _ocr ??= Load(_model);
+            return _ocr.Detect(scaled ?? image, _detectOptions, ct).StrRes.Trim();
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     /// <returns>Null when the image is already small enough.</returns>
@@ -108,6 +136,7 @@ public sealed class RapidOcrEngine : IOcrEngine, IDisposable
 
     public void Dispose()
     {
-        if (_ocr.IsValueCreated) _ocr.Value.Dispose();
+        _ocr?.Dispose();
+        _gate.Dispose();
     }
 }

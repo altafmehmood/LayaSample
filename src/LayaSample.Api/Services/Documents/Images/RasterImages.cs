@@ -15,12 +15,23 @@ public static class RasterImages
     private static readonly HashSet<CompressionMethod> FaxCompressions =
         [CompressionMethod.Fax, CompressionMethod.Group4, CompressionMethod.JBIG1, CompressionMethod.JBIG2];
 
+    static RasterImages()
+    {
+        // Process-wide backstops inside ImageMagick's own decoders, behind the per-page check in SquarePixelSize.
+        ResourceLimits.Width = 100_000;
+        ResourceLimits.Height = 100_000;
+        ResourceLimits.MaxMemoryRequest = 1024UL * 1024 * 1024;
+    }
+
+    /// <param name="maxFrames">Pages read at most; a TIFF can hold any number of them.</param>
     /// <exception cref="InvalidDataException">A page is larger than the decode limit.</exception>
-    public static IReadOnlyList<RasterPage> Inspect(byte[] bytes, string mediaType)
+    public static IReadOnlyList<RasterPage> Inspect(byte[] bytes, string mediaType, int maxFrames)
     {
         // Ping reads each page's header without decoding pixels.
         using var pages = new MagickImageCollection();
-        pages.Ping(bytes, Settings(mediaType));
+        var settings = Settings(mediaType);
+        settings.FrameCount = (uint)maxFrames;
+        pages.Ping(bytes, settings);
         if (pages.Count == 0) throw new InvalidDataException("image has no pages");
         return pages.Select((p, i) =>
         {
@@ -32,7 +43,10 @@ public static class RasterImages
     /// <summary>Decodes one page (zero-based) to an upright RGBA bitmap with square pixels.</summary>
     public static SKBitmap Decode(byte[] bytes, string mediaType, int pageIndex)
     {
+        // Check the size from the page header before decoding its pixels. Pinging a TIFF frame by index fails, so this
+        // pings the frames up to it (headers only; the frame count was capped at classification).
         var settings = Settings(mediaType);
+        settings.FrameCount = (uint)pageIndex + 1;
         using (var headers = new MagickImageCollection())
         {
             headers.Ping(bytes, settings);

@@ -20,6 +20,10 @@ Query parameters:
 
 - `strategy=<name>` overrides the classifier's choice: `AsIs`, `RenderToPng`, `Markdown`, `Hybrid`, `StructuredData` or `PerPage`.
 - `dispatch=false` skips the agent call.
+- `includeData=false` leaves page images and original bytes out of the response; parts keep their metadata and text.
+
+Errors are [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem details (`application/problem+json`) with the
+reason in `detail`.
 
 ## Expected results
 
@@ -33,6 +37,7 @@ Query parameters:
 | `pdf/annotated-fill-and-sign.pdf` | AnnotatedPdf | RenderToPng | Page image showing the FreeText annotation |
 | `pdf/xfa-dynamic.pdf` | XfaPdf | StructuredData | XFA datasets XML only (the page is a viewer placeholder) |
 | `pdf/e-invoice-with-xml.pdf` | TextPdf | Markdown | Page markdown + embedded `invoice.xml` (`source` set) |
+| `pdf/signed.pdf` | TextPdf | Markdown | Page markdown; `signatures` shows signer "Test Signer", integrity valid, covers the whole file |
 | `images/fax-ocr.tif` | Image (2 fax pages) | Hybrid | Image + OCR text per page; 204x98 dpi pages stretched to square pixels |
 | `images/fax-blank.tif` | Image (2 fax pages) | Hybrid | Two page images |
 | `images/scan-ocr.png` | Image | Hybrid | Image + OCR text |
@@ -42,7 +47,11 @@ Query parameters:
 | `unsupported/notes.txt` | — | — | 415: unsupported type (content is sniffed, the name is ignored) |
 | `unsupported/legacy.doc` | — | — | 415: legacy or password-protected Office file |
 
-Not covered here: broken text encodings, layout-heavy pages, fax images inside PDFs, and digitally signed PDFs. These are hard to generate faithfully. Their rules are unit-tested in `PdfClassificationRulesTests`.
+The signature in `pdf/signed.pdf` comes from a throwaway self-signed certificate: integrity is checked, trust is
+not. Tampered and later-updated signed files are covered by `DocumentClassifierTests`.
+
+Not covered here: broken text encodings, layout-heavy pages and fax images inside PDFs. These are hard to generate
+faithfully. Their rules are unit-tested in `PdfClassificationRulesTests`.
 
 ## Regenerating
 

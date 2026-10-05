@@ -168,6 +168,28 @@ Content-Type: image/png
 < ./images/scan-ocr.png
 --sample--
 
+### Signed PDF: see classification.signatures
+POST {{host}}/api/documents/analyze?dispatch=false
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="signed.pdf"
+Content-Type: application/pdf
+
+< ./pdf/signed.pdf
+--sample--
+
+### Metadata and text only (includeData=false): no base64 page images
+POST {{host}}/api/documents/analyze?dispatch=false&includeData=false
+Content-Type: multipart/form-data; boundary=sample
+
+--sample
+Content-Disposition: form-data; name="file"; filename="fax-ocr.tif"
+Content-Type: image/tiff
+
+< ./images/fax-ocr.tif
+--sample--
+
 ### Rejected (415): plain text, whatever it is called
 POST {{host}}/api/documents/analyze?dispatch=false
 Content-Type: multipart/form-data; boundary=sample

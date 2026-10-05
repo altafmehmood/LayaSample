@@ -24,24 +24,27 @@ public sealed class DissatisfactionAnalyzer(IDecisionClient client) : IDissatisf
             .Choose("driver", Drivers, "What is the main cause of the guest's dissatisfaction?");
 
         var result = await client.EvaluateAsync(request, ct);
+        return Map(result.Probability("dissatisfied"), result.Score("rating"), result.Choice("driver"));
+    }
 
-        var asked = result.Probability("dissatisfied");
-        var score = result.Score("rating");
-        var driver = result.Choice("driver");
-
+    /// <summary>
+    /// The level follows <see cref="AnalyzeResponse.Dissatisfied"/> (which uses the configured decision threshold) and
+    /// the rating, so the two can never disagree: None when not dissatisfied, otherwise how strongly.
+    /// </summary>
+    public static AnalyzeResponse Map(ProbabilityResult asked, ScoreResult rating, ChoiceResult driver)
+    {
         var p = asked.Probability;
-        var level = p switch
+        var level = !asked.IsTrue ? "None" : rating.MostLikelyLevel switch
         {
-            < 0.25 => "None",
-            < 0.5 => "Mild",
-            < 0.8 => "Moderate",
-            _ => "Severe"
+            <= 1 => "Mild",       // not at all / slightly dissatisfied
+            2 => "Moderate",
+            _ => "Severe"         // very / extremely dissatisfied
         };
 
         return new AnalyzeResponse(
             Dissatisfied: asked.IsTrue,
             DissatisfactionScore: Math.Round(p, 4),
-            Rating: score.MostLikelyLevel + 1,
+            Rating: rating.MostLikelyLevel + 1,
             Level: level,
             PrimaryDriver: asked.IsTrue ? driver.ChoiceOrNull(0.3) : null,
             Confidence: Math.Round(Math.Abs(p - 0.5) * 2, 4));

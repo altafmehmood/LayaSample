@@ -111,14 +111,108 @@ public static class DocumentFixtures
     /// Text PDF carrying an embedded e-invoice: 1 catalog with an EmbeddedFiles name tree, 2 pages, 3 page, 4 content,
     /// 5 file specification, 6 Helvetica, 7 the embedded XML.
     /// </summary>
-    public static byte[] PdfWithXmlAttachment(string name = "invoice.xml") => BuildPdf(
+    public static byte[] PdfWithXmlAttachment(string name = "invoice.xml") =>
+        PdfWithAttachment(name, "<Invoice><Total>42.00</Total></Invoice>"u8.ToArray());
+
+    /// <param name="pageContent">Content stream of the carrying page; empty makes it a page without a text layer.</param>
+    public static byte[] PdfWithAttachment(string name, byte[] content, string pageContent = $"BT /F1 12 Tf 50 700 Td ({LongText}) Tj ET") => BuildPdf(
         $"<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [({name}) 5 0 R] >> >> >>",
         "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
         "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 6 0 R >> >> >>",
-        StreamObject("<< ", $"BT /F1 12 Tf 50 700 Td ({LongText}) Tj ET"),
+        StreamObject("<< ", pageContent),
         $"<< /Type /Filespec /F ({name}) /UF ({name}) /EF << /F 7 0 R >> >>",
         "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        StreamObject("<< /Type /EmbeddedFile ", "<Invoice><Total>42.00</Total></Invoice>"));
+        // Latin-1 maps every byte to one char, so binary content survives the string round trip.
+        StreamObject("<< /Type /EmbeddedFile ", Encoding.Latin1.GetString(content)));
+
+    public enum SignatureCase { Valid, Tampered, UpdatedAfterSigning }
+
+    /// <summary>
+    /// A text page signed (adbe.pkcs7.detached) with a throwaway self-signed certificate "CN=Test Signer":
+    /// 1 catalog, 2 pages, 3 page, 4 signature widget, 5 signature dictionary, 6 content, 7 Helvetica.
+    /// </summary>
+    public static byte[] SignedPdf(SignatureCase signatureCase = SignatureCase.Valid)
+    {
+        const int contentsHexLength = 8192;
+        const string rangePlaceholder = "[0 0000000000 0000000000 0000000000]";
+        var bytes = BuildPdf(
+            "<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] /SigFlags 3 >> >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Annots [4 0 R] /Contents 6 0 R /Resources << /Font << /F1 7 0 R >> >> >>",
+            "<< /Type /Annot /Subtype /Widget /FT /Sig /T (Signature1) /V 5 0 R /Rect [0 0 0 0] /P 3 0 R /F 132 >>",
+            $"<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached /Name (Dict Name) /M (D:20240131120000+01'00') /ByteRange {rangePlaceholder} /Contents <{new string('0', contentsHexLength)}> >>",
+            StreamObject("<< ", $"BT /F1 12 Tf 50 700 Td ({LongText}) Tj ET"),
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+
+        // The signed bytes are everything except the <...> hex string; placeholders keep their width so offsets hold.
+        var text = Encoding.Latin1.GetString(bytes);
+        var gapStart = text.IndexOf("/Contents <", StringComparison.Ordinal) + "/Contents ".Length;
+        var gapEnd = gapStart + contentsHexLength + 2;
+        var range = $"[0 {gapStart:D10} {gapEnd:D10} {bytes.Length - gapEnd:D10}]";
+        text = text.Replace(rangePlaceholder, range);
+        bytes = Encoding.Latin1.GetBytes(text);
+
+        using var key = System.Security.Cryptography.RSA.Create(2048);
+        var request = new System.Security.Cryptography.X509Certificates.CertificateRequest(
+            "CN=Test Signer", key, System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+        using var cert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+        var cms = new System.Security.Cryptography.Pkcs.SignedCms(
+            new System.Security.Cryptography.Pkcs.ContentInfo([.. bytes[..gapStart], .. bytes[gapEnd..]]), detached: true);
+        cms.ComputeSignature(new System.Security.Cryptography.Pkcs.CmsSigner(cert));
+        var hex = Convert.ToHexString(cms.Encode()).PadRight(contentsHexLength, '0');
+        Encoding.ASCII.GetBytes(hex).CopyTo(bytes, gapStart + 1);
+
+        switch (signatureCase)
+        {
+            case SignatureCase.Tampered:
+                // Change one letter of the signed page text.
+                var at = Encoding.Latin1.GetString(bytes).IndexOf("agreement", StringComparison.Ordinal);
+                bytes[at] = (byte)'A';
+                break;
+            case SignatureCase.UpdatedAfterSigning:
+                bytes = [.. bytes, .. "% incremental update\n"u8];
+                break;
+        }
+        return bytes;
+    }
+
+    /// <summary>A valid .xlsx with an extra part that unpacks to <paramref name="paddingBytes"/> of zeros.</summary>
+    public static byte[] XlsxWithPadding(int paddingBytes)
+    {
+        var ms = new MemoryStream();
+        ms.Write(Xlsx());
+        using (var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Update, leaveOpen: true))
+        using (var entry = zip.CreateEntry("xl/padding.bin").Open())
+            entry.Write(new byte[paddingBytes]);
+        return ms.ToArray();
+    }
+
+    /// <summary>A PNG whose text chunk contains "%PDF-", as image metadata can.</summary>
+    public static byte[] PngMentioningPdf()
+    {
+        var png = Png();
+        var ms = new MemoryStream();
+        ms.Write(png.AsSpan(0, 33)); // signature + IHDR
+        PngChunk(ms, "tEXt", Encoding.Latin1.GetBytes("Comment\0scanned from %PDF-1.7 original"));
+        ms.Write(png.AsSpan(33));
+        return ms.ToArray();
+    }
+
+    /// <summary>A paragraph inside a content control, and a numbered list item.</summary>
+    public static byte[] DocxWithContentControlAndList()
+    {
+        using var ms = new MemoryStream();
+        using (var doc = WordprocessingDocument.Create(ms, WordprocessingDocumentType.Document))
+        {
+            var main = doc.AddMainDocumentPart();
+            main.Document = new Document(new Body(
+                new SdtBlock(new SdtContentBlock(new Paragraph(new Run(new Text("Customer: Jane Doe"))))),
+                new Paragraph(
+                    new ParagraphProperties(new NumberingProperties(new NumberingLevelReference { Val = 0 }, new NumberingId { Val = 1 })),
+                    new Run(new Text("First item")))));
+        }
+        return ms.ToArray();
+    }
 
     private static byte[] BuildPdf(params string[] objects)
     {

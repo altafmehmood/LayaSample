@@ -8,8 +8,9 @@ public class DocumentClassifierTests
 {
     private static readonly IOptions<DocumentAnalysisOptions> Options = Microsoft.Extensions.Options.Options.Create(new DocumentAnalysisOptions());
 
-    private static DocumentClassification Classify(byte[] bytes) =>
-        new DocumentClassifier(Options).Classify(new MemoryStream(bytes));
+    private static DocumentClassification Classify(byte[] bytes, DocumentAnalysisOptions? options = null) =>
+        new DocumentClassifier(options is null ? Options : Microsoft.Extensions.Options.Options.Create(options))
+            .Classify(new MemoryStream(bytes), TestContext.Current.CancellationToken);
 
     [Fact]
     public void Filled_form_pdf_is_rendered_to_png()
@@ -70,7 +71,7 @@ public class DocumentClassifierTests
     public void Scanned_pdf_is_only_rendered_when_ocr_is_disabled()
     {
         var result = new DocumentClassifier(Microsoft.Extensions.Options.Options.Create(new DocumentAnalysisOptions { EnableOcr = false }))
-            .Classify(new MemoryStream(DocumentFixtures.BlankPdf()));
+            .Classify(new MemoryStream(DocumentFixtures.BlankPdf()), TestContext.Current.CancellationToken);
 
         Assert.Equal(PreparationStrategy.RenderToPng, result.Strategy);
     }
@@ -199,5 +200,77 @@ public class DocumentClassifierTests
     {
         var ex = Assert.Throws<DocumentException>(() => Classify("%PDF-1.7\n1 0 obj"u8.ToArray()));
         Assert.Equal(422, ex.StatusCode);
+    }
+
+    [Fact]
+    public void Valid_signature_covering_the_file_is_verified()
+    {
+        var signature = Assert.Single(Classify(DocumentFixtures.SignedPdf()).Signatures);
+
+        Assert.Equal(("Signature1", "Test Signer", true, true, null),
+            (signature.FieldName, signature.Signer, signature.IntegrityValid, signature.CoversWholeDocument, signature.Error));
+        Assert.NotNull(signature.SigningTime);
+    }
+
+    [Fact]
+    public void Tampered_signed_content_fails_integrity()
+    {
+        var signature = Assert.Single(Classify(DocumentFixtures.SignedPdf(DocumentFixtures.SignatureCase.Tampered)).Signatures);
+
+        Assert.False(signature.IntegrityValid);
+        Assert.NotNull(signature.Error);
+    }
+
+    [Fact]
+    public void Content_appended_after_signing_is_reported()
+    {
+        var signature = Assert.Single(Classify(DocumentFixtures.SignedPdf(DocumentFixtures.SignatureCase.UpdatedAfterSigning)).Signatures);
+
+        Assert.True(signature.IntegrityValid);
+        Assert.False(signature.CoversWholeDocument);
+        Assert.Contains("incremental update", signature.Error);
+    }
+
+    [Fact]
+    public void Office_file_that_unpacks_too_large_is_rejected()
+    {
+        var bomb = DocumentFixtures.XlsxWithPadding(2 * 1024 * 1024);
+
+        var ex = Assert.Throws<DocumentException>(() => Classify(bomb, new DocumentAnalysisOptions { MaxOfficeUncompressedBytes = 1024 * 1024 }));
+        Assert.Equal(422, ex.StatusCode);
+        Assert.Contains("unpacked", ex.Message);
+    }
+
+    [Fact]
+    public void Pdf_with_too_many_pages_is_rejected()
+    {
+        var ex = Assert.Throws<DocumentException>(() => Classify(DocumentFixtures.TextPdf(), new DocumentAnalysisOptions { MaxPdfPages = 1 }));
+        Assert.Equal(422, ex.StatusCode);
+        Assert.Contains("2 pages", ex.Message);
+    }
+
+    [Fact]
+    public void Tiff_with_too_many_pages_is_rejected()
+    {
+        var ex = Assert.Throws<DocumentException>(() => Classify(DocumentFixtures.FaxTiff(pages: 3), new DocumentAnalysisOptions { MaxImageFrames = 2 }));
+        Assert.Equal(422, ex.StatusCode);
+    }
+
+    [Fact]
+    public void Image_whose_metadata_mentions_pdf_is_still_an_image()
+    {
+        var result = Classify(DocumentFixtures.PngMentioningPdf());
+
+        Assert.Equal((DocumentKind.Image, "image/png"), (result.Kind, result.MediaType));
+    }
+
+    [Fact]
+    public void Classification_stops_when_cancelled()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Assert.ThrowsAny<OperationCanceledException>(() =>
+            new DocumentClassifier(Options).Classify(new MemoryStream(DocumentFixtures.TextPdf()), cts.Token));
     }
 }

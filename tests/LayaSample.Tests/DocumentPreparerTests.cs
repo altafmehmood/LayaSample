@@ -13,8 +13,8 @@ public class DocumentPreparerTests
         var opts = Microsoft.Extensions.Options.Options.Create(options ?? new DocumentAnalysisOptions());
         var classifier = new DocumentClassifier(opts);
         using var stream = new MemoryStream(bytes);
-        var classification = classifier.Classify(stream);
-        return new DocumentPreparer(opts, classifier, ocr ?? new FakeOcr()).Prepare(stream, classification, strategy ?? classification.Strategy);
+        var classification = classifier.Classify(stream, TestContext.Current.CancellationToken);
+        return new DocumentPreparer(opts, classifier, ocr ?? new FakeOcr(), Microsoft.Extensions.Logging.Abstractions.NullLogger<DocumentPreparer>.Instance).Prepare(stream, classification, strategy ?? classification.Strategy, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -133,6 +133,8 @@ public class DocumentPreparerTests
         Assert.Equal(2, prepared.Parts.Count(p => p.Role == PartRole.OcrText));
         // 204x98 dpi: height is stretched by 204/98 so the page is not squashed.
         Assert.All(ocr.Calls, c => Assert.Equal((1728, 833), c));
+        // Fax pages are black and white, so they are returned as greyscale PNGs.
+        Assert.All(images, p => Assert.Equal(SkiaSharp.SKColorType.Gray8, SkiaSharp.SKCodec.Create(new MemoryStream(p.Data!)).Info.ColorType));
     }
 
     [Fact]
@@ -225,5 +227,38 @@ public class DocumentPreparerTests
     {
         var ex = Assert.Throws<DocumentException>(() => Prepare(DocumentFixtures.Xlsx(), PreparationStrategy.RenderToPng));
         Assert.Equal(400, ex.StatusCode);
+    }
+
+    [Fact]
+    public void Render_budget_is_shared_with_embedded_documents()
+    {
+        // Carrier page without a text layer (rendered), plus an embedded scanned PDF (also rendered).
+        var pdf = DocumentFixtures.PdfWithAttachment("scan.pdf", DocumentFixtures.BlankPdf(), pageContent: "");
+
+        var all = Prepare(pdf);
+        var capped = Prepare(pdf, options: new DocumentAnalysisOptions { MaxPages = 1 });
+
+        Assert.Equal(2, all.Parts.Count(p => p.Role == PartRole.PageImage));
+        var image = Assert.Single(capped.Parts, p => p.Role == PartRole.PageImage);
+        Assert.Null(image.Source);
+    }
+
+    [Fact]
+    public void Xml_attachment_is_decoded_with_its_declared_encoding()
+    {
+        var xml = System.Text.Encoding.Latin1.GetBytes("<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><Invoice><Name>Müller</Name></Invoice>");
+
+        var part = Assert.Single(Prepare(DocumentFixtures.PdfWithAttachment("invoice.xml", xml)).Parts, p => p.Source == "invoice.xml");
+
+        Assert.Contains("<Name>Müller</Name>", part.Text);
+    }
+
+    [Fact]
+    public void Docx_content_controls_and_lists_are_converted()
+    {
+        var text = Assert.Single(Prepare(DocumentFixtures.DocxWithContentControlAndList()).Parts).Text!;
+
+        Assert.Contains("Customer: Jane Doe", text);
+        Assert.Contains("- First item", text);
     }
 }

@@ -16,3 +16,21 @@ internal sealed class FakeOcr(string text = "recognised text", bool fail = false
         return text;
     }
 }
+
+/// <summary>Holds every OCR call until released (or cancelled), to keep a request in flight.</summary>
+internal sealed class BlockingOcr : IOcrEngine
+{
+    private readonly SemaphoreSlim _release = new(0);
+
+    /// <summary>Released once per call that has started.</summary>
+    public SemaphoreSlim Entered { get; } = new(0);
+
+    public string Recognize(SKBitmap image, CancellationToken ct = default)
+    {
+        Entered.Release();
+        _release.Wait(ct);
+        return "recognised text";
+    }
+
+    public void Release() => _release.Release();
+}

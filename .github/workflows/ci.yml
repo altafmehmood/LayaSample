@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore (lock files must be up to date)
+        run: dotnet restore --locked-mode
+
+      - name: Build
+        run: dotnet build --no-restore -c Release -warnaserror
+
+      - name: Test
+        run: dotnet test --no-build -c Release
+
+      - name: Vulnerable packages
+        run: |
+          dotnet list package --vulnerable --include-transitive | tee vulnerable.txt
+          ! grep -q "has the following vulnerable packages" vulnerable.txt
+
+      # Dependency policy (CLAUDE.md): permissive licences only, transitive dependencies included.
+      - name: Licences
+        run: dotnet dnx -y nuget-license@4.0.18 -- -i LayaSample.slnx -t -a .github/allowed-licenses.json
+
+  docker:
+    needs: build-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: laya-sample:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

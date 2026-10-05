@@ -1,4 +1,5 @@
 #:project ../../tests/LayaSample.Tests/LayaSample.Tests.csproj
+#:property RestorePackagesWithLockFile=false
 
 // Regenerates the manual-testing samples in this folder: dotnet run docs/samples/generate.cs
 // Most come from the test fixtures; the "-ocr" samples carry real text so OCR has something to read.
@@ -31,6 +32,7 @@ var samples = new Dictionary<string, byte[]>
     ["pdf/annotated-fill-and-sign.pdf"] = DocumentFixtures.AnnotatedPdf(),
     ["pdf/xfa-dynamic.pdf"] = DocumentFixtures.DynamicXfaPdf(),
     ["pdf/e-invoice-with-xml.pdf"] = DocumentFixtures.PdfWithXmlAttachment(),
+    ["pdf/signed.pdf"] = DocumentFixtures.SignedPdf(),
     ["images/fax-blank.tif"] = DocumentFixtures.FaxTiff(),
     ["images/fax-ocr.tif"] = FaxTiff(TextImage(invoice), TextImage(["Page 2 of 2", "Payment terms: 30 days net"])),
     ["images/blank.png"] = DocumentFixtures.Png(),
@@ -58,7 +60,7 @@ static SKBitmap TextImage(string[] lines)
     using var font = new SKFont(SKTypeface.FromFamilyName("Helvetica"), 40);
     using var paint = new SKPaint { Color = SKColors.Black, IsAntialias = true };
     for (var i = 0; i < lines.Length; i++)
-        canvas.DrawText(lines[i], 120, 200 + i * 70, font, paint);
+        canvas.DrawText(lines[i], 120, 200 + i * 70, SKTextAlign.Left, font, paint);
     return bitmap;
 }
 

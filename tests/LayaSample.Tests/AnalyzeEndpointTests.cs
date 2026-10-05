@@ -46,4 +46,31 @@ public class AnalyzeEndpointTests : IClassFixture<AnalyzeEndpointTests.Factory>
         var res = await _client.PostAsJsonAsync("/api/feedback/analyze", new AnalyzeRequest("Terrible stay"), TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, res.StatusCode);
     }
+
+    [Fact]
+    public async Task Liveness_does_not_wait_for_models()
+    {
+        var res = await _client.GetAsync("/health/live", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task Readiness_reports_each_model_while_loading()
+    {
+        var res = await _client.GetAsync("/health/ready", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, res.StatusCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(await res.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var checks = doc.RootElement.GetProperty("checks");
+        Assert.Equal("loading", checks.GetProperty("laya").GetProperty("description").GetString());
+        Assert.Equal("loading", checks.GetProperty("ocr").GetProperty("description").GetString());
+    }
+
+    [Theory]
+    [InlineData(WarmupState.Ready, "Healthy")]
+    [InlineData(WarmupState.Loading, "Unhealthy")]
+    // A model that failed for good leaves the rest of the service usable, so the instance stays in rotation.
+    [InlineData(WarmupState.Failed, "Degraded")]
+    public void Model_state_maps_to_health(WarmupState state, string status) =>
+        Assert.Equal(status, HealthChecks.FromState(state, "feature").Status.ToString());
 }

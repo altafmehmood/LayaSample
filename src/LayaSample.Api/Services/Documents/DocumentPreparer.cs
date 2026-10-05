@@ -1,5 +1,7 @@
 using System.Text;
+using System.Xml;
 using ClosedXML.Excel;
+using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using LayaSample.Api.Models;
@@ -20,16 +22,32 @@ public interface IDocumentPreparer
     PreparedDocument Prepare(Stream stream, DocumentClassification classification, PreparationStrategy strategy, CancellationToken ct = default);
 }
 
-public sealed class DocumentPreparer(IOptions<DocumentAnalysisOptions> options, IDocumentClassifier classifier, IOcrEngine ocr) : IDocumentPreparer
+public sealed class DocumentPreparer(
+    IOptions<DocumentAnalysisOptions> options, IDocumentClassifier classifier, IOcrEngine ocr, ILogger<DocumentPreparer> logger)
+    : IDocumentPreparer
 {
     private readonly DocumentAnalysisOptions _options = options.Value;
+
+    /// <summary>Page renders left for one request, shared by the document and its embedded documents.</summary>
+    private sealed class Budget(int renders)
+    {
+        private int _renders = renders;
+
+        public bool TryRender()
+        {
+            if (_renders == 0) return false;
+            _renders--;
+            return true;
+        }
+    }
 
     public PreparedDocument Prepare(Stream stream, DocumentClassification classification, PreparationStrategy strategy, CancellationToken ct = default)
     {
         Validate(classification.Kind, strategy);
         try
         {
-            return new PreparedDocument(strategy, PrepareParts(StreamBytes.Read(stream), classification, strategy, includeAttachments: true, ct));
+            var budget = new Budget(_options.MaxPages);
+            return new PreparedDocument(strategy, PrepareParts(StreamBytes.Read(stream), classification, strategy, budget, includeAttachments: true, ct));
         }
         // The container was valid enough to classify, but the libraries reject its content.
         catch (Exception ex) when (ex is not (DocumentException or OperationCanceledException or OcrUnavailableException))
@@ -53,7 +71,8 @@ public sealed class DocumentPreparer(IOptions<DocumentAnalysisOptions> options, 
         if (error is not null) throw new DocumentException(error, StatusCodes.Status400BadRequest);
     }
 
-    private List<PreparedPart> PrepareParts(byte[] bytes, DocumentClassification classification, PreparationStrategy strategy, bool includeAttachments, CancellationToken ct)
+    private List<PreparedPart> PrepareParts(byte[] bytes, DocumentClassification classification, PreparationStrategy strategy, Budget budget,
+        bool includeAttachments, CancellationToken ct)
     {
         if (strategy == PreparationStrategy.AsIs)
             return [new PreparedPart(PartRole.Original, classification.MediaType, null, null, bytes)];
@@ -62,32 +81,34 @@ public sealed class DocumentPreparer(IOptions<DocumentAnalysisOptions> options, 
         {
             DocumentKind.Spreadsheet => [Markdown(null, SpreadsheetToMarkdown(new MemoryStream(bytes, writable: false), ct))],
             DocumentKind.WordDocument => [Markdown(null, WordToMarkdown(new MemoryStream(bytes, writable: false)))],
-            DocumentKind.Image => PrepareImage(bytes, classification, strategy, ct),
-            _ => PreparePdf(bytes, classification, strategy, includeAttachments, ct)
+            DocumentKind.Image => PrepareImage(bytes, classification, strategy, budget, ct),
+            _ => PreparePdf(bytes, classification, strategy, budget, includeAttachments, ct)
         };
     }
 
-    private List<PreparedPart> PrepareImage(byte[] bytes, DocumentClassification classification, PreparationStrategy strategy, CancellationToken ct)
+    private List<PreparedPart> PrepareImage(byte[] bytes, DocumentClassification classification, PreparationStrategy strategy, Budget budget,
+        CancellationToken ct)
     {
         var parts = new List<PreparedPart>();
-        foreach (var page in classification.Pages.Take(_options.MaxPages))
+        foreach (var page in classification.Pages)
         {
             ct.ThrowIfCancellationRequested();
+            if (!budget.TryRender()) break;
             using var bitmap = RasterImages.Decode(bytes, classification.MediaType, page.Number - 1);
-            parts.Add(Png(bitmap, page.Number));
+            parts.Add(Png(bitmap, page));
             if (strategy == PreparationStrategy.Hybrid && Ocr(bitmap, page.Number, ct) is { } text) parts.Add(text);
         }
         return parts;
     }
 
-    private List<PreparedPart> PreparePdf(byte[] bytes, DocumentClassification classification, PreparationStrategy strategy, bool includeAttachments, CancellationToken ct)
+    private List<PreparedPart> PreparePdf(byte[] bytes, DocumentClassification classification, PreparationStrategy strategy, Budget budget,
+        bool includeAttachments, CancellationToken ct)
     {
         using var pdf = PdfDocument.Open(bytes);
         var parts = new List<PreparedPart>();
 
         // StructuredData skips the pages entirely (for dynamic XFA they are only a viewer placeholder).
         IReadOnlyList<PageClassification> pages = strategy == PreparationStrategy.StructuredData ? [] : classification.Pages;
-        var rendered = 0;
         foreach (var page in pages)
         {
             ct.ThrowIfCancellationRequested();
@@ -97,12 +118,11 @@ public sealed class DocumentPreparer(IOptions<DocumentAnalysisOptions> options, 
                 parts.Add(Markdown(page.Number, $"## Page {page.Number}\n\n{pdf.GetPage(page.Number).Text.Trim()}\n"));
                 continue;
             }
-            // The cap applies to renders only; markdown pages after it are still included.
-            if (pageStrategy is not (PreparationStrategy.RenderToPng or PreparationStrategy.Hybrid) || rendered >= _options.MaxPages) continue;
-            rendered++;
+            // The budget applies to renders only; markdown pages after it are still included.
+            if (pageStrategy is not (PreparationStrategy.RenderToPng or PreparationStrategy.Hybrid) || !budget.TryRender()) continue;
 
             using var bitmap = Render(bytes, page);
-            parts.Add(Png(bitmap, page.Number));
+            parts.Add(Png(bitmap, page));
             if (pageStrategy == PreparationStrategy.Hybrid && HybridText(pdf, page, bitmap, ct) is { } text) parts.Add(text);
         }
 
@@ -114,7 +134,7 @@ public sealed class DocumentPreparer(IOptions<DocumentAnalysisOptions> options, 
         if (includeAttachments)
         {
             foreach (var (name, data) in PdfStructuredData.ReadAttachments(pdf).Take(_options.MaxAttachments))
-                parts.AddRange(PrepareAttachment(name, data.ToArray(), structuredOnly: strategy == PreparationStrategy.StructuredData, ct));
+                parts.AddRange(PrepareAttachment(name, data.ToArray(), structuredOnly: strategy == PreparationStrategy.StructuredData, budget, ct));
         }
 
         if (strategy == PreparationStrategy.StructuredData && parts.Count == 0)
@@ -127,24 +147,43 @@ public sealed class DocumentPreparer(IOptions<DocumentAnalysisOptions> options, 
     /// Textual attachments (e-invoice XML, JSON) are passed through; embedded documents are classified and prepared
     /// with their own default strategy. Attachments that cannot be prepared are still listed in the classification.
     /// </summary>
-    private IEnumerable<PreparedPart> PrepareAttachment(string name, byte[] bytes, bool structuredOnly, CancellationToken ct)
+    private IEnumerable<PreparedPart> PrepareAttachment(string name, byte[] bytes, bool structuredOnly, Budget budget, CancellationToken ct)
     {
         var mediaType = DocumentSniffer.Sniff(bytes);
         if (DocumentSniffer.IsTextual(mediaType))
-            return [new PreparedPart(PartRole.StructuredData, mediaType, null, Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF'), null, name)];
+            return [new PreparedPart(PartRole.StructuredData, mediaType, null, DecodeText(bytes, mediaType), null, name)];
         if (structuredOnly) return [];
 
         try
         {
-            var classification = classifier.Classify(new MemoryStream(bytes, writable: false));
-            return PrepareParts(bytes, classification, classification.Strategy, includeAttachments: false, ct)
+            var classification = classifier.Classify(new MemoryStream(bytes, writable: false), ct);
+            return PrepareParts(bytes, classification, classification.Strategy, budget, includeAttachments: false, ct)
                 .Select(p => p with { Source = name });
         }
-        // A corrupt embedded file must not fail the document that carries it.
+        // A corrupt embedded file must not fail the document that carries it; it stays listed in the classification.
         catch (Exception ex) when (ex is not (OperationCanceledException or OcrUnavailableException))
         {
+            logger.LogWarning(ex, "Embedded file {Attachment} could not be prepared and was skipped", name);
             return [];
         }
+    }
+
+    /// <summary>XML is decoded with the encoding it declares (UTF-16, ISO-8859-1, ...); everything else as UTF-8.</summary>
+    private static string DecodeText(byte[] bytes, string mediaType)
+    {
+        if (mediaType == DocumentSniffer.Xml)
+        {
+            try
+            {
+                using var reader = XmlReader.Create(new MemoryStream(bytes, writable: false),
+                    new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null });
+                return System.Xml.Linq.XDocument.Load(reader, System.Xml.Linq.LoadOptions.PreserveWhitespace)
+                    .ToString(System.Xml.Linq.SaveOptions.DisableFormatting);
+            }
+            // Not well-formed: pass the text through for the agent to make what it can of it.
+            catch (XmlException) { }
+        }
+        return Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF');
     }
 
     private SKBitmap Render(byte[] bytes, PageClassification page)
@@ -172,10 +211,12 @@ public sealed class DocumentPreparer(IOptions<DocumentAnalysisOptions> options, 
         return text.Length == 0 ? null : new PreparedPart(PartRole.OcrText, DocumentSniffer.Text, page, text, null);
     }
 
-    private static PreparedPart Png(SKBitmap bitmap, int page)
+    private static PreparedPart Png(SKBitmap bitmap, PageClassification page)
     {
-        using var data = bitmap.Encode(SKEncodedImageFormat.Png, 100);
-        return new PreparedPart(PartRole.PageImage, DocumentSniffer.Png, page, null, data.ToArray());
+        // Fax pages are black and white: a greyscale PNG is a fraction of the RGBA size and loses nothing.
+        using var gray = page.Content == PageContent.Fax ? bitmap.Copy(SKColorType.Gray8) : null;
+        using var data = (gray ?? bitmap).Encode(SKEncodedImageFormat.Png, 100);
+        return new PreparedPart(PartRole.PageImage, DocumentSniffer.Png, page.Number, null, data.ToArray());
     }
 
     private static PreparedPart Markdown(int? page, string text) => new(PartRole.PageText, "text/markdown", page, text, null);
@@ -207,29 +248,41 @@ public sealed class DocumentPreparer(IOptions<DocumentAnalysisOptions> options, 
         var sb = new StringBuilder();
         var body = doc.MainDocumentPart?.Document?.Body
             ?? throw new DocumentException("Word document has no body", StatusCodes.Status422UnprocessableEntity);
-        foreach (var element in body.ChildElements)
+        AppendBlocks(sb, body.ChildElements);
+        return sb.ToString();
+    }
+
+    private static void AppendBlocks(StringBuilder sb, IEnumerable<OpenXmlElement> elements)
+    {
+        foreach (var element in elements)
         {
             switch (element)
             {
-                case Paragraph p when !string.IsNullOrWhiteSpace(p.InnerText):
-                    sb.AppendLine($"{HeadingPrefix(p)}{p.InnerText.Trim()}").AppendLine();
+                // InnerText includes text boxes anchored in the paragraph.
+                case Paragraph p:
+                    if (!string.IsNullOrWhiteSpace(p.InnerText)) sb.AppendLine($"{Prefix(p)}{p.InnerText.Trim()}").AppendLine();
                     break;
                 case Table t:
                     AppendTable(sb, t.Elements<TableRow>()
                         .Select(r => r.Elements<TableCell>().Select(c => c.InnerText).ToList()).ToList());
                     break;
+                // Content controls (common in templates and forms) and custom XML wrap ordinary paragraphs and tables.
+                default:
+                    AppendBlocks(sb, element.ChildElements);
+                    break;
             }
         }
-        return sb.ToString();
     }
 
-    private static string HeadingPrefix(Paragraph p)
+    private static string Prefix(Paragraph p)
     {
         var style = p.ParagraphProperties?.ParagraphStyleId?.Val?.Value;
         if (style is not null && style.StartsWith("Heading", StringComparison.OrdinalIgnoreCase)
             && int.TryParse(style["Heading".Length..], out var level))
             return new string('#', Math.Clamp(level, 1, 6)) + " ";
-        return style is "Title" ? "# " : "";
+        if (style is "Title") return "# ";
+        // Bulleted and numbered lists look alike without resolving the numbering definitions; both become bullets.
+        return p.ParagraphProperties?.NumberingProperties is not null ? "- " : "";
     }
 
     private static void AppendTable(StringBuilder sb, List<List<string>> rows)

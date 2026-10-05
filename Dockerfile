@@ -2,7 +2,7 @@
 #
 #   docker build -t laya-sample .                                       # PP-OCRv5 Latin OCR
 #   docker build -t laya-sample --build-arg OCR_MODEL=PPOCRv6Medium .   # multilingual, ~4x slower per page
-#   docker run --rm -p 8080:8080 laya-sample
+#   docker run --rm -p 8080:8080 --memory 4g --cpus 4 laya-sample
 #
 # All models are baked into the image, so the container never downloads at startup and runs offline.
 
@@ -25,7 +25,7 @@ FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG TARGETARCH
 WORKDIR /src
 COPY global.json Directory.Build.props Directory.Packages.props ./
-COPY src/LayaSample.Api/LayaSample.Api.csproj src/LayaSample.Api/
+COPY src/LayaSample.Api/LayaSample.Api.csproj src/LayaSample.Api/packages.lock.json src/LayaSample.Api/
 RUN dotnet restore src/LayaSample.Api/LayaSample.Api.csproj -a $TARGETARCH
 COPY src/LayaSample.Api/ src/LayaSample.Api/
 # A runtime-specific publish keeps only this platform's native libraries (ImageMagick, PDFium, Skia, ONNX Runtime).
@@ -43,4 +43,8 @@ ENV Laya__ModelPath=/models/laya \
     DocumentAnalysis__OcrModel=$OCR_MODEL
 EXPOSE 8080
 USER $APP_UID
+# Ready once both models are loaded; a model that failed for good reports Degraded (still 200), since the rest of the
+# service works. The image has no curl, so bash's /dev/tcp makes the request.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=2m --retries=3 \
+    CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
 ENTRYPOINT ["dotnet", "LayaSample.Api.dll"]
