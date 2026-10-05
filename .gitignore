@@ -481,10 +481,12 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 
-# Downloaded Laya ONNX model (~800 MB)
-src/LayaSample.Api/model-cache/
+# Local model store (dotnet run, scripts/download-models.sh); see models/README.md
+/models/*
+!/models/README.md
 
-# Optional PP-OCRv6 models (scripts/download-models.sh)
+# Earlier model locations
+src/LayaSample.Api/model-cache/
 src/LayaSample.Rendering/ocr-models/
 
 # Test run output

@@ -70,6 +70,7 @@ Durations per stage and documents by kind and outcome are published on the `Laya
 - The endpoints have no authentication. Put the service behind an authenticating gateway, or add authentication,
   before exposing it beyond a trusted network.
 - Model settings go under the `Laya` section of `appsettings.json` (`ModelRepository`, `ModelPath`, `CacheDirectory`, `IntraOpNumThreads`, `DecisionThreshold`). `ModelPath` loads a local copy and skips the download.
+- Local models live in [`models/`](models/README.md) (ignored by git): `dotnet run` downloads Laya there, `scripts/download-models.sh` downloads there, and the Docker build uses matching files from there instead of downloading them.
 - Confidences are **uncalibrated**; tune thresholds on your own labeled feedback before relying on them.
 
 ## OCR models
@@ -85,7 +86,7 @@ that flips upside-down lines, and a recognizer that reads characters from a dict
 | `PPOCRv6Small` | Multilingual | ~31 MB | `scripts/download-models.sh` |
 | `PPOCRv6Medium` | Multilingual, slowest (~4x v5 per page) | ~138 MB | `scripts/download-models.sh` |
 
-    scripts/download-models.sh ocr PPOCRv6Small     # into src/LayaSample.Rendering/ocr-models; the build copies them
+    scripts/download-models.sh ocr PPOCRv6Small     # into models/ocr/v6; the build copies them next to the binary
     DocumentAnalysis__OcrModel=PPOCRv6Small dotnet run --project src/LayaSample.Api
 
 Downloads are pinned and SHA-256 verified. If the configured models are missing, documents that need OCR get a 503
@@ -93,7 +94,10 @@ rather than being reported as unreadable.
 
 ## Docker
 `docker-compose.yml` runs the API and the hardened renderer. Both images bake in their models (Laya in the API, OCR
-in the renderer), so containers never download anything and run offline.
+in the renderer), so containers never download anything and run offline. The build itself takes models from the local
+[`models/`](models/README.md) folder when their SHA-256 matches the pinned version and downloads only what is missing,
+so a machine that cannot download (a proxy or TLS inspection blocking curl) can build once the files are there: run
+the API once with `dotnet run`, or copy `models/` from another machine.
 
     docker compose up --build                                  # http://localhost:8080
     OCR_MODEL=PPOCRv6Small docker compose up --build           # multilingual OCR

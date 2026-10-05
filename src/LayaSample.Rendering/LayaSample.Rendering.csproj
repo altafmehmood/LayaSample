@@ -28,9 +28,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Optional PP-OCRv6 models fetched by scripts/download-models.sh, copied to models/v6 next to the v5 set the
-         NuGet copies (into every project that references this one). -->
-    <None Update="ocr-models/v6/*" Link="models/v6/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- Optional PP-OCRv6 models in the repository's models/ocr/v6 (scripts/download-models.sh), copied to models/v6
+         next to the v5 set the NuGet copies (into every project that references this one). -->
+    <None Include="../../models/ocr/v6/*" Link="models/v6/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

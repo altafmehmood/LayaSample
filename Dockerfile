@@ -14,9 +14,10 @@
 # DocumentAnalysis:OcrModel value: PPOCRv5Latin (bundled in the NuGet), PPOCRv6Tiny, PPOCRv6Small or PPOCRv6Medium.
 ARG OCR_MODEL=PPOCRv5Latin
 
-# ---- Models: pinned revisions, SHA-256 verified. Downloads land in a BuildKit cache that outlives layer rebuilds,
-# so editing the script or switching OCR_MODEL only fetches files that are missing or changed. Separate stages, so
-# building one image never downloads the other's models.
+# ---- Models: pinned revisions, SHA-256 verified. A copy already in the local models/ folder (where `dotnet run` and
+# scripts/download-models.sh put them) is used when its hash matches, so curl only runs for files that are missing
+# there. Downloads land in a BuildKit cache that outlives layer rebuilds. Separate stages, so building one image never
+# needs the other's models.
 FROM alpine:3.22 AS model-tools
 RUN apk add --no-cache curl
 COPY scripts/download-models.sh /download-models.sh
@@ -24,12 +25,15 @@ COPY scripts/download-models.sh /download-models.sh
 RUN sed -i 's/\r$//' /download-models.sh
 
 FROM model-tools AS laya-model
-RUN --mount=type=cache,target=/cache sh /download-models.sh laya /cache/laya && mkdir -p /models && cp -r /cache/laya /models/laya
+RUN --mount=type=cache,target=/cache --mount=type=bind,source=models,target=/local \
+    MODEL_SEED=/local/elbruno_laya-onnx sh /download-models.sh laya /cache/laya \
+ && mkdir -p /models && cp -r /cache/laya /models/laya
 
 FROM model-tools AS ocr-models
 ARG OCR_MODEL
 # One cache folder per model, so the image only carries the chosen one.
-RUN --mount=type=cache,target=/cache sh /download-models.sh ocr "$OCR_MODEL" "/cache/ocr/$OCR_MODEL" \
+RUN --mount=type=cache,target=/cache --mount=type=bind,source=models,target=/local \
+    MODEL_SEED=/local/ocr/v6 sh /download-models.sh ocr "$OCR_MODEL" "/cache/ocr/$OCR_MODEL" \
  && mkdir -p /models/ocr && if [ -d "/cache/ocr/$OCR_MODEL/v6" ]; then cp -r "/cache/ocr/$OCR_MODEL/v6" /models/ocr/; fi
 
 # ---- Build: runs natively on the build machine and cross-publishes for the target architecture.
