@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using LayaSample.Api.Models;
 using LayaSample.Api.Services.Documents;
+using LayaSample.Api.Services.Documents.Ocr;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -26,6 +27,8 @@ public class AnalyzeDocumentEndpointTests : IClassFixture<AnalyzeDocumentEndpoin
             {
                 foreach (var d in s.Where(d => d.ServiceType == typeof(IHostedService)).ToList()) s.Remove(d);
                 s.RemoveAll<IDocumentAgent>();
+                s.RemoveAll<IOcrEngine>();
+                s.AddSingleton<IOcrEngine>(new FakeOcr());
                 foreach (var route in DocumentRoutes.All) s.AddSingleton<IDocumentAgent>(new RecordingAgent(route));
             });
     }
@@ -42,7 +45,7 @@ public class AnalyzeDocumentEndpointTests : IClassFixture<AnalyzeDocumentEndpoin
     {
         using var form = new MultipartFormDataContent();
         if (bytes is not null) form.Add(new ByteArrayContent(bytes), "file", fileName);
-        return await _client.PostAsync("/api/documents/analyze" + query, form);
+        return await _client.PostAsync("/api/documents/analyze" + query, form, TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -76,8 +79,11 @@ public class AnalyzeDocumentEndpointTests : IClassFixture<AnalyzeDocumentEndpoin
     public static TheoryData<string, string, DocumentKind, PreparationStrategy, string> Samples => new()
     {
         { "form.pdf", "form", DocumentKind.FormPdf, PreparationStrategy.RenderToPng, DocumentRoutes.Form },
+        { "signed.pdf", "annotated", DocumentKind.AnnotatedPdf, PreparationStrategy.RenderToPng, DocumentRoutes.Form },
         { "text.pdf", "text", DocumentKind.TextPdf, PreparationStrategy.Markdown, DocumentRoutes.Text },
-        { "scan.pdf", "scan", DocumentKind.ScannedPdf, PreparationStrategy.RenderToPng, DocumentRoutes.Vision },
+        { "scan.pdf", "scan", DocumentKind.ScannedPdf, PreparationStrategy.Hybrid, DocumentRoutes.Vision },
+        { "fax.tif", "tiff", DocumentKind.Image, PreparationStrategy.Hybrid, DocumentRoutes.Vision },
+        { "e-invoice.pdf", "attachment", DocumentKind.TextPdf, PreparationStrategy.Markdown, DocumentRoutes.Text },
         { "book.xlsx", "xlsx", DocumentKind.Spreadsheet, PreparationStrategy.Markdown, DocumentRoutes.Spreadsheet },
         { "memo.docx", "docx", DocumentKind.WordDocument, PreparationStrategy.Markdown, DocumentRoutes.Text },
     };
@@ -89,8 +95,11 @@ public class AnalyzeDocumentEndpointTests : IClassFixture<AnalyzeDocumentEndpoin
         byte[] bytes = sample switch
         {
             "form" => DocumentFixtures.FilledFormPdf(),
+            "annotated" => DocumentFixtures.AnnotatedPdf(),
             "text" => DocumentFixtures.TextPdf(),
             "scan" => DocumentFixtures.BlankPdf(),
+            "tiff" => DocumentFixtures.FaxTiff(),
+            "attachment" => DocumentFixtures.PdfWithXmlAttachment(),
             "xlsx" => DocumentFixtures.Xlsx(),
             _ => DocumentFixtures.Docx()
         };
@@ -98,7 +107,7 @@ public class AnalyzeDocumentEndpointTests : IClassFixture<AnalyzeDocumentEndpoin
         var res = await Post(bytes, fileName);
 
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
-        var body = await res.Content.ReadFromJsonAsync<AnalyzeDocumentResponse>(Json);
+        var body = await res.Content.ReadFromJsonAsync<AnalyzeDocumentResponse>(Json, TestContext.Current.CancellationToken);
         Assert.NotNull(body);
         Assert.Equal(kind, body.Classification.Kind);
         Assert.Equal(strategy, body.AppliedStrategy);
@@ -109,11 +118,23 @@ public class AnalyzeDocumentEndpointTests : IClassFixture<AnalyzeDocumentEndpoin
     }
 
     [Fact]
+    public async Task Part_roles_and_sources_are_returned()
+    {
+        var res = await Post(DocumentFixtures.PdfWithXmlAttachment("invoice.xml"), "e-invoice.pdf", "?dispatch=false");
+
+        var body = await res.Content.ReadFromJsonAsync<AnalyzeDocumentResponse>(Json, TestContext.Current.CancellationToken);
+        Assert.NotNull(body);
+        Assert.Contains(body.Parts, p => p is { Role: PartRole.PageText, Source: null });
+        Assert.Contains(body.Parts, p => p is { Role: PartRole.StructuredData, Source: "invoice.xml" });
+        Assert.Equal("invoice.xml", Assert.Single(body.Classification.Attachments).Name);
+    }
+
+    [Fact]
     public async Task Strategy_override_and_dispatch_flag_are_honoured()
     {
         var res = await Post(DocumentFixtures.TextPdf(), "text.pdf", "?strategy=RenderToPng&dispatch=false");
 
-        var body = await res.Content.ReadFromJsonAsync<AnalyzeDocumentResponse>(Json);
+        var body = await res.Content.ReadFromJsonAsync<AnalyzeDocumentResponse>(Json, TestContext.Current.CancellationToken);
         Assert.NotNull(body);
         Assert.Equal(PreparationStrategy.RenderToPng, body.AppliedStrategy);
         Assert.All(body.Parts, p => Assert.Equal("image/png", p.MediaType));

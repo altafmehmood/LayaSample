@@ -6,25 +6,33 @@ namespace LayaSample.Tests;
 
 public class DocumentPreparerTests
 {
-    private static readonly IOptions<DocumentAnalysisOptions> Options = Microsoft.Extensions.Options.Options.Create(new DocumentAnalysisOptions());
     private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47];
 
-    private static PreparedDocument Prepare(byte[] bytes, PreparationStrategy? strategy = null)
+    private static PreparedDocument Prepare(byte[] bytes, PreparationStrategy? strategy = null, DocumentAnalysisOptions? options = null, FakeOcr? ocr = null)
     {
+        var opts = Microsoft.Extensions.Options.Options.Create(options ?? new DocumentAnalysisOptions());
+        var classifier = new DocumentClassifier(opts);
         using var stream = new MemoryStream(bytes);
-        var classification = new DocumentClassifier(Options).Classify(stream);
-        return new DocumentPreparer(Options).Prepare(stream, classification, strategy ?? classification.Strategy);
+        var classification = classifier.Classify(stream);
+        return new DocumentPreparer(opts, classifier, ocr ?? new FakeOcr()).Prepare(stream, classification, strategy ?? classification.Strategy);
     }
 
     [Fact]
-    public void Form_pdf_renders_one_png_per_page()
+    public void Form_pdf_renders_pages_and_includes_field_values()
     {
         var prepared = Prepare(DocumentFixtures.FilledFormPdf());
 
-        var part = Assert.Single(prepared.Parts);
-        Assert.Equal("image/png", part.MediaType);
-        Assert.Equal(1, part.Page);
-        Assert.Equal(PngSignature, part.Data![..4]);
+        Assert.Collection(prepared.Parts,
+            image =>
+            {
+                Assert.Equal((PartRole.PageImage, "image/png", 1), (image.Role, image.MediaType, image.Page));
+                Assert.Equal(PngSignature, image.Data![..4]);
+            },
+            values =>
+            {
+                Assert.Equal((PartRole.StructuredData, DocumentSniffer.Json), (values.Role, values.MediaType));
+                Assert.Contains("\"name\": \"Jane Doe\"", values.Text);
+            });
     }
 
     [Fact]
@@ -33,8 +41,99 @@ public class DocumentPreparerTests
         var prepared = Prepare(DocumentFixtures.TextPdf());
 
         Assert.Equal(2, prepared.Parts.Count);
+        Assert.All(prepared.Parts, p => Assert.Equal(PartRole.PageText, p.Role));
         Assert.Contains("## Page 1", prepared.Parts[0].Text);
         Assert.Contains("supplier delivers goods", prepared.Parts[0].Text);
+    }
+
+    [Fact]
+    public void Scanned_pdf_hybrid_pairs_page_image_with_ocr_text()
+    {
+        var ocr = new FakeOcr("INVOICE 1234");
+        var prepared = Prepare(DocumentFixtures.BlankPdf(), ocr: ocr);
+
+        Assert.Equal(PreparationStrategy.Hybrid, prepared.Strategy);
+        Assert.Collection(prepared.Parts,
+            p => Assert.Equal((PartRole.PageImage, 1), (p.Role, p.Page)),
+            p => Assert.Equal((PartRole.OcrText, 1, "INVOICE 1234"), (p.Role, p.Page, p.Text)));
+        Assert.Single(ocr.Calls);
+    }
+
+    [Fact]
+    public void Ocr_is_skipped_when_disabled()
+    {
+        var ocr = new FakeOcr();
+        var prepared = Prepare(DocumentFixtures.BlankPdf(), PreparationStrategy.Hybrid, new DocumentAnalysisOptions { EnableOcr = false }, ocr);
+
+        Assert.Equal(PartRole.PageImage, Assert.Single(prepared.Parts).Role);
+        Assert.Empty(ocr.Calls);
+    }
+
+    [Fact]
+    public void Mixed_pdf_is_prepared_per_page()
+    {
+        var prepared = Prepare(DocumentFixtures.MixedPdf());
+
+        Assert.Equal(PreparationStrategy.PerPage, prepared.Strategy);
+        Assert.Collection(prepared.Parts,
+            p => Assert.Equal((PartRole.PageText, 1), (p.Role, p.Page)),
+            p => Assert.Equal((PartRole.PageImage, 2), (p.Role, p.Page)),
+            p => Assert.Equal((PartRole.OcrText, 2), (p.Role, p.Page)));
+    }
+
+    [Fact]
+    public void Dynamic_xfa_returns_only_the_datasets()
+    {
+        var part = Assert.Single(Prepare(DocumentFixtures.DynamicXfaPdf("Jane Doe")).Parts);
+
+        Assert.Equal((PartRole.StructuredData, DocumentSniffer.Xml), (part.Role, part.MediaType));
+        Assert.Contains("<name>Jane Doe</name>", part.Text);
+    }
+
+    [Fact]
+    public void Structured_data_without_any_data_is_unprocessable()
+    {
+        var ex = Assert.Throws<DocumentException>(() => Prepare(DocumentFixtures.TextPdf(), PreparationStrategy.StructuredData));
+        Assert.Equal(422, ex.StatusCode);
+    }
+
+    [Fact]
+    public void Embedded_xml_is_passed_through_with_its_source()
+    {
+        var prepared = Prepare(DocumentFixtures.PdfWithXmlAttachment("invoice.xml"));
+
+        Assert.Equal(PartRole.PageText, prepared.Parts[0].Role);
+        var xml = Assert.Single(prepared.Parts, p => p.Role == PartRole.StructuredData);
+        Assert.Equal("invoice.xml", xml.Source);
+        Assert.Contains("<Total>42.00</Total>", xml.Text);
+    }
+
+    [Fact]
+    public void Fax_tiff_pages_are_converted_to_png_with_square_pixels_and_ocrd()
+    {
+        var ocr = new FakeOcr();
+        var prepared = Prepare(DocumentFixtures.FaxTiff(pages: 2, width: 1728, height: 400), ocr: ocr);
+
+        var images = prepared.Parts.Where(p => p.Role == PartRole.PageImage).ToList();
+        Assert.Equal([1, 2], images.Select(p => p.Page));
+        Assert.All(images, p => Assert.Equal(PngSignature, p.Data![..4]));
+        Assert.Equal(2, prepared.Parts.Count(p => p.Role == PartRole.OcrText));
+        // 204x98 dpi: height is stretched by 204/98 so the page is not squashed.
+        Assert.All(ocr.Calls, c => Assert.Equal((1728, 833), c));
+    }
+
+    [Fact]
+    public void Image_pages_stop_at_max_pages()
+    {
+        var prepared = Prepare(DocumentFixtures.FaxTiff(pages: 3), PreparationStrategy.RenderToPng, new DocumentAnalysisOptions { MaxPages = 2 });
+        Assert.Equal(2, prepared.Parts.Count);
+    }
+
+    [Fact]
+    public void Markdown_is_rejected_for_images()
+    {
+        var ex = Assert.Throws<DocumentException>(() => Prepare(DocumentFixtures.Png(), PreparationStrategy.Markdown));
+        Assert.Equal(400, ex.StatusCode);
     }
 
     [Fact]
@@ -45,6 +144,30 @@ public class DocumentPreparerTests
         Assert.Contains("## Orders", text);
         Assert.Contains("| Item | Qty |", text);
         Assert.Contains("| Widget | 3 |", text);
+    }
+
+    [Fact]
+    public void Annotated_pdf_renders_to_png()
+    {
+        var part = Assert.Single(Prepare(DocumentFixtures.AnnotatedPdf()).Parts);
+        Assert.Equal(PngSignature, part.Data![..4]);
+    }
+
+    [Fact]
+    public void Png_rendering_stops_at_max_pages()
+    {
+        var prepared = Prepare(DocumentFixtures.TextPdf(), PreparationStrategy.RenderToPng, new DocumentAnalysisOptions { MaxPages = 1 });
+        Assert.Single(prepared.Parts);
+    }
+
+    [Fact]
+    public void Xlsx_markdown_is_truncated_at_max_rows()
+    {
+        var text = Assert.Single(Prepare(DocumentFixtures.Xlsx(), options: new DocumentAnalysisOptions { MaxSpreadsheetRows = 1 }).Parts).Text!;
+
+        Assert.Contains("| Item | Qty |", text);
+        Assert.DoesNotContain("Widget", text);
+        Assert.Contains("showing 1 of 2 rows", text);
     }
 
     [Fact]
@@ -63,12 +186,12 @@ public class DocumentPreparerTests
 
         var part = Assert.Single(Prepare(bytes, PreparationStrategy.AsIs).Parts);
 
-        Assert.Equal("application/pdf", part.MediaType);
+        Assert.Equal((PartRole.Original, "application/pdf"), (part.Role, part.MediaType));
         Assert.Equal(bytes, part.Data);
     }
 
     [Fact]
-    public void Png_strategy_is_rejected_for_non_pdf()
+    public void Png_strategy_is_rejected_for_non_paged_documents()
     {
         var ex = Assert.Throws<DocumentException>(() => Prepare(DocumentFixtures.Xlsx(), PreparationStrategy.RenderToPng));
         Assert.Equal(400, ex.StatusCode);

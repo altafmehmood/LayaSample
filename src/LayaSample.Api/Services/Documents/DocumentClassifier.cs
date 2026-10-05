@@ -1,8 +1,8 @@
-using System.IO.Compression;
 using LayaSample.Api.Models;
+using LayaSample.Api.Services.Documents.Images;
+using LayaSample.Api.Services.Documents.Pdf;
 using Microsoft.Extensions.Options;
 using UglyToad.PdfPig;
-using UglyToad.PdfPig.AcroForms;
 using UglyToad.PdfPig.Exceptions;
 
 namespace LayaSample.Api.Services.Documents;
@@ -26,103 +26,106 @@ public static class DocumentRoutes
 
 public sealed class DocumentClassifier(IOptions<DocumentAnalysisOptions> options) : IDocumentClassifier
 {
+    private const string Unsupported = "unsupported document type; expected PDF, .xlsx, .docx, TIFF, PNG or JPEG";
+
+    private static readonly IPdfDetector[] PdfDetectors =
+    [
+        new AcroFormDetector(),
+        new XfaDetector(),
+        new EmbeddedFileDetector(),
+        new TextLayerDetector(),
+        new ImageDetector(),
+        new LayoutDetector(),
+        new AnnotationDetector()
+    ];
+
     private readonly DocumentAnalysisOptions _options = options.Value;
 
     public DocumentClassification Classify(Stream stream)
     {
         stream.Position = 0;
-        var head = new byte[1024];
-        var read = stream.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
-        stream.Position = 0;
-
-        if (head.AsSpan(0, read).IndexOf("%PDF-"u8) >= 0)
-            return ClassifyPdf(stream);
-        if (read >= 4 && head[0] == 'P' && head[1] == 'K')
-            return ClassifyOpenXml(stream);
-
-        throw new DocumentException("unsupported document type; expected PDF, .xlsx or .docx", StatusCodes.Status415UnsupportedMediaType);
+        var mediaType = DocumentSniffer.Sniff(stream);
+        return mediaType switch
+        {
+            DocumentSniffer.Pdf => ClassifyPdf(StreamBytes.Read(stream)),
+            DocumentSniffer.Xlsx => Office(DocumentKind.Spreadsheet, mediaType, DocumentRoutes.Spreadsheet, "Excel workbook; convert sheets to markdown tables"),
+            DocumentSniffer.Docx => Office(DocumentKind.WordDocument, mediaType, DocumentRoutes.Text, "Word document; convert to markdown"),
+            _ when DocumentSniffer.IsImage(mediaType) => ClassifyImage(StreamBytes.Read(stream), mediaType),
+            DocumentSniffer.Ole => throw new DocumentException(
+                "legacy (.xls/.doc) or password-protected Office files are not supported; save as unprotected .xlsx/.docx",
+                StatusCodes.Status415UnsupportedMediaType),
+            _ => throw new DocumentException(Unsupported, StatusCodes.Status415UnsupportedMediaType)
+        };
     }
 
-    private DocumentClassification ClassifyPdf(Stream stream)
+    private DocumentClassification ClassifyPdf(byte[] bytes)
     {
         try
         {
-            using var pdf = PdfDocument.Open(stream);
+            using var pdf = PdfDocument.Open(bytes);
+            var inspection = new PdfInspection(pdf, bytes, _options);
 
-            int fields = 0, filled = 0;
-            if (pdf.TryGetForm(out var form) && form is not null)
-            {
-                foreach (var field in form.GetFields())
-                {
-                    fields++;
-                    if (HasValue(field.GetFieldValue())) filled++;
-                }
-            }
-
-            int pages = pdf.NumberOfPages, images = 0, sparsePages = 0;
-            long chars = 0;
+            foreach (var detector in PdfDetectors) detector.InspectDocument(inspection);
+            // One pass over the pages so each is parsed once, however many detectors look at it.
             foreach (var page in pdf.GetPages())
             {
-                var pageChars = page.Letters.Count;
-                chars += pageChars;
-                if (pageChars < _options.MinCharsPerPage) sparsePages++;
-                images += page.GetImages().Count();
+                var signals = new PageSignals(page.Number);
+                foreach (var detector in PdfDetectors) detector.InspectPage(inspection, page, signals);
+                inspection.Pages.Add(signals);
             }
-            var avg = pages == 0 ? 0 : (double)chars / pages;
 
-            DocumentClassification Result(DocumentKind kind, PreparationStrategy strategy, string route, string reason) =>
-                new(kind, strategy, route, reason, pages, fields, filled, images, Math.Round(avg, 1));
-
-            // Filled values live in form fields (often only in the appearance stream), not the page content,
-            // so text extraction misses them. Rendering to PNG with form fill is the only reliable way to show them.
-            if (fields > 0)
-                return Result(DocumentKind.FormPdf, PreparationStrategy.RenderToPng, DocumentRoutes.Form,
-                    $"PDF has {fields} form field(s), {filled} filled; render to PNG so field values are visible");
-            if (pages > 0 && sparsePages == pages)
-                return Result(DocumentKind.ScannedPdf, PreparationStrategy.RenderToPng, DocumentRoutes.Vision,
-                    "no usable text layer on any page (scanned or image-only)");
-            if (sparsePages > 0)
-                return Result(DocumentKind.MixedPdf, PreparationStrategy.RenderToPng, DocumentRoutes.Vision,
-                    $"{sparsePages} of {pages} page(s) have no usable text layer");
-            return Result(DocumentKind.TextPdf, PreparationStrategy.Markdown, DocumentRoutes.Text,
-                "text layer present on every page and no form fields");
+            return PdfClassificationRules.Decide(inspection.Document, inspection.Pages, _options);
         }
         catch (PdfDocumentEncryptedException ex)
         {
             throw new DocumentException("PDF is password protected", StatusCodes.Status422UnprocessableEntity, ex);
         }
-        catch (Exception ex) when (ex is UglyToad.PdfPig.Core.PdfDocumentFormatException or InvalidOperationException or ArgumentException)
+        // PdfPig surfaces malformed input as a wide range of exception types.
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             throw new DocumentException("PDF could not be read", StatusCodes.Status422UnprocessableEntity, ex);
         }
     }
 
-    private static DocumentClassification ClassifyOpenXml(Stream stream)
+    private DocumentClassification ClassifyImage(byte[] bytes, string mediaType)
     {
+        IReadOnlyList<RasterPage> pages;
         try
         {
-            using var zip = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
-            if (zip.GetEntry("xl/workbook.xml") is not null)
-                return new(DocumentKind.Spreadsheet, PreparationStrategy.Markdown, DocumentRoutes.Spreadsheet,
-                    "Excel workbook; convert sheets to markdown tables", 0, 0, 0, 0, 0);
-            if (zip.GetEntry("word/document.xml") is not null)
-                return new(DocumentKind.WordDocument, PreparationStrategy.Markdown, DocumentRoutes.Text,
-                    "Word document; convert to markdown", 0, 0, 0, 0, 0);
+            pages = RasterImages.Inspect(bytes, mediaType);
         }
-        catch (InvalidDataException ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            throw new DocumentException("document could not be read", StatusCodes.Status422UnprocessableEntity, ex);
+            throw new DocumentException("image could not be read", StatusCodes.Status422UnprocessableEntity, ex);
         }
 
-        throw new DocumentException("unsupported document type; expected PDF, .xlsx or .docx", StatusCodes.Status415UnsupportedMediaType);
+        // An image has no text layer: OCR is the only source of text.
+        var strategy = _options.EnableOcr ? PreparationStrategy.Hybrid : PreparationStrategy.RenderToPng;
+        var classified = pages
+            .Select((p, i) => new PageClassification(i + 1, p.IsFax ? PageContent.Fax : PageContent.Scanned, strategy, 0, 1, 0, null))
+            .ToList();
+        var fax = classified.Count(p => p.Content == PageContent.Fax);
+
+        return new DocumentClassification
+        {
+            Kind = DocumentKind.Image,
+            Strategy = strategy,
+            Route = DocumentRoutes.Vision,
+            Reason = $"{mediaType} image, {pages.Count} page(s)" + (fax > 0 ? $", {fax} fax-encoded" : "")
+                     + (_options.EnableOcr ? "; page images plus OCR text" : "; converted to PNG"),
+            MediaType = mediaType,
+            PageCount = pages.Count,
+            ImageCount = pages.Count,
+            Pages = classified
+        };
     }
 
-    private static bool HasValue(object? value) => value switch
+    private static DocumentClassification Office(DocumentKind kind, string mediaType, string route, string reason) => new()
     {
-        null => false,
-        bool b => b,
-        string s => !string.IsNullOrWhiteSpace(s) && s != "Off",
-        System.Collections.IEnumerable e => e.Cast<object?>().Any(HasValue),
-        _ => !string.IsNullOrWhiteSpace(value.ToString())
+        Kind = kind,
+        Strategy = PreparationStrategy.Markdown,
+        Route = route,
+        Reason = reason,
+        MediaType = mediaType
     };
 }

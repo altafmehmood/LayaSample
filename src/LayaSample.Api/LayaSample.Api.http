@@ -1,0 +1,28 @@
+@host = http://localhost:5091
+
+### Model readiness (503 until loaded)
+GET {{host}}/health
+
+### Negative feedback
+POST {{host}}/api/feedback/analyze
+Content-Type: application/json
+
+{ "text": "The room was filthy, the staff were rude and the noise kept us up all night. Never again." }
+
+### Positive feedback
+POST {{host}}/api/feedback/analyze
+Content-Type: application/json
+
+{ "text": "Wonderful stay! Friendly staff, spotless room, great breakfast." }
+
+### Mixed feedback
+POST {{host}}/api/feedback/analyze
+Content-Type: application/json
+
+{ "text": "Lovely location but the room was tiny and the wifi barely worked." }
+
+### Invalid (400)
+POST {{host}}/api/feedback/analyze
+Content-Type: application/json
+
+{ "text": "" }

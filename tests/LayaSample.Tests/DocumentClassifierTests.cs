@@ -24,6 +24,17 @@ public class DocumentClassifierTests
     }
 
     [Fact]
+    public void Pdf_filled_with_annotations_is_rendered_to_png()
+    {
+        var result = Classify(DocumentFixtures.AnnotatedPdf());
+
+        Assert.Equal(DocumentKind.AnnotatedPdf, result.Kind);
+        Assert.Equal(PreparationStrategy.RenderToPng, result.Strategy);
+        Assert.Equal(DocumentRoutes.Form, result.Route);
+        Assert.Equal(1, result.MarkupAnnotationCount);
+    }
+
+    [Fact]
     public void Text_pdf_is_converted_to_markdown()
     {
         var result = Classify(DocumentFixtures.TextPdf());
@@ -40,17 +51,82 @@ public class DocumentClassifierTests
         var result = Classify(DocumentFixtures.BlankPdf());
 
         Assert.Equal(DocumentKind.ScannedPdf, result.Kind);
-        Assert.Equal(PreparationStrategy.RenderToPng, result.Strategy);
+        Assert.Equal(PreparationStrategy.Hybrid, result.Strategy);
         Assert.Equal(DocumentRoutes.Vision, result.Route);
     }
 
     [Fact]
-    public void Pdf_with_some_text_free_pages_is_mixed()
+    public void Scanned_pdf_is_only_rendered_when_ocr_is_disabled()
+    {
+        var result = new DocumentClassifier(Microsoft.Extensions.Options.Options.Create(new DocumentAnalysisOptions { EnableOcr = false }))
+            .Classify(new MemoryStream(DocumentFixtures.BlankPdf()));
+
+        Assert.Equal(PreparationStrategy.RenderToPng, result.Strategy);
+    }
+
+    [Fact]
+    public void Pdf_with_some_text_free_pages_is_mixed_and_prepared_per_page()
     {
         var result = Classify(DocumentFixtures.MixedPdf());
 
         Assert.Equal(DocumentKind.MixedPdf, result.Kind);
-        Assert.Equal(PreparationStrategy.RenderToPng, result.Strategy);
+        Assert.Equal(PreparationStrategy.PerPage, result.Strategy);
+        Assert.Collection(result.Pages,
+            p => Assert.Equal((PageContent.Text, PreparationStrategy.Markdown), (p.Content, p.Strategy)),
+            p => Assert.Equal((PageContent.Scanned, PreparationStrategy.Hybrid), (p.Content, p.Strategy)));
+    }
+
+    [Fact]
+    public void Dynamic_xfa_pdf_uses_structured_data()
+    {
+        var result = Classify(DocumentFixtures.DynamicXfaPdf());
+
+        Assert.Equal(DocumentKind.XfaPdf, result.Kind);
+        Assert.Equal(PreparationStrategy.StructuredData, result.Strategy);
+        Assert.Equal(DocumentRoutes.Form, result.Route);
+        Assert.True(result.IsDynamicXfa);
+        Assert.Contains("form data extracted", result.Reason);
+    }
+
+    [Fact]
+    public void Embedded_files_are_listed()
+    {
+        var result = Classify(DocumentFixtures.PdfWithXmlAttachment());
+
+        Assert.Equal(DocumentKind.TextPdf, result.Kind);
+        var attachment = Assert.Single(result.Attachments);
+        Assert.Equal("invoice.xml", attachment.Name);
+        Assert.Equal(DocumentSniffer.Xml, attachment.MediaType);
+    }
+
+    [Fact]
+    public void Multi_page_fax_tiff_is_an_image_with_fax_pages()
+    {
+        var result = Classify(DocumentFixtures.FaxTiff(pages: 3));
+
+        Assert.Equal(DocumentKind.Image, result.Kind);
+        Assert.Equal(DocumentSniffer.Tiff, result.MediaType);
+        Assert.Equal(PreparationStrategy.Hybrid, result.Strategy);
+        Assert.Equal(DocumentRoutes.Vision, result.Route);
+        Assert.Equal(3, result.PageCount);
+        Assert.All(result.Pages, p => Assert.Equal(PageContent.Fax, p.Content));
+    }
+
+    [Fact]
+    public void Png_is_a_single_scanned_page()
+    {
+        var result = Classify(DocumentFixtures.Png());
+
+        Assert.Equal(DocumentKind.Image, result.Kind);
+        Assert.Equal(PageContent.Scanned, Assert.Single(result.Pages).Content);
+    }
+
+    [Fact]
+    public void Corrupt_image_is_unprocessable()
+    {
+        byte[] truncatedPng = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0];
+        var ex = Assert.Throws<DocumentException>(() => Classify(truncatedPng));
+        Assert.Equal(422, ex.StatusCode);
     }
 
     [Fact]
@@ -78,6 +154,15 @@ public class DocumentClassifierTests
     {
         var ex = Assert.Throws<DocumentException>(() => Classify("just some text"u8.ToArray()));
         Assert.Equal(415, ex.StatusCode);
+    }
+
+    [Fact]
+    public void Legacy_or_encrypted_office_file_is_unsupported()
+    {
+        byte[] ole = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0, 0, 0, 0];
+        var ex = Assert.Throws<DocumentException>(() => Classify(ole));
+        Assert.Equal(415, ex.StatusCode);
+        Assert.Contains("password-protected", ex.Message);
     }
 
     [Fact]

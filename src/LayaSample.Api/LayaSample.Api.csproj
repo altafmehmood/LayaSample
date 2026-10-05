@@ -13,6 +13,9 @@
     <PackageReference Include="PdfPig" />
     <PackageReference Include="PDFtoImage" />
     <PackageReference Include="Scalar.AspNetCore" />
+    <PackageReference Include="RapidOcrNet" />
+    <PackageReference Include="Magick.NET-Q8-AnyCPU" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>
 
 </Project>

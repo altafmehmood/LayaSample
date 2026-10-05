@@ -29,21 +29,21 @@ public class AnalyzeEndpointTests : IClassFixture<AnalyzeEndpointTests.Factory>
     [InlineData("   ")]
     public async Task Rejects_empty_text(string? text)
     {
-        var res = await _client.PostAsJsonAsync("/api/feedback/analyze", new AnalyzeRequest(text));
+        var res = await _client.PostAsJsonAsync("/api/feedback/analyze", new AnalyzeRequest(text), TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
     }
 
     [Fact]
     public async Task Rejects_overlong_text()
     {
-        var res = await _client.PostAsJsonAsync("/api/feedback/analyze", new AnalyzeRequest(new string('a', 4001)));
+        var res = await _client.PostAsJsonAsync("/api/feedback/analyze", new AnalyzeRequest(new string('a', 4001)), TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
     }
 
     [Fact]
     public async Task Returns_503_while_model_loading()
     {
-        var res = await _client.PostAsJsonAsync("/api/feedback/analyze", new AnalyzeRequest("Terrible stay"));
+        var res = await _client.PostAsJsonAsync("/api/feedback/analyze", new AnalyzeRequest("Terrible stay"), TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, res.StatusCode);
     }
 }

@@ -2,6 +2,7 @@ using ElBruno.LocalLLMs.Decisions;
 using LayaSample.Api.Models;
 using LayaSample.Api.Services;
 using LayaSample.Api.Services.Documents;
+using LayaSample.Api.Services.Documents.Ocr;
 using Microsoft.Extensions.Options;
 using Scalar.AspNetCore;
 
@@ -18,6 +19,7 @@ builder.Services.AddOpenApi();
 builder.Services.AddSingleton<IDissatisfactionAnalyzer, DissatisfactionAnalyzer>();
 builder.Services.Configure<DocumentAnalysisOptions>(builder.Configuration.GetSection(DocumentAnalysisOptions.Section));
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
+builder.Services.AddSingleton<IOcrEngine, RapidOcrEngine>();
 builder.Services.AddSingleton<IDocumentClassifier, DocumentClassifier>();
 builder.Services.AddSingleton<IDocumentPreparer, DocumentPreparer>();
 builder.Services.AddSingleton<IDocumentRouter, DocumentRouter>();
@@ -74,15 +76,15 @@ app.MapPost("/api/documents/analyze", async (
     try
     {
         // Buffered once so classify and prepare can each re-read it.
-        await using var stream = new MemoryStream();
+        await using var stream = new MemoryStream((int)file.Length);
         await file.CopyToAsync(stream, ct);
 
         var classification = classifier.Classify(stream);
-        var prepared = preparer.Prepare(stream, classification, strategy ?? classification.Strategy);
+        var prepared = preparer.Prepare(stream, classification, strategy ?? classification.Strategy, ct);
         var agent = dispatch == false ? null : await router.RouteAsync(classification, prepared, ct);
 
         var parts = prepared.Parts
-            .Select(p => new PreparedPartDto(p.MediaType, p.Page, p.Text, p.Data is null ? null : Convert.ToBase64String(p.Data)))
+            .Select(p => new PreparedPartDto(p.Role, p.MediaType, p.Page, p.Source, p.Text, p.Data is null ? null : Convert.ToBase64String(p.Data)))
             .ToList();
         return Results.Ok(new AnalyzeDocumentResponse(file.FileName, classification, prepared.Strategy, parts, agent));
     }
@@ -94,7 +96,7 @@ app.MapPost("/api/documents/analyze", async (
 .DisableAntiforgery()
 .Accepts<IFormFile>("multipart/form-data")
 .WithName("AnalyzeDocument")
-.WithSummary("Classify an uploaded PDF, Excel or Word document, prepare it (PNG / markdown / as-is) and route it to an agent")
+.WithSummary("Classify an uploaded PDF, Excel, Word or image document, prepare it (PNG / markdown / hybrid with OCR / structured data / as-is) and route it to an agent")
 .Produces<AnalyzeDocumentResponse>()
 .ProducesProblem(StatusCodes.Status400BadRequest)
 .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
