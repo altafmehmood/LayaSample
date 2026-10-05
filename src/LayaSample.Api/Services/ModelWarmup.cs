@@ -9,7 +9,7 @@ public sealed class ModelWarmup(IDecisionClient client, ILogger<ModelWarmup> log
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        logger.LogInformation("Loading Laya model (first run downloads it)...");
+        logger.LogInformation("Loading Laya model (downloaded on first run unless Laya:ModelPath points at a local copy)...");
         try
         {
             await client.IsTrueAsync("warm-up", "This is a warm-up.", stoppingToken);

@@ -96,7 +96,9 @@ public sealed record PreparedPart(PartRole Role, string MediaType, int? Page, st
 
 public sealed record PreparedDocument(PreparationStrategy Strategy, IReadOnlyList<PreparedPart> Parts);
 
-public sealed record PreparedPartDto(PartRole Role, string MediaType, int? Page, string? Source, string? Text, string? DataBase64);
+/// <param name="DataBase64">Binary content; System.Text.Json writes a byte array as base64 straight into the response,
+/// so no intermediate base64 string (~2.7x the PNG size) is built.</param>
+public sealed record PreparedPartDto(PartRole Role, string MediaType, int? Page, string? Source, string? Text, byte[]? DataBase64);
 
 public sealed record AgentResult(string Agent, string Status, string Message);
 

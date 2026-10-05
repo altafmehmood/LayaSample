@@ -75,6 +75,27 @@ public static class DocumentFixtures
             "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
 
     /// <summary>
+    /// A form whose fields share short names under different parents (buyer.name, seller.name), plus a radio group and
+    /// a checkbox: 1 catalog, 2 pages, 3 page, 4 font, 5 AcroForm, 6/8 parents, 7/9 text widgets, 10 radio group,
+    /// 11/12 radio widgets, 13 checkbox, 14 shared appearance.
+    /// </summary>
+    public static byte[] NestedFormPdf() => BuildPdf(
+        "<< /Type /Catalog /Pages 2 0 R /AcroForm 5 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Annots [7 0 R 9 0 R 11 0 R 12 0 R 13 0 R] /Resources << /Font << /F1 4 0 R >> >> >>",
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        "<< /Fields [6 0 R 8 0 R 10 0 R 13 0 R] /DA (/F1 12 Tf 0 g) /DR << /Font << /F1 4 0 R >> >> >>",
+        "<< /T (buyer) /Kids [7 0 R] >>",
+        "<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /V (Jane Doe) /Parent 6 0 R /Rect [50 700 250 720] /P 3 0 R /F 4 >>",
+        "<< /T (seller) /Kids [9 0 R] >>",
+        "<< /Type /Annot /Subtype /Widget /FT /Tx /T (name) /V (Acme Ltd) /Parent 8 0 R /Rect [50 650 250 670] /P 3 0 R /F 4 >>",
+        "<< /FT /Btn /Ff 49152 /T (pay) /V /card /Kids [11 0 R 12 0 R] >>",
+        "<< /Type /Annot /Subtype /Widget /Parent 10 0 R /AS /card /AP << /N << /card 14 0 R /Off 14 0 R >> >> /Rect [50 600 62 612] /P 3 0 R /F 4 >>",
+        "<< /Type /Annot /Subtype /Widget /Parent 10 0 R /AS /Off /AP << /N << /cash 14 0 R /Off 14 0 R >> >> /Rect [80 600 92 612] /P 3 0 R /F 4 >>",
+        "<< /Type /Annot /Subtype /Widget /FT /Btn /T (agree) /V /Yes /AS /Yes /AP << /N << /Yes 14 0 R /Off 14 0 R >> >> /Rect [50 550 62 562] /P 3 0 R /F 4 >>",
+        StreamObject("<< /Type /XObject /Subtype /Form /BBox [0 0 12 12] ", ""));
+
+    /// <summary>
     /// Dynamic XFA form: 1 catalog (NeedsRendering), 2 pages, 3 placeholder page, 4 AcroForm with an XFA packet array,
     /// 5 the datasets packet holding the filled value.
     /// </summary>

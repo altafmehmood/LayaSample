@@ -32,7 +32,7 @@ public sealed class DocumentPreparer(IOptions<DocumentAnalysisOptions> options, 
             return new PreparedDocument(strategy, PrepareParts(StreamBytes.Read(stream), classification, strategy, includeAttachments: true, ct));
         }
         // The container was valid enough to classify, but the libraries reject its content.
-        catch (Exception ex) when (ex is not (DocumentException or OperationCanceledException))
+        catch (Exception ex) when (ex is not (DocumentException or OperationCanceledException or OcrUnavailableException))
         {
             throw new DocumentException("document content could not be read", StatusCodes.Status422UnprocessableEntity, ex);
         }
@@ -114,7 +114,7 @@ public sealed class DocumentPreparer(IOptions<DocumentAnalysisOptions> options, 
         if (includeAttachments)
         {
             foreach (var (name, data) in PdfStructuredData.ReadAttachments(pdf).Take(_options.MaxAttachments))
-                parts.AddRange(PrepareAttachment(name, data, structuredOnly: strategy == PreparationStrategy.StructuredData, ct));
+                parts.AddRange(PrepareAttachment(name, data.ToArray(), structuredOnly: strategy == PreparationStrategy.StructuredData, ct));
         }
 
         if (strategy == PreparationStrategy.StructuredData && parts.Count == 0)
@@ -141,7 +141,7 @@ public sealed class DocumentPreparer(IOptions<DocumentAnalysisOptions> options, 
                 .Select(p => p with { Source = name });
         }
         // A corrupt embedded file must not fail the document that carries it.
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not (OperationCanceledException or OcrUnavailableException))
         {
             return [];
         }

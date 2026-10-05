@@ -44,17 +44,42 @@ public static class PdfStructuredData
         _ => options.ToList()
     };
 
-    /// <summary>AcroForm field values as a JSON object keyed by field name, or null when there are no fields.</summary>
+    /// <summary>
+    /// The form's fields with their fully qualified names (<c>buyer.name</c>), one entry per field a person fills in.
+    /// PdfPig's <c>GetFields</c> flattens the tree to short names and also returns each button of a radio or checkbox
+    /// group, so a group would be counted once per button.
+    /// </summary>
+    public static IEnumerable<(string Name, AcroFieldBase Field)> Fields(AcroForm form)
+    {
+        var index = 0;
+        IEnumerable<(string, AcroFieldBase)> Walk(IEnumerable<AcroFieldBase> fields, string? parent)
+        {
+            foreach (var field in fields)
+            {
+                index++;
+                var partial = field.Information.PartialName;
+                var name = string.IsNullOrEmpty(partial) ? parent ?? $"field{index}" : parent is null ? partial : $"{parent}.{partial}";
+                // Radio and checkbox groups are AcroNonTerminalFields too, but their children are buttons of one field.
+                if (field.GetType() == typeof(AcroNonTerminalField))
+                {
+                    foreach (var child in Walk(((AcroNonTerminalField)field).Children, name)) yield return child;
+                }
+                else yield return (name, field);
+            }
+        }
+        return Walk(form.Fields, null);
+    }
+
+    /// <summary>AcroForm field values as a JSON object keyed by fully qualified field name, or null when there are no fields.</summary>
     public static string? ReadFormValuesJson(PdfDocument pdf)
     {
         if (!pdf.TryGetForm(out var form) || form is null) return null;
 
         var values = new Dictionary<string, object?>();
-        foreach (var field in form.GetFields())
+        foreach (var (name, field) in Fields(form))
         {
             if (field is AcroSignatureField || field.FieldType == AcroFieldType.PushButton) continue;
 
-            var name = field.Information.PartialName ?? field.Information.AlternateName ?? $"field{values.Count + 1}";
             var key = name;
             for (var i = 2; values.ContainsKey(key); i++) key = $"{name}#{i}";
             values[key] = FieldValue(field);
@@ -95,9 +120,10 @@ public static class PdfStructuredData
         }
     }
 
-    public static IReadOnlyList<(string Name, byte[] Bytes)> ReadAttachments(PdfDocument pdf) =>
+    /// <summary>Embedded files as PdfPig decoded them; copy only the ones you keep.</summary>
+    public static IReadOnlyList<(string Name, ReadOnlyMemory<byte> Bytes)> ReadAttachments(PdfDocument pdf) =>
         pdf.Advanced.TryGetEmbeddedFiles(out var files) && files is not null
-            ? files.Select(f => (f.Name, f.Memory.ToArray())).ToList()
+            ? files.Select(f => (f.Name, f.Memory)).ToList()
             : [];
 
     /// <summary>Parses untrusted XML with DTDs disabled (no entity expansion / external resolution).</summary>

@@ -37,6 +37,12 @@ public sealed class DocumentAnalysisOptions
 
     public bool EnableOcr { get; set; } = true;
 
+    /// <summary>
+    /// OCR model family. Only PP-OCRv5 Latin ships with the app; v6 models (including this default) are fetched by
+    /// scripts/download-models.sh.
+    /// </summary>
+    public Ocr.OcrModel OcrModel { get; set; } = Ocr.OcrModel.PPOCRv6Medium;
+
     /// <summary>OCR input is downscaled so its longer side is at most this many pixels.</summary>
     public int OcrMaxSide { get; set; } = 2560;
 

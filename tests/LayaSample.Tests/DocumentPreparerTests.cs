@@ -36,6 +36,19 @@ public class DocumentPreparerTests
     }
 
     [Fact]
+    public void Form_values_are_keyed_by_fully_qualified_field_name()
+    {
+        var values = Assert.Single(Prepare(DocumentFixtures.NestedFormPdf()).Parts, p => p.Role == PartRole.StructuredData);
+
+        using var json = System.Text.Json.JsonDocument.Parse(values.Text!);
+        Assert.Equal(["buyer.name", "seller.name", "pay", "agree"], json.RootElement.EnumerateObject().Select(p => p.Name));
+        Assert.Equal("Jane Doe", json.RootElement.GetProperty("buyer.name").GetString());
+        Assert.Equal("Acme Ltd", json.RootElement.GetProperty("seller.name").GetString());
+        Assert.Equal("card", json.RootElement.GetProperty("pay").GetString());
+        Assert.True(json.RootElement.GetProperty("agree").GetBoolean());
+    }
+
+    [Fact]
     public void Text_pdf_markdown_has_a_part_per_page()
     {
         var prepared = Prepare(DocumentFixtures.TextPdf());

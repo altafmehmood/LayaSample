@@ -24,6 +24,17 @@ public class DocumentClassifierTests
     }
 
     [Fact]
+    public void Radio_and_checkbox_groups_count_as_one_field_each()
+    {
+        var result = Classify(DocumentFixtures.NestedFormPdf());
+
+        // buyer.name, seller.name, pay (a radio group with two buttons), agree.
+        Assert.Equal(DocumentKind.FormPdf, result.Kind);
+        Assert.Equal(4, result.FormFieldCount);
+        Assert.Equal(4, result.FilledFormFieldCount);
+    }
+
+    [Fact]
     public void Pdf_filled_with_annotations_is_rendered_to_png()
     {
         var result = Classify(DocumentFixtures.AnnotatedPdf());

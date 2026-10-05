@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+.git/
+.vs/
+.vscode/
+.idea/
+docs/
+tests/
+# Models are downloaded inside the build, never copied from the developer's machine.
+src/LayaSample.Api/model-cache/
+src/LayaSample.Api/ocr-models/

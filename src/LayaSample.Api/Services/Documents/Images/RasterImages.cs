@@ -51,12 +51,25 @@ public static class RasterImages
         if (width != image.Width || height != image.Height)
             image.Resize(new MagickGeometry((uint)width, (uint)height) { IgnoreAspectRatio = true });
 
-        using var pixels = image.GetPixelsUnsafe();
-        var rgba = pixels.ToByteArray(PixelMapping.RGBA) ?? throw new InvalidDataException("image page could not be decoded");
+        byte[] rgba;
+        using (var pixels = image.GetPixelsUnsafe())
+            rgba = pixels.ToByteArray(PixelMapping.RGBA) ?? throw new InvalidDataException("image page could not be decoded");
+        return WrapPixels(rgba, width, height);
+    }
 
-        var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul));
-        Marshal.Copy(rgba, 0, bitmap.GetPixels(), rgba.Length);
-        return bitmap;
+    /// <summary>Lends the pixel array to Skia (pinned until the bitmap is disposed) instead of copying it.</summary>
+    private static SKBitmap WrapPixels(byte[] rgba, int width, int height)
+    {
+        var info = new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+        if (rgba.Length != info.BytesSize) throw new InvalidDataException("image page could not be decoded");
+
+        var handle = GCHandle.Alloc(rgba, GCHandleType.Pinned);
+        var bitmap = new SKBitmap();
+        if (bitmap.InstallPixels(info, handle.AddrOfPinnedObject(), info.RowBytes, (_, _) => handle.Free())) return bitmap;
+
+        handle.Free();
+        bitmap.Dispose();
+        throw new InvalidDataException("image page could not be decoded");
     }
 
     /// <summary>The page size once non-square pixels are stretched, checked against the decode limit.</summary>

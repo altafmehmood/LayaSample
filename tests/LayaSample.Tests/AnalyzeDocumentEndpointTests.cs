@@ -38,8 +38,14 @@ public class AnalyzeDocumentEndpointTests : IClassFixture<AnalyzeDocumentEndpoin
         Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
     };
 
+    private readonly Factory _factory;
     private readonly HttpClient _client;
-    public AnalyzeDocumentEndpointTests(Factory factory) => _client = factory.CreateClient();
+
+    public AnalyzeDocumentEndpointTests(Factory factory)
+    {
+        _factory = factory;
+        _client = factory.CreateClient();
+    }
 
     private async Task<HttpResponseMessage> Post(byte[]? bytes, string fileName = "doc.bin", string query = "")
     {
@@ -139,5 +145,30 @@ public class AnalyzeDocumentEndpointTests : IClassFixture<AnalyzeDocumentEndpoin
         Assert.Equal(PreparationStrategy.RenderToPng, body.AppliedStrategy);
         Assert.All(body.Parts, p => Assert.Equal("image/png", p.MediaType));
         Assert.Null(body.Agent);
+    }
+
+    [Fact]
+    public async Task Png_parts_are_returned_as_base64()
+    {
+        var res = await Post(DocumentFixtures.Png(), "scan.png", "?dispatch=false");
+
+        using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var image = doc.RootElement.GetProperty("parts").EnumerateArray().First(p => p.GetProperty("role").GetString() == "PageImage");
+        Assert.Equal([0x89, 0x50, 0x4E, 0x47], Convert.FromBase64String(image.GetProperty("dataBase64").GetString()!)[..4]);
+    }
+
+    [Fact]
+    public async Task Unavailable_ocr_is_a_server_error_not_a_bad_document()
+    {
+        using var factory = _factory.WithWebHostBuilder(b => b.ConfigureServices(s =>
+        {
+            s.RemoveAll<IOcrEngine>();
+            s.AddSingleton<IOcrEngine>(new FakeOcr(fail: true));
+        }));
+        using var form = new MultipartFormDataContent { { new ByteArrayContent(DocumentFixtures.BlankPdf()), "file", "scan.pdf" } };
+
+        var res = await factory.CreateClient().PostAsync("/api/documents/analyze?dispatch=false", form, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, res.StatusCode);
     }
 }

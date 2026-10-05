@@ -24,6 +24,11 @@ public static class DocumentSniffer
 
     public static string Sniff(byte[] bytes) => Sniff(new MemoryStream(bytes, writable: false));
 
+    public static string Sniff(ReadOnlyMemory<byte> bytes) =>
+        System.Runtime.InteropServices.MemoryMarshal.TryGetArray(bytes, out var segment)
+            ? Sniff(new MemoryStream(segment.Array!, segment.Offset, segment.Count, writable: false))
+            : Sniff(bytes.ToArray());
+
     public static string Sniff(Stream stream)
     {
         var start = stream.Position;

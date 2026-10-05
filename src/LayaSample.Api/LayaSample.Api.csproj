@@ -18,4 +18,10 @@
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Optional PP-OCRv6 models fetched by scripts/download-models.sh, copied to models/v6 next to the v5 set the
+         NuGet copies. Not kept in models/ here: on a case-insensitive file system that is the C# Models folder. -->
+    <None Update="ocr-models/v6/*" Link="models/v6/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

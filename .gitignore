@@ -483,3 +483,6 @@ $RECYCLE.BIN/
 
 # Downloaded Laya ONNX model (~800 MB)
 src/LayaSample.Api/model-cache/
+
+# Optional PP-OCRv6 models (scripts/download-models.sh)
+src/LayaSample.Api/ocr-models/

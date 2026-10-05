@@ -66,6 +66,7 @@ app.MapPost("/api/documents/analyze", async (
     IDocumentPreparer preparer,
     IDocumentRouter router,
     IOptions<DocumentAnalysisOptions> options,
+    ILogger<Program> logger,
     CancellationToken ct) =>
 {
     if (file is null || file.Length == 0)
@@ -75,7 +76,8 @@ app.MapPost("/api/documents/analyze", async (
 
     try
     {
-        // Buffered once so classify and prepare can each re-read it.
+        // Buffered once: PDF, ZIP and TIFF need random access. The buffer is sized exactly so classify and prepare
+        // share it rather than each taking a copy.
         await using var stream = new MemoryStream((int)file.Length);
         await file.CopyToAsync(stream, ct);
 
@@ -84,13 +86,18 @@ app.MapPost("/api/documents/analyze", async (
         var agent = dispatch == false ? null : await router.RouteAsync(classification, prepared, ct);
 
         var parts = prepared.Parts
-            .Select(p => new PreparedPartDto(p.Role, p.MediaType, p.Page, p.Source, p.Text, p.Data is null ? null : Convert.ToBase64String(p.Data)))
+            .Select(p => new PreparedPartDto(p.Role, p.MediaType, p.Page, p.Source, p.Text, p.Data))
             .ToList();
         return Results.Ok(new AnalyzeDocumentResponse(file.FileName, classification, prepared.Strategy, parts, agent));
     }
     catch (DocumentException ex)
     {
         return Results.Json(new { error = ex.Message }, statusCode: ex.StatusCode);
+    }
+    catch (OcrUnavailableException ex)
+    {
+        logger.LogError(ex, "OCR is unavailable");
+        return Results.Json(new { error = "OCR is unavailable; retry later or use ?strategy=RenderToPng" }, statusCode: 503);
     }
 })
 .DisableAntiforgery()
@@ -101,7 +108,8 @@ app.MapPost("/api/documents/analyze", async (
 .ProducesProblem(StatusCodes.Status400BadRequest)
 .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
 .ProducesProblem(StatusCodes.Status415UnsupportedMediaType)
-.ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+.ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+.ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
 app.Run();
 

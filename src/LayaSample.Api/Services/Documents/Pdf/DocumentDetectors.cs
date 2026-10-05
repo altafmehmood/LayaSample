@@ -12,7 +12,7 @@ public sealed class AcroFormDetector : IPdfDetector
     {
         if (!inspection.Pdf.TryGetForm(out var form) || form is null) return;
 
-        foreach (var field in form.GetFields())
+        foreach (var (_, field) in PdfStructuredData.Fields(form))
         {
             switch (field)
             {
