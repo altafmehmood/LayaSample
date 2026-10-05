@@ -142,7 +142,6 @@ var maxBodyBytes = documentOptions.MaxFileBytes + 64 * 1024;
 
 app.MapPost("/api/documents/analyze", async (
     IFormFile? file,
-    PreparationStrategy? strategy,
     bool? dispatch,
     bool? includeData,
     IDocumentClassifier classifier,
@@ -179,7 +178,7 @@ app.MapPost("/api/documents/analyze", async (
 
         classification = await classifier.ClassifyAsync(stream, ct);
         Lap("classify");
-        var prepared = await preparer.PrepareAsync(stream, classification, strategy ?? classification.Strategy, ct);
+        var prepared = await preparer.PrepareAsync(stream, classification, ct);
         Lap("prepare");
         var agent = dispatch == false ? null : await router.RouteAsync(classification, prepared, ct);
         Lap("route");
@@ -193,7 +192,7 @@ app.MapPost("/api/documents/analyze", async (
         var parts = prepared.Parts
             .Select(p => new PreparedPartDto(p.Role, p.MediaType, p.Page, p.Source, p.Text, includeData == false ? null : p.Data))
             .ToList();
-        return Results.Ok(new AnalyzeDocumentResponse(file.FileName, classification, prepared.Strategy, parts, agent));
+        return Results.Ok(new AnalyzeDocumentResponse(file.FileName, classification, parts, agent));
     }
     catch (DocumentException ex)
     {
@@ -207,7 +206,7 @@ app.MapPost("/api/documents/analyze", async (
     {
         logger.LogError(ex, "OCR is unavailable");
         metrics.RecordDocument(classification?.Kind.ToString() ?? "unclassified", "none", StatusCodes.Status503ServiceUnavailable);
-        return Problem(StatusCodes.Status503ServiceUnavailable, "OCR is unavailable; retry later or use ?strategy=RenderToPng");
+        return Problem(StatusCodes.Status503ServiceUnavailable, "OCR is unavailable; retry later");
     }
     catch (RendererUnavailableException ex)
     {
@@ -227,8 +226,10 @@ app.MapPost("/api/documents/analyze", async (
 .DisableAntiforgery()
 .Accepts<IFormFile>("multipart/form-data")
 .WithName("AnalyzeDocument")
-.WithSummary("Classify an uploaded PDF, Excel, Word or image document, prepare it (PNG / markdown / hybrid with OCR / structured data / as-is) and route it to an agent")
-.WithDescription("includeData=false leaves page images and original bytes out of the response (parts keep their metadata and text).")
+.WithSummary("Classify an uploaded PDF, Excel, Word or image document, prepare it for an AI agent and route it")
+.WithDescription("The preparation strategy (page images, markdown, page images with OCR text, structured data) is chosen per page "
+    + "from the content and reported in classification.strategy and classification.pages[].strategy. "
+    + "includeData=false leaves page images out of the response (parts keep their metadata and text).")
 .Produces<AnalyzeDocumentResponse>()
 .ProducesProblem(StatusCodes.Status400BadRequest)
 .ProducesProblem(StatusCodes.Status413PayloadTooLarge)

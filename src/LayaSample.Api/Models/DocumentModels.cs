@@ -36,7 +36,6 @@ public enum PreparationStrategy
     Hybrid,
     /// <summary>Only machine-readable data: form values, XFA datasets, embedded XML.</summary>
     StructuredData,
-    AsIs,
     /// <summary>Document-level marker: each page has its own strategy (see <see cref="PageClassification.Strategy"/>).</summary>
     PerPage
 }
@@ -89,7 +88,7 @@ public sealed record DocumentClassification
     public IReadOnlyList<AttachmentInfo> Attachments { get; init; } = [];
 }
 
-public enum PartRole { PageImage, PageText, OcrText, StructuredData, Original }
+public enum PartRole { PageImage, PageText, OcrText, StructuredData }
 
 /// <summary>One piece of prepared content. <see cref="Source"/> names the attachment it came from (null = the uploaded document).</summary>
 public sealed record PreparedPart(PartRole Role, string MediaType, int? Page, string? Text, byte[]? Data, string? Source = null);
@@ -105,6 +104,5 @@ public sealed record AgentResult(string Agent, string Status, string Message);
 public sealed record AnalyzeDocumentResponse(
     string FileName,
     DocumentClassification Classification,
-    PreparationStrategy AppliedStrategy,
     IReadOnlyList<PreparedPartDto> Parts,
     AgentResult? Agent);

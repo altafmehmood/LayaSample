@@ -135,39 +135,6 @@ Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.doc
 < ./office/report.docx
 --sample--
 
-### Override: render a text PDF to PNG
-POST {{host}}/api/documents/analyze?dispatch=false&strategy=RenderToPng
-Content-Type: multipart/form-data; boundary=sample
-
---sample
-Content-Disposition: form-data; name="file"; filename="text.pdf"
-Content-Type: application/pdf
-
-< ./pdf/text.pdf
---sample--
-
-### Override: original bytes as-is
-POST {{host}}/api/documents/analyze?dispatch=false&strategy=AsIs
-Content-Type: multipart/form-data; boundary=sample
-
---sample
-Content-Disposition: form-data; name="file"; filename="report.docx"
-Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document
-
-< ./office/report.docx
---sample--
-
-### Rejected (400): Markdown does not apply to images
-POST {{host}}/api/documents/analyze?dispatch=false&strategy=Markdown
-Content-Type: multipart/form-data; boundary=sample
-
---sample
-Content-Disposition: form-data; name="file"; filename="scan-ocr.png"
-Content-Type: image/png
-
-< ./images/scan-ocr.png
---sample--
-
 ### Signed PDF: see classification.signatures
 POST {{host}}/api/documents/analyze?dispatch=false
 Content-Type: multipart/form-data; boundary=sample

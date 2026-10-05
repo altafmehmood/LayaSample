@@ -14,12 +14,15 @@ namespace LayaSample.Api.Services.Documents;
 
 public interface IDocumentPreparer
 {
-    /// <summary>Converts the document into the form the downstream agent should receive.</summary>
-    /// <exception cref="DocumentException">The strategy does not apply to this kind of document (400), or its content is unreadable (422).</exception>
+    /// <summary>
+    /// Converts the document into the form the downstream agent should receive, using the strategy the classification
+    /// chose (per page for PDFs).
+    /// </summary>
+    /// <exception cref="DocumentException">The content is unreadable (422).</exception>
     /// <exception cref="OcrUnavailableException"/>
     /// <exception cref="RendererUnavailableException"/>
     /// <exception cref="RenderingFailedException"/>
-    Task<PreparedDocument> PrepareAsync(Stream stream, DocumentClassification classification, PreparationStrategy strategy, CancellationToken ct = default);
+    Task<PreparedDocument> PrepareAsync(Stream stream, DocumentClassification classification, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -45,15 +48,13 @@ public sealed class DocumentPreparer(
         }
     }
 
-    public async Task<PreparedDocument> PrepareAsync(Stream stream, DocumentClassification classification, PreparationStrategy strategy,
-        CancellationToken ct = default)
+    public async Task<PreparedDocument> PrepareAsync(Stream stream, DocumentClassification classification, CancellationToken ct = default)
     {
-        Validate(classification.Kind, strategy);
         try
         {
             var budget = new Budget(_options.MaxPages);
-            return new PreparedDocument(strategy,
-                await PreparePartsAsync(StreamBytes.Read(stream), classification, strategy, budget, includeAttachments: true, ct));
+            return new PreparedDocument(classification.Strategy,
+                await PreparePartsAsync(StreamBytes.Read(stream), classification, budget, includeAttachments: true, ct));
         }
         // The container was valid enough to classify, but the libraries (or the renderer) reject its content.
         catch (Exception ex) when (!IsServerProblem(ex) && ex is not DocumentException)
@@ -66,27 +67,10 @@ public sealed class DocumentPreparer(
     private static bool IsServerProblem(Exception ex) =>
         ex is OperationCanceledException or OcrUnavailableException or RendererUnavailableException or RenderingFailedException;
 
-    private static void Validate(DocumentKind kind, PreparationStrategy strategy)
+    private async Task<List<PreparedPart>> PreparePartsAsync(byte[] bytes, DocumentClassification classification, Budget budget,
+        bool includeAttachments, CancellationToken ct)
     {
-        var error = strategy switch
-        {
-            PreparationStrategy.RenderToPng or PreparationStrategy.Hybrid when !kind.IsPaged() =>
-                $"{strategy} only applies to PDF and image documents",
-            PreparationStrategy.Markdown when kind == DocumentKind.Image =>
-                "Markdown does not apply to images; use Hybrid for page images with OCR text",
-            PreparationStrategy.StructuredData or PreparationStrategy.PerPage when !kind.IsPdf() =>
-                $"{strategy} only applies to PDF documents",
-            _ => null
-        };
-        if (error is not null) throw new DocumentException(error, StatusCodes.Status400BadRequest);
-    }
-
-    private async Task<List<PreparedPart>> PreparePartsAsync(byte[] bytes, DocumentClassification classification, PreparationStrategy strategy,
-        Budget budget, bool includeAttachments, CancellationToken ct)
-    {
-        if (strategy == PreparationStrategy.AsIs)
-            return [new PreparedPart(PartRole.Original, classification.MediaType, null, null, bytes)];
-
+        var strategy = classification.Strategy;
         return classification.Kind switch
         {
             DocumentKind.Spreadsheet => [Markdown(null, SpreadsheetToMarkdown(new MemoryStream(bytes, writable: false), ct))],
@@ -200,7 +184,7 @@ public sealed class DocumentPreparer(
         try
         {
             var classification = await classifier.ClassifyAsync(new MemoryStream(bytes, writable: false), ct);
-            return (await PreparePartsAsync(bytes, classification, classification.Strategy, budget, includeAttachments: false, ct))
+            return (await PreparePartsAsync(bytes, classification, budget, includeAttachments: false, ct))
                 .Select(p => p with { Source = name });
         }
         // A corrupt embedded file must not fail the document that carries it; it stays listed in the classification.

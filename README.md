@@ -22,8 +22,9 @@ Response: `dissatisfied`, `dissatisfactionScore` (P(dissatisfied), 0–1), `rati
 `level` (None when not dissatisfied, otherwise Mild/Moderate/Severe from the rating), `primaryDriver` (null when
 unclear or not dissatisfied), `confidence`. Errors are problem details (`application/problem+json`).
 
-Documents go to `POST /api/documents/analyze`; see [docs/samples](docs/samples/README.md) for sample files and the
-expected results.
+Documents go to `POST /api/documents/analyze` as a multipart `file`. The API decides how to prepare each page from its
+content (there is no strategy parameter) and reports the choice in `classification.strategy`; see
+[docs/samples](docs/samples/README.md) for sample files and the expected results.
 
 ## Architecture
 Untrusted PDFs and images are parsed by native C/C++ libraries (PDFium, ImageMagick, Skia, ONNX Runtime for OCR).

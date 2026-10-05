@@ -75,13 +75,6 @@ public class AnalyzeDocumentEndpointTests : IClassFixture<AnalyzeDocumentEndpoin
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, res.StatusCode);
     }
 
-    [Fact]
-    public async Task Rejects_png_strategy_for_spreadsheet()
-    {
-        var res = await Post(DocumentFixtures.Xlsx(), "a.xlsx", "?strategy=RenderToPng");
-        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
-    }
-
     public static TheoryData<string, string, DocumentKind, PreparationStrategy, string> Samples => new()
     {
         { "form.pdf", "form", DocumentKind.FormPdf, PreparationStrategy.RenderToPng, DocumentRoutes.Form },
@@ -116,7 +109,7 @@ public class AnalyzeDocumentEndpointTests : IClassFixture<AnalyzeDocumentEndpoin
         var body = await res.Content.ReadFromJsonAsync<AnalyzeDocumentResponse>(Json, TestContext.Current.CancellationToken);
         Assert.NotNull(body);
         Assert.Equal(kind, body.Classification.Kind);
-        Assert.Equal(strategy, body.AppliedStrategy);
+        Assert.Equal(strategy, body.Classification.Strategy);
         Assert.Equal(route, body.Classification.Route);
         Assert.Equal("handled", body.Agent?.Status);
         Assert.Equal(route, body.Agent?.Agent);
@@ -136,15 +129,26 @@ public class AnalyzeDocumentEndpointTests : IClassFixture<AnalyzeDocumentEndpoin
     }
 
     [Fact]
-    public async Task Strategy_override_and_dispatch_flag_are_honoured()
+    public async Task Dispatch_flag_skips_the_agent()
     {
-        var res = await Post(DocumentFixtures.TextPdf(), "text.pdf", "?strategy=RenderToPng&dispatch=false");
+        var res = await Post(DocumentFixtures.TextPdf(), "text.pdf", "?dispatch=false");
 
         var body = await res.Content.ReadFromJsonAsync<AnalyzeDocumentResponse>(Json, TestContext.Current.CancellationToken);
         Assert.NotNull(body);
-        Assert.Equal(PreparationStrategy.RenderToPng, body.AppliedStrategy);
-        Assert.All(body.Parts, p => Assert.Equal("image/png", p.MediaType));
         Assert.Null(body.Agent);
+    }
+
+    [Fact]
+    public async Task Strategy_query_parameter_is_ignored()
+    {
+        // The API always chooses the strategy from the content; an old client's ?strategy= changes nothing.
+        var res = await Post(DocumentFixtures.TextPdf(), "text.pdf", "?strategy=RenderToPng&dispatch=false");
+
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        var body = await res.Content.ReadFromJsonAsync<AnalyzeDocumentResponse>(Json, TestContext.Current.CancellationToken);
+        Assert.NotNull(body);
+        Assert.Equal(PreparationStrategy.Markdown, body.Classification.Strategy);
+        Assert.All(body.Parts, p => Assert.Equal("text/markdown", p.MediaType));
     }
 
     [Fact]

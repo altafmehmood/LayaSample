@@ -16,9 +16,13 @@ All files are generated, so there are no third-party licensing questions. Most c
      curl -F "file=@docs/samples/pdf/scanned-ocr.pdf" "http://localhost:5091/api/documents/analyze?dispatch=false"
      ```
 
+The API chooses how to prepare each document from its content, page by page: markdown from a usable text layer, a
+page image where only a render shows the content (forms, annotations), a page image plus OCR text for scans and
+faxes, or only the machine-readable data for dynamic XFA forms. The choice is reported in `classification.strategy`
+(`PerPage` when pages differ) and `classification.pages[].strategy`.
+
 Query parameters:
 
-- `strategy=<name>` overrides the classifier's choice: `AsIs`, `RenderToPng`, `Markdown`, `Hybrid`, `StructuredData` or `PerPage`.
 - `dispatch=false` skips the agent call.
 - `includeData=false` leaves page images and original bytes out of the response; parts keep their metadata and text.
 
@@ -27,7 +31,7 @@ reason in `detail`.
 
 ## Expected results
 
-| File | Kind | Strategy | Parts returned |
+| File | Kind | `classification.strategy` | Parts returned |
 |---|---|---|---|
 | `pdf/text.pdf` | TextPdf | Markdown | One markdown part per page (2) |
 | `pdf/scanned-blank.pdf` | ScannedPdf | Hybrid | Page image only (OCR finds nothing) |

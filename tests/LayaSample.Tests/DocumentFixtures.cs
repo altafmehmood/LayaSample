@@ -26,10 +26,10 @@ public static class DocumentFixtures
     }
 
     /// <summary>A page with no text layer at all, as a scan would be.</summary>
-    public static byte[] BlankPdf()
+    public static byte[] BlankPdf(int pages = 1)
     {
         var builder = new PdfDocumentBuilder();
-        builder.AddPage(595, 842);
+        for (var i = 0; i < pages; i++) builder.AddPage(595, 842);
         return builder.Build();
     }
 
@@ -106,6 +106,14 @@ public static class DocumentFixtures
         "<< /Fields [] /XFA [(datasets) 5 0 R] >>",
         StreamObject("<< ",
             $"<xfa:datasets xmlns:xfa=\"http://www.xfa.org/schema/xfa-data/1.0/\"><xfa:data><form><name>{value}</name></form></xfa:data></xfa:datasets>"));
+
+    /// <summary>Dynamic XFA form whose XFA holds only a template: no filled data to extract.</summary>
+    public static byte[] DynamicXfaPdfWithoutData() => BuildPdf(
+        "<< /Type /Catalog /Pages 2 0 R /AcroForm 4 0 R /NeedsRendering true >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >>",
+        "<< /Fields [] /XFA [(template) 5 0 R] >>",
+        StreamObject("<< ", "<template xmlns=\"http://www.xfa.org/schema/xfa-template/3.3/\"/>"));
 
     /// <summary>
     /// Text PDF carrying an embedded e-invoice: 1 catalog with an EmbeddedFiles name tree, 2 pages, 3 page, 4 content,

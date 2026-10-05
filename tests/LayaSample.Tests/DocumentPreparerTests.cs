@@ -9,7 +9,7 @@ public class DocumentPreparerTests
 {
     private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47];
 
-    private static PreparedDocument Prepare(byte[] bytes, PreparationStrategy? strategy = null, DocumentAnalysisOptions? options = null, FakeOcr? ocr = null)
+    private static PreparedDocument Prepare(byte[] bytes, DocumentAnalysisOptions? options = null, FakeOcr? ocr = null)
     {
         var opts = Microsoft.Extensions.Options.Options.Create(options ?? new DocumentAnalysisOptions());
         var rasterizer = new LocalPageRasterizer(ocr ?? new FakeOcr(), Microsoft.Extensions.Options.Options.Create(new RenderingOptions()));
@@ -19,7 +19,7 @@ public class DocumentPreparerTests
         using var stream = new MemoryStream(bytes);
         // The in-process rasterizer completes synchronously, so blocking here cannot deadlock.
         var classification = classifier.ClassifyAsync(stream, ct).GetAwaiter().GetResult();
-        return preparer.PrepareAsync(stream, classification, strategy ?? classification.Strategy, ct).GetAwaiter().GetResult();
+        return preparer.PrepareAsync(stream, classification, ct).GetAwaiter().GetResult();
     }
 
     [Fact]
@@ -81,8 +81,9 @@ public class DocumentPreparerTests
     public void Ocr_is_skipped_when_disabled()
     {
         var ocr = new FakeOcr();
-        var prepared = Prepare(DocumentFixtures.BlankPdf(), PreparationStrategy.Hybrid, new DocumentAnalysisOptions { EnableOcr = false }, ocr);
+        var prepared = Prepare(DocumentFixtures.BlankPdf(), new DocumentAnalysisOptions { EnableOcr = false }, ocr);
 
+        Assert.Equal(PreparationStrategy.RenderToPng, prepared.Strategy);
         Assert.Equal(PartRole.PageImage, Assert.Single(prepared.Parts).Role);
         Assert.Empty(ocr.Calls);
     }
@@ -111,7 +112,7 @@ public class DocumentPreparerTests
     [Fact]
     public void Structured_data_without_any_data_is_unprocessable()
     {
-        var ex = Assert.Throws<DocumentException>(() => Prepare(DocumentFixtures.TextPdf(), PreparationStrategy.StructuredData));
+        var ex = Assert.Throws<DocumentException>(() => Prepare(DocumentFixtures.DynamicXfaPdfWithoutData()));
         Assert.Equal(422, ex.StatusCode);
     }
 
@@ -145,8 +146,8 @@ public class DocumentPreparerTests
     [Fact]
     public void Image_pages_stop_at_max_pages()
     {
-        var prepared = Prepare(DocumentFixtures.FaxTiff(pages: 3), PreparationStrategy.RenderToPng, new DocumentAnalysisOptions { MaxPages = 2 });
-        Assert.Equal(2, prepared.Parts.Count);
+        var prepared = Prepare(DocumentFixtures.FaxTiff(pages: 3), new DocumentAnalysisOptions { MaxPages = 2 });
+        Assert.Equal([1, 2], prepared.Parts.Where(p => p.Role == PartRole.PageImage).Select(p => p.Page));
     }
 
     [Fact]
@@ -164,13 +165,6 @@ public class DocumentPreparerTests
 
         Assert.Equal(PreparationStrategy.PerPage, prepared.Strategy);
         Assert.Equal((PartRole.PageText, 2), (Assert.Single(prepared.Parts).Role, prepared.Parts[0].Page));
-    }
-
-    [Fact]
-    public void Markdown_is_rejected_for_images()
-    {
-        var ex = Assert.Throws<DocumentException>(() => Prepare(DocumentFixtures.Png(), PreparationStrategy.Markdown));
-        Assert.Equal(400, ex.StatusCode);
     }
 
     [Fact]
@@ -193,8 +187,8 @@ public class DocumentPreparerTests
     [Fact]
     public void Png_rendering_stops_at_max_pages()
     {
-        var prepared = Prepare(DocumentFixtures.TextPdf(), PreparationStrategy.RenderToPng, new DocumentAnalysisOptions { MaxPages = 1 });
-        Assert.Single(prepared.Parts);
+        var prepared = Prepare(DocumentFixtures.BlankPdf(pages: 2), new DocumentAnalysisOptions { MaxPages = 1 });
+        Assert.Equal(1, Assert.Single(prepared.Parts, p => p.Role == PartRole.PageImage).Page);
     }
 
     [Fact]
@@ -214,24 +208,6 @@ public class DocumentPreparerTests
 
         Assert.Contains("Quarterly report", text);
         Assert.Contains("Revenue grew this quarter.", text);
-    }
-
-    [Fact]
-    public void As_is_returns_original_bytes()
-    {
-        var bytes = DocumentFixtures.TextPdf();
-
-        var part = Assert.Single(Prepare(bytes, PreparationStrategy.AsIs).Parts);
-
-        Assert.Equal((PartRole.Original, "application/pdf"), (part.Role, part.MediaType));
-        Assert.Equal(bytes, part.Data);
-    }
-
-    [Fact]
-    public void Png_strategy_is_rejected_for_non_paged_documents()
-    {
-        var ex = Assert.Throws<DocumentException>(() => Prepare(DocumentFixtures.Xlsx(), PreparationStrategy.RenderToPng));
-        Assert.Equal(400, ex.StatusCode);
     }
 
     [Fact]
