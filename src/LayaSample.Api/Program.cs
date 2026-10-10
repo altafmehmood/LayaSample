@@ -103,11 +103,8 @@ app.UseStatusCodePages();
 app.UseRequestTimeouts();
 app.UseRateLimiter();
 
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();           // /openapi/v1.json
-    app.MapScalarApiReference(); // /scalar/v1
-}
+app.MapOpenApi();            // /openapi/v1.json
+app.MapScalarApiReference(); // /scalar/v1
 
 const int MaxTextLength = 4000;
 
