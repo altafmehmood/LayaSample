@@ -34,7 +34,7 @@ public class OcrEngineTests
         using var engine = new RapidOcrEngine(Microsoft.Extensions.Options.Options.Create(new RenderingOptions()));
         using var image = new SKBitmap(1200, 300);
         using (var canvas = new SKCanvas(image))
-        using (var font = new SKFont(SKTypeface.Default, 64))
+        using (var font = new SKFont(BundledTypeface(), 64))
         using (var paint = new SKPaint { Color = SKColors.Black, IsAntialias = true })
         {
             canvas.Clear(SKColors.White);
@@ -44,5 +44,13 @@ public class OcrEngineTests
         var text = engine.Recognize(image, TestContext.Current.CancellationToken);
 
         Assert.Contains("INVOICE", text);
+    }
+
+    // SKTypeface.Default draws nothing on Linux runners without a font manager, so the test ships its own font.
+    private static SKTypeface BundledTypeface()
+    {
+        using var stream = typeof(OcrEngineTests).Assembly.GetManifestResourceStream("DejaVuSans.ttf")
+            ?? throw new InvalidOperationException("DejaVuSans.ttf is not embedded in the test assembly.");
+        return SKTypeface.FromStream(stream) ?? throw new InvalidOperationException("DejaVuSans.ttf could not be loaded.");
     }
 }

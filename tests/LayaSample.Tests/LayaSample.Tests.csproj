@@ -17,6 +17,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- OCR tests draw text with this font, so they don't depend on the machine's fonts (CI runners have none). -->
+    <EmbeddedResource Include="Fonts\DejaVuSans.ttf" LogicalName="DejaVuSans.ttf" />
+    <None Include="Fonts\DejaVu-LICENSE.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\LayaSample.Api\LayaSample.Api.csproj" />
     <ProjectReference Include="..\..\src\LayaSample.Renderer\LayaSample.Renderer.csproj" />
     <!-- Direct, so RapidOcrNet's build targets (which copy the bundled OCR models) reach this project too. -->
