@@ -37,27 +37,45 @@ jobs:
       - name: Licences
         run: dotnet dnx -y nuget-license@4.0.18 -- -i LayaSample.slnx -t -a .github/allowed-licenses.json
 
+  # Every run builds both images. Pushes to main also publish them to GHCR, tagged with the commit SHA and latest;
+  # pull requests build without pushing, so they never need write access to the registry.
   docker:
     needs: build-test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        target: [api, renderer]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - name: Build renderer image
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/laya-sample-${{ matrix.target }}
+          tags: |
+            type=sha
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and push ${{ matrix.target }} image
         uses: docker/build-push-action@v6
         with:
           context: .
-          target: renderer
-          push: false
-          tags: laya-sample-renderer:ci
-          cache-from: type=gha,scope=renderer
-          cache-to: type=gha,mode=max,scope=renderer
-      - name: Build API image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          target: api
-          push: false
-          tags: laya-sample-api:ci
-          cache-from: type=gha,scope=api
-          cache-to: type=gha,mode=max,scope=api
+          target: ${{ matrix.target }}
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
