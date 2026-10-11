@@ -59,11 +59,11 @@ faithfully. Their rules are unit-tested in `PdfClassificationRulesTests`.
 
 ## Lending corpus
 
-`pdf/corpus/` holds 40 PDFs for three fictional deals (Redwood Mechanical Supply, Blue Heron Dental Partners, Sunbelt
+`pdf/corpus/` holds 39 PDFs for three fictional deals (Redwood Mechanical Supply, Blue Heron Dental Partners, Sunbelt
 Freight Logistics): a commercial loan application, a UCC-1 financing statement, a UCC-3 amendment and a loan and
 security agreement each. All parties, numbers and signatures are invented (EINs use the unissued `00-` prefix, phones
 the reserved 555-01xx range). [`pdf/corpus/manifest.json`](pdf/corpus/manifest.json) lists every file with its
-rendering, expected `classification.kind` and the key facts it contains, for checking extraction.
+rendering, expected `classification.kind` and the facts it contains (including every box on the UCC-1 and UCC-3), for checking extraction.
 
 File names are `<deal>-<document>-<rendering>.pdf`. The renderings:
 
@@ -88,7 +88,7 @@ dotnet run docs/samples/generate.cs
 
 The script is a .NET 10 file-based app that references the test project. Edit it or the fixtures to add samples.
 
-The corpus has its own generator, which is deterministic (each file seeds its scan noise from its name):
+The corpus has its own generator. Its content is deterministic (each file seeds its scan noise from its name); only the fax PDFs differ byte for byte between runs, because ImageMagick stamps a creation time:
 
 ```sh
 dotnet run docs/samples/generate-corpus.cs

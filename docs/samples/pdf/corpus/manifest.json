@@ -80,7 +80,19 @@
       "fileNumber": "2026-004417-8",
       "filingDate": "02/12/2026",
       "filingOffice": "Oregon Secretary of State, UCC Division",
-      "collateral": "Equipment, Inventory, Accounts"
+      "collateral": "Equipment, Inventory, Accounts",
+      "debtorEntityType": "Limited liability company",
+      "debtorJurisdiction": "Oregon",
+      "debtorOrganizationId": "SOS-412876",
+      "additionalDebtorName": "",
+      "alternativeDesignation": "None",
+      "realEstateRecords": "false",
+      "searchAllDebtors": "false",
+      "searchDebtor1": "false",
+      "searchDebtor2": "false",
+      "filerReference": "Cascade / Loan CA-2026-0117 / Term Loan",
+      "contactName": "Loan Documentation, (503) 555-0100",
+      "acknowledgmentTo": "Cascade Harbor Bank, N.A., 100 SW Front Avenue, Suite 900, Portland, OR 97204"
     }
   },
   {
@@ -96,7 +108,19 @@
       "fileNumber": "2026-004417-8",
       "filingDate": "02/12/2026",
       "filingOffice": "Oregon Secretary of State, UCC Division",
-      "collateral": "Equipment, Inventory, Accounts"
+      "collateral": "Equipment, Inventory, Accounts",
+      "debtorEntityType": "Limited liability company",
+      "debtorJurisdiction": "Oregon",
+      "debtorOrganizationId": "SOS-412876",
+      "additionalDebtorName": "",
+      "alternativeDesignation": "None",
+      "realEstateRecords": "false",
+      "searchAllDebtors": "false",
+      "searchDebtor1": "false",
+      "searchDebtor2": "false",
+      "filerReference": "Cascade / Loan CA-2026-0117 / Term Loan",
+      "contactName": "Loan Documentation, (503) 555-0100",
+      "acknowledgmentTo": "Cascade Harbor Bank, N.A., 100 SW Front Avenue, Suite 900, Portland, OR 97204"
     }
   },
   {
@@ -112,7 +136,19 @@
       "fileNumber": "2026-004417-8",
       "filingDate": "02/12/2026",
       "filingOffice": "Oregon Secretary of State, UCC Division",
-      "collateral": "Equipment, Inventory, Accounts"
+      "collateral": "Equipment, Inventory, Accounts",
+      "debtorEntityType": "Limited liability company",
+      "debtorJurisdiction": "Oregon",
+      "debtorOrganizationId": "SOS-412876",
+      "additionalDebtorName": "",
+      "alternativeDesignation": "None",
+      "realEstateRecords": "false",
+      "searchAllDebtors": "false",
+      "searchDebtor1": "false",
+      "searchDebtor2": "false",
+      "filerReference": "Cascade / Loan CA-2026-0117 / Term Loan",
+      "contactName": "Loan Documentation, (503) 555-0100",
+      "acknowledgmentTo": "Cascade Harbor Bank, N.A., 100 SW Front Avenue, Suite 900, Portland, OR 97204"
     }
   },
   {
@@ -128,7 +164,19 @@
       "fileNumber": "2026-004417-8",
       "filingDate": "02/12/2026",
       "filingOffice": "Oregon Secretary of State, UCC Division",
-      "collateral": "Equipment, Inventory, Accounts"
+      "collateral": "Equipment, Inventory, Accounts",
+      "debtorEntityType": "Limited liability company",
+      "debtorJurisdiction": "Oregon",
+      "debtorOrganizationId": "SOS-412876",
+      "additionalDebtorName": "",
+      "alternativeDesignation": "None",
+      "realEstateRecords": "false",
+      "searchAllDebtors": "false",
+      "searchDebtor1": "false",
+      "searchDebtor2": "false",
+      "filerReference": "Cascade / Loan CA-2026-0117 / Term Loan",
+      "contactName": "Loan Documentation, (503) 555-0100",
+      "acknowledgmentTo": "Cascade Harbor Bank, N.A., 100 SW Front Avenue, Suite 900, Portland, OR 97204"
     }
   },
   {
@@ -144,7 +192,25 @@
       "initialFileNumber": "2026-004417-8",
       "fileNumber": "2026-009826-3",
       "filingDate": "06/22/2026",
-      "action": "Assignment"
+      "action": "Assignment",
+      "realEstateRecords": "false",
+      "termination": "false",
+      "assignment": "true",
+      "continuation": "false",
+      "partyInformationChange": "false",
+      "partyChangeAffects": "None",
+      "partyChangeType": "None",
+      "assigneeName": "Pacific Rim Capital Partners, L.P.",
+      "recordPartyName": "",
+      "changedPartyName": "",
+      "collateralChange": "None",
+      "collateralChangeDescription": "",
+      "authorizingPartyName": "Cascade Harbor Bank, N.A.",
+      "authorizedByDebtor": "false",
+      "filerReference": "Cascade / Loan CA-2026-0117 / UCC-3 Assignment",
+      "contactName": "Loan Documentation, (503) 555-0100",
+      "contactEmail": "loandocs@cascadeharbor.example.com",
+      "acknowledgmentTo": "Cascade Harbor Bank, N.A., 100 SW Front Avenue, Suite 900, Portland, OR 97204"
     }
   },
   {
@@ -292,7 +358,19 @@
       "fileNumber": "2026-089-4471-3",
       "filingDate": "03/30/2026",
       "filingOffice": "Washington Department of Licensing, UCC Filing Office",
-      "collateral": "Equipment, General Intangibles"
+      "collateral": "Equipment, General Intangibles",
+      "debtorEntityType": "Professional corporation",
+      "debtorJurisdiction": "Washington",
+      "debtorOrganizationId": "SOS-733194",
+      "additionalDebtorName": "",
+      "alternativeDesignation": "None",
+      "realEstateRecords": "false",
+      "searchAllDebtors": "false",
+      "searchDebtor1": "false",
+      "searchDebtor2": "false",
+      "filerReference": "Evergreen / Loan EC-26-00342 / Equipment Term Loan",
+      "contactName": "Loan Documentation, (206) 555-0166",
+      "acknowledgmentTo": "Evergreen Commercial Finance Co., 1201 Third Avenue, Suite 2200, Seattle, WA 98101"
     }
   },
   {
@@ -308,7 +386,19 @@
       "fileNumber": "2026-089-4471-3",
       "filingDate": "03/30/2026",
       "filingOffice": "Washington Department of Licensing, UCC Filing Office",
-      "collateral": "Equipment, General Intangibles"
+      "collateral": "Equipment, General Intangibles",
+      "debtorEntityType": "Professional corporation",
+      "debtorJurisdiction": "Washington",
+      "debtorOrganizationId": "SOS-733194",
+      "additionalDebtorName": "",
+      "alternativeDesignation": "None",
+      "realEstateRecords": "false",
+      "searchAllDebtors": "false",
+      "searchDebtor1": "false",
+      "searchDebtor2": "false",
+      "filerReference": "Evergreen / Loan EC-26-00342 / Equipment Term Loan",
+      "contactName": "Loan Documentation, (206) 555-0166",
+      "acknowledgmentTo": "Evergreen Commercial Finance Co., 1201 Third Avenue, Suite 2200, Seattle, WA 98101"
     }
   },
   {
@@ -324,7 +414,19 @@
       "fileNumber": "2026-089-4471-3",
       "filingDate": "03/30/2026",
       "filingOffice": "Washington Department of Licensing, UCC Filing Office",
-      "collateral": "Equipment, General Intangibles"
+      "collateral": "Equipment, General Intangibles",
+      "debtorEntityType": "Professional corporation",
+      "debtorJurisdiction": "Washington",
+      "debtorOrganizationId": "SOS-733194",
+      "additionalDebtorName": "",
+      "alternativeDesignation": "None",
+      "realEstateRecords": "false",
+      "searchAllDebtors": "false",
+      "searchDebtor1": "false",
+      "searchDebtor2": "false",
+      "filerReference": "Evergreen / Loan EC-26-00342 / Equipment Term Loan",
+      "contactName": "Loan Documentation, (206) 555-0166",
+      "acknowledgmentTo": "Evergreen Commercial Finance Co., 1201 Third Avenue, Suite 2200, Seattle, WA 98101"
     }
   },
   {
@@ -340,7 +442,19 @@
       "fileNumber": "2026-089-4471-3",
       "filingDate": "03/30/2026",
       "filingOffice": "Washington Department of Licensing, UCC Filing Office",
-      "collateral": "Equipment, General Intangibles"
+      "collateral": "Equipment, General Intangibles",
+      "debtorEntityType": "Professional corporation",
+      "debtorJurisdiction": "Washington",
+      "debtorOrganizationId": "SOS-733194",
+      "additionalDebtorName": "",
+      "alternativeDesignation": "None",
+      "realEstateRecords": "false",
+      "searchAllDebtors": "false",
+      "searchDebtor1": "false",
+      "searchDebtor2": "false",
+      "filerReference": "Evergreen / Loan EC-26-00342 / Equipment Term Loan",
+      "contactName": "Loan Documentation, (206) 555-0166",
+      "acknowledgmentTo": "Evergreen Commercial Finance Co., 1201 Third Avenue, Suite 2200, Seattle, WA 98101"
     }
   },
   {
@@ -356,7 +470,25 @@
       "initialFileNumber": "2026-089-4471-3",
       "fileNumber": "2026-271-0958-6",
       "filingDate": "09/30/2026",
-      "action": "Termination"
+      "action": "Termination",
+      "realEstateRecords": "false",
+      "termination": "true",
+      "assignment": "false",
+      "continuation": "false",
+      "partyInformationChange": "false",
+      "partyChangeAffects": "None",
+      "partyChangeType": "None",
+      "assigneeName": "",
+      "recordPartyName": "",
+      "changedPartyName": "",
+      "collateralChange": "None",
+      "collateralChangeDescription": "",
+      "authorizingPartyName": "Evergreen Commercial Finance Co.",
+      "authorizedByDebtor": "false",
+      "filerReference": "Evergreen / Loan EC-26-00342 / UCC-3 Termination",
+      "contactName": "Loan Documentation, (206) 555-0166",
+      "contactEmail": "documents@evergreenfinance.example.com",
+      "acknowledgmentTo": "Evergreen Commercial Finance Co., 1201 Third Avenue, Suite 2200, Seattle, WA 98101"
     }
   },
   {
@@ -504,7 +636,19 @@
       "fileNumber": "26-00281946",
       "filingDate": "06/09/2026",
       "filingOffice": "Texas Secretary of State, UCC Section",
-      "collateral": "Accounts, Equipment, Inventory, Deposit Accounts, General Intangibles"
+      "collateral": "Accounts, Equipment, Inventory, Deposit Accounts, General Intangibles",
+      "debtorEntityType": "Corporation",
+      "debtorJurisdiction": "Texas",
+      "debtorOrganizationId": "SOS-295518",
+      "additionalDebtorName": "",
+      "alternativeDesignation": "None",
+      "realEstateRecords": "false",
+      "searchAllDebtors": "false",
+      "searchDebtor1": "false",
+      "searchDebtor2": "false",
+      "filerReference": "Lone / Loan LS-2026-0508 / Revolving Line of Credit",
+      "contactName": "Loan Documentation, (817) 555-0133",
+      "acknowledgmentTo": "Lone Star Capital Bank, 500 Main Street, Suite 1200, Fort Worth, TX 76102"
     }
   },
   {
@@ -520,7 +664,19 @@
       "fileNumber": "26-00281946",
       "filingDate": "06/09/2026",
       "filingOffice": "Texas Secretary of State, UCC Section",
-      "collateral": "Accounts, Equipment, Inventory, Deposit Accounts, General Intangibles"
+      "collateral": "Accounts, Equipment, Inventory, Deposit Accounts, General Intangibles",
+      "debtorEntityType": "Corporation",
+      "debtorJurisdiction": "Texas",
+      "debtorOrganizationId": "SOS-295518",
+      "additionalDebtorName": "",
+      "alternativeDesignation": "None",
+      "realEstateRecords": "false",
+      "searchAllDebtors": "false",
+      "searchDebtor1": "false",
+      "searchDebtor2": "false",
+      "filerReference": "Lone / Loan LS-2026-0508 / Revolving Line of Credit",
+      "contactName": "Loan Documentation, (817) 555-0133",
+      "acknowledgmentTo": "Lone Star Capital Bank, 500 Main Street, Suite 1200, Fort Worth, TX 76102"
     }
   },
   {
@@ -536,7 +692,19 @@
       "fileNumber": "26-00281946",
       "filingDate": "06/09/2026",
       "filingOffice": "Texas Secretary of State, UCC Section",
-      "collateral": "Accounts, Equipment, Inventory, Deposit Accounts, General Intangibles"
+      "collateral": "Accounts, Equipment, Inventory, Deposit Accounts, General Intangibles",
+      "debtorEntityType": "Corporation",
+      "debtorJurisdiction": "Texas",
+      "debtorOrganizationId": "SOS-295518",
+      "additionalDebtorName": "",
+      "alternativeDesignation": "None",
+      "realEstateRecords": "false",
+      "searchAllDebtors": "false",
+      "searchDebtor1": "false",
+      "searchDebtor2": "false",
+      "filerReference": "Lone / Loan LS-2026-0508 / Revolving Line of Credit",
+      "contactName": "Loan Documentation, (817) 555-0133",
+      "acknowledgmentTo": "Lone Star Capital Bank, 500 Main Street, Suite 1200, Fort Worth, TX 76102"
     }
   },
   {
@@ -552,7 +720,19 @@
       "fileNumber": "26-00281946",
       "filingDate": "06/09/2026",
       "filingOffice": "Texas Secretary of State, UCC Section",
-      "collateral": "Accounts, Equipment, Inventory, Deposit Accounts, General Intangibles"
+      "collateral": "Accounts, Equipment, Inventory, Deposit Accounts, General Intangibles",
+      "debtorEntityType": "Corporation",
+      "debtorJurisdiction": "Texas",
+      "debtorOrganizationId": "SOS-295518",
+      "additionalDebtorName": "",
+      "alternativeDesignation": "None",
+      "realEstateRecords": "false",
+      "searchAllDebtors": "false",
+      "searchDebtor1": "false",
+      "searchDebtor2": "false",
+      "filerReference": "Lone / Loan LS-2026-0508 / Revolving Line of Credit",
+      "contactName": "Loan Documentation, (817) 555-0133",
+      "acknowledgmentTo": "Lone Star Capital Bank, 500 Main Street, Suite 1200, Fort Worth, TX 76102"
     }
   },
   {
@@ -568,7 +748,25 @@
       "initialFileNumber": "26-00281946",
       "fileNumber": "26-00417305",
       "filingDate": "08/17/2026",
-      "action": "Amendment"
+      "action": "Amendment",
+      "realEstateRecords": "false",
+      "termination": "false",
+      "assignment": "false",
+      "continuation": "false",
+      "partyInformationChange": "false",
+      "partyChangeAffects": "None",
+      "partyChangeType": "None",
+      "assigneeName": "",
+      "recordPartyName": "",
+      "changedPartyName": "",
+      "collateralChange": "Add",
+      "collateralChangeDescription": "all deposit accounts and general intangibles of Debtor, now owned or hereafter acquired, and all proceeds thereof",
+      "authorizingPartyName": "Lone Star Capital Bank",
+      "authorizedByDebtor": "false",
+      "filerReference": "Lone / Loan LS-2026-0508 / UCC-3 Amendment",
+      "contactName": "Loan Documentation, (817) 555-0133",
+      "contactEmail": "creditadmin@lonestarcapital.example.com",
+      "acknowledgmentTo": "Lone Star Capital Bank, 500 Main Street, Suite 1200, Fort Worth, TX 76102"
     }
   },
   {

@@ -3,3 +3,8 @@ image:
   tag: sha-0000000
 gateway:
   hostname: laya.example.com
+api:
+  auth:
+    existingSecret: laya-api-key
+  extraction:
+    existingSecret: laya-llm

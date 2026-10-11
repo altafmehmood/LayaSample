@@ -19,6 +19,16 @@ spec:
     metadata:
       labels:
         {{- include "laya.labels" (dict "root" . "component" "api") | nindent 8 }}
+      {{- if or .Values.api.extraction.keyChecksum .Values.api.auth.keyChecksum }}
+      annotations:
+        # Environment variables from a Secret are read at start, so a changed key needs new pods.
+        {{- with .Values.api.extraction.keyChecksum }}
+        checksum/llm-key: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.api.auth.keyChecksum }}
+        checksum/api-key: {{ . | quote }}
+        {{- end }}
+      {{- end }}
     spec:
       automountServiceAccountToken: false
       securityContext:
@@ -46,6 +56,37 @@ spec:
               value: {{ .Values.api.config.requestTimeoutSeconds | int64 | quote }}
             - name: DocumentAnalysis__MaxFileBytes
               value: {{ .Values.api.config.maxFileBytes | int64 | quote }}
+            - name: Extraction__Provider
+              value: {{ .Values.api.extraction.provider | quote }}
+            - name: Extraction__VisionModel
+              value: {{ .Values.api.extraction.visionModel | quote }}
+            - name: Extraction__TextModel
+              value: {{ .Values.api.extraction.textModel | quote }}
+            - name: Extraction__MaxConcurrentExtractions
+              value: {{ .Values.api.extraction.maxConcurrent | int64 | quote }}
+            - name: Extraction__TimeoutSeconds
+              value: {{ .Values.api.extraction.timeoutSeconds | int64 | quote }}
+            {{- with .Values.api.extraction.existingSecret }}
+            # optional: a missing Secret means extraction answers 503 instead of the pod failing to start.
+            - name: Extraction__ApiKey
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . | quote }}
+                  key: {{ $.Values.api.extraction.secretKey | quote }}
+                  optional: true
+            {{- end }}
+            {{- if .Values.api.auth.existingSecret }}
+            # Keys callers must send as X-Api-Key to POST /api/documents/extract. optional: a missing Secret leaves extraction
+            # answering 503 (it fails closed) instead of stopping the pod.
+            {{- range $i, $key := .Values.api.auth.secretKeys }}
+            - name: {{ printf "Auth__ApiKeys__%d" $i }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.api.auth.existingSecret | quote }}
+                  key: {{ $key | quote }}
+                  optional: true
+            {{- end }}
+            {{- end }}
             {{- if .Values.gateway.enabled }}
             # Public URL Scalar's "Try it" calls: the OpenAPI document would otherwise advertise http:// and no path prefix.
             - name: OpenApi__ServerUrl

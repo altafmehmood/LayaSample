@@ -24,6 +24,27 @@
             "requestTimeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 3600 },
             "maxFileBytes": { "type": "integer", "minimum": 1 }
           }
+        },
+        "auth": {
+          "type": "object",
+          "properties": {
+            "existingSecret": { "type": "string" },
+            "secretKeys": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "maxItems": 4 },
+            "keyChecksum": { "type": "string" }
+          }
+        },
+        "extraction": {
+          "type": "object",
+          "properties": {
+            "existingSecret": { "type": "string" },
+            "secretKey": { "type": "string", "minLength": 1 },
+            "keyChecksum": { "type": "string" },
+            "provider": { "enum": ["openai"] },
+            "visionModel": { "type": "string", "minLength": 1 },
+            "textModel": { "type": "string", "minLength": 1 },
+            "maxConcurrent": { "type": "integer", "minimum": 1, "maximum": 32 },
+            "timeoutSeconds": { "type": "integer", "minimum": 5, "maximum": 600 }
+          }
         }
       }
     },

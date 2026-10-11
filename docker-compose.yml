@@ -19,6 +19,10 @@ services:
       - "8080:8080"
     environment:
       DocumentAnalysis__RendererUrl: http://renderer:8080
+      # Enables POST /api/documents/extract; empty leaves it answering 503.
+      Extraction__ApiKey: ${OPENAI_API_KEY:-}
+      # Callers must send this as X-Api-Key to /api/documents/extract; empty makes extraction answer 503.
+      Auth__ApiKeys__0: ${LAYA_API_KEY:-}
     networks: [public, internal]
     mem_limit: 3g
     cpus: 4

@@ -13,6 +13,10 @@ gateway:
 
 api:
   replicas: 1
+  auth:
+    existingSecret: laya-api-key
+  extraction:
+    existingSecret: laya-llm
   resources:
     requests:
       cpu: 100m

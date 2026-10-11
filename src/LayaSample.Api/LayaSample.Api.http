@@ -1,4 +1,6 @@
 @host = http://localhost:5091
+# Needed by /api/documents/extract once Auth:ApiKeys is configured (always, outside Development).
+@apiKey = 
 
 ### Liveness (200 whenever the process is up)
 GET {{host}}/health/live
@@ -29,3 +31,15 @@ POST {{host}}/api/feedback/analyze
 Content-Type: application/json
 
 { "text": "" }
+
+### Extract fields from a UCC-1 (needs an OpenAI key: the Extraction:ApiKey user secret or OPENAI_API_KEY; 503 without one)
+POST {{host}}/api/documents/extract
+X-Api-Key: {{apiKey}}
+Content-Type: multipart/form-data; boundary=laya
+
+--laya
+Content-Disposition: form-data; name="file"; filename="redwood-mechanical-ucc1-fax.pdf"
+Content-Type: application/pdf
+
+< ../../docs/samples/pdf/corpus/redwood-mechanical-ucc1-fax.pdf
+--laya--

@@ -28,6 +28,34 @@ api:
     limits: { memory: 1Gi }
   # The Laya model loads at startup; allow failureThreshold x periodSeconds (default 10 minutes) before restarting.
   startupProbe: { periodSeconds: 10, failureThreshold: 60 }
+  # AI extraction (POST /api/documents/extract). Document pages are sent to the model provider.
+  extraction:
+    # Secret holding the provider API key, under `secretKey`. Empty, or the Secret missing: the endpoint answers 503.
+    # Create it outside Helm so the key never lands in the release history:
+    #   kubectl -n <ns> create secret generic laya-llm --from-literal=api-key=...
+    existingSecret: ""
+    secretKey: api-key
+    # Short hash of the key (never the key), set by CI so pods restart when the key is rotated.
+    keyChecksum: ""
+    provider: openai
+    # Models for documents sent as page images / as text. Tune with the evaluation harness (see deploy/README.md).
+    visionModel: gpt-5.4-mini
+    textModel: gpt-5.4-mini
+    # Extractions in flight at once. They mostly wait on the provider but each holds the buffered document and its page images.
+    maxConcurrent: 4
+    # One provider call, including retries by the SDK. The request timeout above still caps the whole request.
+    timeoutSeconds: 120
+  # Access key for POST /api/documents/extract, which spends model-provider money. Callers send it as `X-Api-Key`.
+  auth:
+    # Secret holding the key(s), created outside Helm so they never land in the release history:
+    #   kubectl -n <ns> create secret generic laya-api-key --from-literal=api-key="$(openssl rand -base64 32)"
+    # Empty, or no usable key: extraction answers 503 (it fails closed).
+    existingSecret: ""
+    # Entries of that Secret to accept. To rotate: add the new key under a second entry (e.g. api-key-next), list both,
+    # deploy, move callers to the new key, then remove the old entry.
+    secretKeys: [api-key]
+    # Short hash of the key(s) (never the key itself), set by CI so pods restart when a key changes.
+    keyChecksum: ""
   extraEnv: []
 
 renderer:
