@@ -7,13 +7,13 @@
   "quality": "showcase",
   "specification": {
     "path": "/Users/altafmehmood/Repos/LayaSample/.archify/current/candidate.json",
-    "sha256": "c23f6e5c5ddeb9b544d2dcb52e0fd0ebec745b61e9a7d1f7d66ceb78507e9c99",
-    "bytes": 9094
+    "sha256": "a68a3182f5e925610e868e05cf8d5f9d05e1b8adabfe9d7de9b36f5141344f2c",
+    "bytes": 8265
   },
   "artifact": {
     "path": "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.html",
-    "sha256": "b674b6410fd40e060a835731acb2a045995c1cf894779882815920af694a2f7f",
-    "bytes": 774226
+    "sha256": "7d0717524896f0d736b9152cca05ed736df610da8050a332e087149eb9bad101",
+    "bytes": 768858
   },
   "gates": {
     "validate": "pass",
@@ -43,5 +43,5 @@
     "noticeText": null
   },
   "visualReview": "not-requested",
-  "durationMs": 1438
+  "durationMs": 1570
 }
