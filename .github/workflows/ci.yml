@@ -109,3 +109,43 @@ jobs:
               -schema-location "https://raw.githubusercontent.com/datreeio/CRDs-catalog/${CRD_SCHEMAS_COMMIT}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
             echo "::endgroup::"
           done
+
+  # Deploy to DOKS cluster on main branch push after passing helm validation
+  deploy:
+    needs: [build-test, docker, helm]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.DO_KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Apply cert-manager issuers
+        run: |
+          envsubst < deploy/cluster-issuer.yaml | kubectl apply -f -
+        env:
+          LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
+
+      - name: Deploy Helm chart
+        run: |
+          # Get the commit SHA short form
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+
+          helm upgrade --install laya deploy/helm/laya-sample \
+            --namespace laya \
+            --create-namespace \
+            --values deploy/values-prod.yaml \
+            --set image.tag=sha-${COMMIT_SHA} \
+            --wait \
+            --timeout 10m
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deploy/laya-api -n laya --timeout=5m
+          kubectl rollout status deploy/laya-renderer -n laya --timeout=5m
+          kubectl get gateway -n laya -o wide
+          kubectl get pods -n laya

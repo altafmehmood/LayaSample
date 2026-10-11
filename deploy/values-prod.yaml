@@ -1,0 +1,38 @@
+fullnameOverride: laya
+
+image:
+  tag: sha-00000000  # will be overridden by CI with actual commit SHA
+
+gateway:
+  create: true
+  hostname: api.mehmood.us
+  loadBalancerName: laya
+  tls:
+    clusterIssuer: letsencrypt-prod
+
+api:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  config:
+    maxConcurrentAnalyses: 1
+    maxQueuedAnalyses: 5
+    requestTimeoutSeconds: 300
+
+renderer:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 384Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  config:
+    maxConcurrentJobs: 1
+    maxQueuedJobs: 5
