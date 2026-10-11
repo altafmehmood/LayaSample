@@ -19,7 +19,7 @@ spec:
     metadata:
       labels:
         {{- include "laya.labels" (dict "root" . "component" "api") | nindent 8 }}
-      {{- if or .Values.api.extraction.keyChecksum .Values.api.auth.keyChecksum }}
+      {{- if or .Values.api.extraction.keyChecksum .Values.api.auth.keyChecksum .Values.telemetry.headersChecksum }}
       annotations:
         # Environment variables from a Secret are read at start, so a changed key needs new pods.
         {{- with .Values.api.extraction.keyChecksum }}
@@ -27,6 +27,9 @@ spec:
         {{- end }}
         {{- with .Values.api.auth.keyChecksum }}
         checksum/api-key: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.telemetry.headersChecksum }}
+        checksum/otel-headers: {{ . | quote }}
         {{- end }}
       {{- end }}
     spec:
@@ -91,6 +94,23 @@ spec:
             # Public URL Scalar's "Try it" calls: the OpenAPI document would otherwise advertise http:// and no path prefix.
             - name: OpenApi__ServerUrl
               value: {{ printf "%s://%s%s" (ternary "https" "http" .Values.gateway.tls.enabled) .Values.gateway.hostname (.Values.gateway.pathPrefix | trimSuffix "/") | quote }}
+            {{- end }}
+            {{- include "laya.telemetryEnv" . | nindent 12 }}
+            {{- if not .Values.telemetry.collector.enabled }}
+            {{- with .Values.telemetry.endpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ . | quote }}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+            {{- with $.Values.telemetry.existingSecret }}
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . | quote }}
+                  key: {{ $.Values.telemetry.headersKey | quote }}
+                  optional: true
+            {{- end }}
+            {{- end }}
             {{- end }}
             {{- with .Values.api.extraEnv }}
             {{- toYaml . | nindent 12 }}

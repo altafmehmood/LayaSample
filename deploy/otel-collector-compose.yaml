@@ -1,0 +1,19 @@
+# Collector for docker-compose (profile "telemetry"): the renderer's network has no route out, so it sends here and
+# only this container forwards to Honeycomb. See README.md, "Telemetry".
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+processors:
+  batch: {}
+exporters:
+  otlphttp:
+    endpoint: https://api.honeycomb.io
+    headers:
+      x-honeycomb-team: ${env:HONEYCOMB_API_KEY}
+service:
+  pipelines:
+    traces: { receivers: [otlp], processors: [batch], exporters: [otlphttp] }
+    metrics: { receivers: [otlp], processors: [batch], exporters: [otlphttp] }
+    logs: { receivers: [otlp], processors: [batch], exporters: [otlphttp] }

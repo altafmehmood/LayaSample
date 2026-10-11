@@ -42,6 +42,7 @@ spec:
             - name: DocumentAnalysis__OcrModel
               value: {{ . | quote }}
             {{- end }}
+            {{- include "laya.telemetryEnv" . | nindent 12 }}
             {{- with .Values.renderer.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

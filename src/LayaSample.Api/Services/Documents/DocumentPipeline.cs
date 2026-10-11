@@ -31,11 +31,40 @@ public sealed class DocumentPipeline(IDocumentClassifier classifier, IDocumentPr
         // Buffered once: PDF, ZIP and TIFF need random access. The buffer is sized exactly so classify and prepare
         // share it rather than each taking a copy.
         await using var stream = new MemoryStream((int)file.Length);
-        await file.CopyToAsync(stream, ct);
+        using (var span = Telemetry.Source.StartActivity("laya.buffer"))
+        {
+            span?.SetTag("laya.file.bytes", file.Length);
+            span?.SetTag("laya.file.content_type", file.ContentType);
+            await file.CopyToAsync(stream, ct);
+        }
 
-        run.Classification = await classifier.ClassifyAsync(stream, ct);
+        using (var span = Telemetry.Source.StartActivity("laya.classify"))
+        {
+            run.Classification = await classifier.ClassifyAsync(stream, ct);
+            span?.SetTag("laya.document.kind", run.Classification.Kind.ToString());
+            span?.SetTag("laya.document.pages", run.Classification.PageCount);
+            span?.SetTag("laya.document.strategy", run.Classification.Strategy.ToString());
+            span?.SetTag("laya.document.route", run.Classification.Route);
+            span?.SetTag("laya.document.is_xfa", run.Classification.IsXfa);
+            span?.SetTag("laya.document.page_contents", string.Join(",", run.Classification.Pages.GroupBy(p => p.Content).Select(g => $"{g.Key}={g.Count()}")));
+            metrics.RecordUpload(run.Classification.Kind.ToString(), file.Length, run.Classification.PageCount);
+        }
         run.Lap("classify");
-        run.Prepared = await preparer.PrepareAsync(stream, run.Classification, ct);
+        using (var span = Telemetry.Source.StartActivity("laya.prepare"))
+        {
+            try
+            {
+                run.Prepared = await preparer.PrepareAsync(stream, run.Classification, ct);
+            }
+            catch (Exception ex)
+            {
+                span.RecordFailure(ex);
+                throw;
+            }
+            span?.SetTag("laya.prepare.parts", run.Prepared.Parts.Count);
+            span?.SetTag("laya.prepare.part_roles", string.Join(",", run.Prepared.Parts.GroupBy(p => p.Role).Select(g => $"{g.Key}={g.Count()}")));
+            span?.SetTag("laya.prepare.image_bytes", run.Prepared.Parts.Where(p => p.Role == PartRole.PageImage).Sum(p => (long)(p.Data?.Length ?? 0)));
+        }
         run.Lap("prepare");
     }
 }
@@ -49,6 +78,16 @@ public sealed class DocumentProblems(ILogger<DocumentProblems> logger, DocumentM
     public IResult ToResult(Exception ex, long bytes, DocumentClassification? classification, HttpContext httpContext)
     {
         var kind = classification?.Kind.ToString() ?? "unclassified";
+        var outcome = ex switch
+        {
+            DocumentException => "rejected",
+            OcrUnavailableException => "ocr_unavailable",
+            RendererUnavailableException => "renderer_unavailable",
+            _ => "render_failed"
+        };
+        Telemetry.TagRequest(httpContext, "laya.outcome", outcome);
+        Telemetry.TagRequest(httpContext, "laya.document.kind", kind);
+        Activity.Current?.RecordFailure(ex, outcome);
         switch (ex)
         {
             case DocumentException doc:

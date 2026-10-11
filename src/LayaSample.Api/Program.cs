@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Threading.RateLimiting;
 using ElBruno.LocalLLMs.Decisions;
+using LayaSample.Api;
 using LayaSample.Api.Models;
 using LayaSample.Api.Services;
 using LayaSample.Api.Services.Documents;
@@ -14,6 +15,8 @@ using Microsoft.OpenApi;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.AddLayaTelemetry("laya-sample-api", DocumentMetrics.MeterName);
 
 builder.Services.AddLocalDecisions(o =>
 {
@@ -130,6 +133,15 @@ builder.Services.AddRateLimiter(o =>
     o.RejectionStatusCode = StatusCodes.Status503ServiceUnavailable;
     o.OnRejected = (context, ct) =>
     {
+        // The policy is the endpoint's metadata name; the metric says which pool ran dry.
+        var policy = context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName ?? "unknown";
+        var services = context.HttpContext.RequestServices;
+        services.GetRequiredService<DocumentMetrics>().RecordRateLimited(policy);
+        Telemetry.TagRequest(context.HttpContext, "laya.outcome", "rate_limited");
+        Telemetry.TagRequest(context.HttpContext, "laya.ratelimit.policy", policy);
+        services.GetRequiredService<ILoggerFactory>().CreateLogger("LayaSample.RateLimiting")
+            .LogWarning("Rejected {Path}: every {Policy} slot and queue place is taken (waited {WaitedMs:F0} ms)",
+                context.HttpContext.Request.Path.Value, policy, Telemetry.RequestAge(context.HttpContext).TotalMilliseconds);
         context.HttpContext.Response.Headers.RetryAfter = "10";
         return context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsService>().WriteAsync(new ProblemDetailsContext
         {
@@ -159,6 +171,15 @@ app.MapScalarApiReference(); // /scalar/v1
 const int MaxTextLength = 4000;
 
 static IResult Problem(int status, string detail) => DocumentProblems.Problem(status, detail);
+
+// What the upload turned out to be, on the request's own span.
+static void TagDocument(HttpContext context, DocumentClassification classification, PreparedDocument prepared)
+{
+    Telemetry.TagRequest(context, "laya.document.kind", classification.Kind.ToString());
+    Telemetry.TagRequest(context, "laya.document.strategy", prepared.Strategy.ToString());
+    Telemetry.TagRequest(context, "laya.document.pages", classification.PageCount);
+    Telemetry.TagRequest(context, "laya.document.parts", prepared.Parts.Count);
+}
 
 // Liveness: the process is up. Readiness: the models are loaded (Degraded, still 200, when one failed for good).
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false, ResponseWriter = HealthReporting.WriteJson });
@@ -206,13 +227,17 @@ app.MapPost("/api/documents/analyze", async (
         return Problem(StatusCodes.Status413PayloadTooLarge, $"file must be at most {options.Value.MaxFileBytes} bytes");
 
     var run = pipeline.NewRun();
+    Telemetry.TagRequest(httpContext, "laya.file.bytes", file.Length);
+    metrics.RecordQueueWait("analyze", Telemetry.RequestAge(httpContext));
     try
     {
         await pipeline.PrepareAsync(file, run, ct);
         var classification = run.Classification!;
         var prepared = run.Prepared!;
+        TagDocument(httpContext, classification, prepared);
         var agent = dispatch == false ? null : await router.RouteAsync(classification, prepared, ct);
         run.Lap("route");
+        Telemetry.TagRequest(httpContext, "laya.outcome", "ok");
 
         // Content only, never file names or text: both can carry personal data.
         logger.LogInformation("Analysed {Bytes}-byte {Kind} document: {Strategy}, {Pages} page(s), {Parts} part(s) in {ElapsedMs:F0} ms",
@@ -268,11 +293,16 @@ app.MapPost("/api/documents/extract", async (
         return Problem(StatusCodes.Status413PayloadTooLarge, $"file must be at most {options.Value.MaxFileBytes} bytes");
 
     var run = pipeline.NewRun();
+    Telemetry.TagRequest(httpContext, "laya.file.bytes", file.Length);
+    metrics.RecordQueueWait("extract", Telemetry.RequestAge(httpContext));
     try
     {
         await pipeline.PrepareAsync(file, run, ct);
+        TagDocument(httpContext, run.Classification!, run.Prepared!);
         var response = await extractor.ExtractAsync(file.FileName, run.Classification!, run.Prepared!, ct);
         run.Lap("extract");
+        Telemetry.TagRequest(httpContext, "laya.outcome", "ok");
+        Telemetry.TagRequest(httpContext, "laya.extraction.document_type", response.DocumentType.ToString());
         metrics.RecordDocument(run.Classification!.Kind.ToString(), run.Prepared!.Strategy.ToString(), StatusCodes.Status200OK);
         return Results.Ok(response);
     }
@@ -284,6 +314,9 @@ app.MapPost("/api/documents/extract", async (
     {
         // Not the exception itself: provider error text can echo parts of the API key or of the document.
         var cause = ex.InnerException?.GetType().Name ?? "none";
+        Telemetry.TagRequest(httpContext, "laya.outcome", ex.IsMisconfiguration ? "provider_misconfigured" : "extraction_failed");
+        Telemetry.TagRequest(httpContext, "laya.failure.cause", cause);
+        Activity.Current?.RecordFailure(ex, "extraction");
         if (ex.IsMisconfiguration)
             logger.LogError("The extraction provider rejected our credentials ({Cause}); check the API key", cause);
         else
@@ -314,6 +347,17 @@ app.MapPost("/api/documents/extract", async (
 .WithMetadata(new RequestSizeLimitAttribute(maxBodyBytes), new RequestFormLimitsAttribute { MultipartBodyLengthLimit = maxBodyBytes })
 .WithRequestTimeout(TimeSpan.FromSeconds(documentOptions.RequestTimeoutSeconds))
 .RequireRateLimiting(ExtractionPolicy);
+
+// One line that says how this instance was configured, so a trace can be read against it. No secrets.
+app.Lifetime.ApplicationStarted.Register(() => app.Logger.LogInformation(
+    "LayaSample API {Version} started in {Environment}: renderer {Renderer}, extraction {Extraction} (vision {Vision}, text {Text}), "
+    + "{Analyses} analyses and {Extractions} extractions at once, telemetry export {Telemetry}",
+    LayaTelemetry.Version, app.Environment.EnvironmentName,
+    string.IsNullOrWhiteSpace(documentOptions.RendererUrl) ? "in-process" : documentOptions.RendererUrl,
+    app.Services.GetRequiredService<ExtractionClients>().IsConfigured ? "configured" : "not configured",
+    extractionOptions.VisionModel, extractionOptions.TextModel,
+    documentOptions.EffectiveMaxConcurrentAnalyses, extractionOptions.MaxConcurrentExtractions,
+    string.IsNullOrWhiteSpace(app.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]) ? "off" : "on"));
 
 app.Run();
 

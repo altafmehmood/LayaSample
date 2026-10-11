@@ -351,6 +351,59 @@ has no egress. The CI `deploy` job runs it on every push to `main`, with the clu
 e-mail, the OpenAI key and the API access key (`LAYA_API_KEY`) taken from GitHub secrets. The chart, the secrets and
 the cluster setup are described in [deploy/README.md](deploy/README.md).
 
+## Telemetry (Honeycomb)
+
+Both services send traces, metrics and logs over OpenTelemetry (OTLP) when `OTEL_EXPORTER_OTLP_ENDPOINT` is set; unset,
+they export nothing. In Kubernetes and in compose the renderer has no route out, so both services send to a small
+collector that alone talks to Honeycomb (see below), and the renderer's spans join the API's trace.
+
+**What you get.** One extract request is a single trace: the HTTP request (tagged `laya.file.bytes`, `laya.document.kind`,
+`laya.document.strategy`, `laya.document.pages`, `laya.outcome` = `ok` / `rejected` / `renderer_unavailable` / `rate_limited` /
+`auth_invalid` / `extraction_failed`...) with children `laya.buffer`, `laya.classify`, `laya.prepare`, `laya.render` (the
+call to the renderer, with `renderer.render` / `renderer.page` / `renderer.ocr` beneath it), `laya.extraction` and one
+`laya.extract` per model call. `laya.extract` carries the system prompt, the document text sent (page images appear only
+as `[image ..., N bytes]`), the model's answer (`laya.extraction.result`), token counts, and retry events. This is a
+technology demonstrator, so prompts and answers are recorded; do not keep that for real documents. Failures are recorded
+on the span (`exception.*`, `laya.failure.kind`) and logged. Metrics are on the `LayaSample.Documents` and
+`LayaSample.Rendering` meters (document size and pages, queue wait, extraction duration and in-flight, fields found,
+warnings, LLM retries, rate-limit rejections, render/OCR duration, model load times) plus ASP.NET Core, Kestrel,
+HttpClient and .NET runtime metrics. Startup logs one line with the version, renderer, models and limits.
+
+**Test locally.** Create an ingest key in Honeycomb (Environment settings, API Keys). With `dotnet run` the settings can
+live in user secrets, next to the other keys (read in Development only, so they never reach git or a container):
+
+```sh
+dotnet user-secrets set "OTEL_EXPORTER_OTLP_ENDPOINT" "https://api.honeycomb.io" --project src/LayaSample.Api
+dotnet user-secrets set "OTEL_EXPORTER_OTLP_HEADERS" "x-honeycomb-team=<ingest key>" --project src/LayaSample.Api
+dotnet user-secrets set "OTEL_EXPORTER_OTLP_PROTOCOL" "http/protobuf" --project src/LayaSample.Api
+dotnet run --project src/LayaSample.Api
+curl -F "file=@docs/samples/pdf/text.pdf" http://localhost:5091/api/documents/analyze
+```
+
+The secret names are the standard OpenTelemetry variable names, exactly as above. The protocol line is needed for
+collectors that only take OTLP over HTTP (the SDK defaults to gRPC); Honeycomb accepts either. Remove them with
+`dotnet user-secrets remove <name> --project src/LayaSample.Api`.
+
+Containers run in Production, where user secrets are not read, so with `docker compose` use environment variables.
+The renderer sits on a network with no route out, so run the bundled collector, which both services then send to:
+
+```sh
+LAYA_OTLP_ENDPOINT=http://collector:4318 HONEYCOMB_API_KEY=<ingest key> \
+  docker compose --profile telemetry up --build        # then use port 8080
+```
+
+Without the profile, set `OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io` and
+`OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=<ingest key>"` to export from the API only (the renderer stays silent).
+
+Within a minute a `laya-sample-api` dataset appears in Honeycomb with a `POST` root span and `laya.classify` /
+`laya.prepare` children (plus `renderer.*` spans for rendered pages, from the `laya-sample-renderer` service). Add `-H "X-Api-Key: $LAYA_API_KEY"` and the `extract` endpoint to see `laya.extract` with the
+model and token counts. To see the spans without a Honeycomb account, point the endpoint at a local OpenTelemetry
+Collector (`http://localhost:4318`, protocol `http/protobuf`).
+
+**On DOKS.** Store the key as a Secret and set two chart values; see
+[Telemetry in deploy/README.md](deploy/README.md#telemetry-opentelemetry). Check it with
+`kubectl -n laya rollout status deploy/<release>-api`, send a request through the gateway, then look for the same dataset.
+
 ## Feedback sentiment
 
 `POST /api/feedback/analyze` is the original sample: hotel guest feedback to dissatisfaction, using the open-weight

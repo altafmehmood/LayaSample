@@ -1,4 +1,5 @@
 using ElBruno.LocalLLMs.Decisions;
+using LayaSample.Api.Services.Documents;
 using LayaSample.Rendering;
 
 namespace LayaSample.Api.Services;
@@ -7,7 +8,7 @@ namespace LayaSample.Api.Services;
 /// Loads the Laya model at startup so the first request doesn't pay the download/load cost. A failed load (usually a
 /// dropped download) is retried with backoff before the model is reported as failed.
 /// </summary>
-public sealed class ModelWarmup(IDecisionClient client, ILogger<ModelWarmup> logger) : BackgroundService
+public sealed class ModelWarmup(IDecisionClient client, DocumentMetrics metrics, ILogger<ModelWarmup> logger) : BackgroundService
 {
     private static readonly TimeSpan[] RetryDelays = [TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(2)];
 
@@ -18,14 +19,19 @@ public sealed class ModelWarmup(IDecisionClient client, ILogger<ModelWarmup> log
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        using var span = Telemetry.Source.StartActivity("laya.model.load");
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
         for (var attempt = 0; ; attempt++)
         {
+            span?.SetTag("laya.model.attempts", attempt + 1);
             logger.LogInformation("Loading Laya model (downloaded on first run unless Laya:ModelPath points at a local copy)...");
             try
             {
                 await client.IsTrueAsync("warm-up", "This is a warm-up.", stoppingToken);
                 _state = WarmupState.Ready;
-                logger.LogInformation("Laya model ready.");
+                var elapsed = System.Diagnostics.Stopwatch.GetElapsedTime(started);
+                metrics.RecordModelLoad(elapsed, "ready");
+                logger.LogInformation("Laya model ready after {ElapsedMs:F0} ms and {Attempts} attempt(s).", elapsed.TotalMilliseconds, attempt + 1);
                 return;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -33,6 +39,8 @@ public sealed class ModelWarmup(IDecisionClient client, ILogger<ModelWarmup> log
                 if (attempt == RetryDelays.Length)
                 {
                     _state = WarmupState.Failed;
+                    metrics.RecordModelLoad(System.Diagnostics.Stopwatch.GetElapsedTime(started), "failed");
+                    span.RecordFailure(ex);
                     logger.LogError(ex, "Laya model failed to load; feedback analysis is unavailable until restart.");
                     return;
                 }

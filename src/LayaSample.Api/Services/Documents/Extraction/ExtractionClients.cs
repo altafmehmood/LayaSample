@@ -1,7 +1,9 @@
 using System.ClientModel;
 using System.ClientModel.Primitives;
+using System.Diagnostics;
 using System.Net;
 using Microsoft.Extensions.AI;
+using LayaSample.Rendering;
 using OpenAI;
 
 namespace LayaSample.Api.Services.Documents.Extraction;
@@ -16,6 +18,24 @@ public sealed class ExtractionException(int statusCode, string message, int? ret
 }
 
 /// <summary>The chat clients the agents call; both null while no API key is configured.</summary>
+/// <summary>Counts and records the SDK's repeated attempts, which are otherwise invisible except as extra latency.</summary>
+public sealed class RecordingRetryPolicy(int maxRetries, DocumentMetrics? metrics) : ClientRetryPolicy(maxRetries)
+{
+    protected override async ValueTask<bool> ShouldRetryAsync(PipelineMessage message, Exception? exception)
+    {
+        var retry = await base.ShouldRetryAsync(message, exception);
+        if (retry)
+        {
+            var reason = exception is not null ? exception.GetType().Name : ((int?)message.Response?.Status)?.ToString() ?? "unknown";
+            metrics?.RecordLlmRetry(reason);
+            Activity.Current?.AddEvent(new ActivityEvent("llm-retry", tags: new ActivityTagsCollection { ["laya.llm.retry.reason"] = reason }));
+        }
+        return retry;
+    }
+
+    protected override bool ShouldRetry(PipelineMessage message, Exception? exception) => ShouldRetryAsync(message, exception).AsTask().GetAwaiter().GetResult();
+}
+
 public sealed record ExtractionClients(IChatClient? Vision, IChatClient? Text)
 {
     public bool IsConfigured => Vision is not null && Text is not null;
@@ -50,7 +70,7 @@ public sealed class OpenAiExtractionErrorMapper : IExtractionErrorMapper
 /// <summary>The one place a provider's client is built. Everything else depends only on <see cref="IChatClient"/>.</summary>
 public static class ExtractionClientFactory
 {
-    public static ExtractionClients Create(ExtractionOptions options)
+    public static ExtractionClients Create(ExtractionOptions options, DocumentMetrics? metrics = null)
     {
         var key = options.ResolveApiKey();
         if (string.IsNullOrWhiteSpace(key))
@@ -59,7 +79,7 @@ public static class ExtractionClientFactory
         var clientOptions = new OpenAIClientOptions
         {
             NetworkTimeout = TimeSpan.FromSeconds(options.TimeoutSeconds),
-            RetryPolicy = new ClientRetryPolicy(options.MaxRetries)
+            RetryPolicy = new RecordingRetryPolicy(options.MaxRetries, metrics)
         };
         if (!string.IsNullOrWhiteSpace(options.Endpoint))
             clientOptions.Endpoint = new Uri(options.Endpoint);
@@ -67,7 +87,11 @@ public static class ExtractionClientFactory
         var openAi = new OpenAIClient(new ApiKeyCredential(key), clientOptions);
         // Chat Completions requests are not stored by OpenAI (store defaults to false).
         return new ExtractionClients(
-            openAi.GetChatClient(options.VisionModel).AsIChatClient(),
-            openAi.GetChatClient(options.TextModel).AsIChatClient());
+            WithTelemetry(openAi.GetChatClient(options.VisionModel).AsIChatClient()),
+            WithTelemetry(openAi.GetChatClient(options.TextModel).AsIChatClient()));
     }
+
+    // Gen-AI spans (model, token counts, latency). Prompts and responses are not recorded: they hold the documents.
+    private static IChatClient WithTelemetry(IChatClient client) =>
+        client.AsBuilder().UseOpenTelemetry(sourceName: LayaTelemetry.GenAiSourceName).Build();
 }

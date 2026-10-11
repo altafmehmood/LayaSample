@@ -58,6 +58,33 @@ api:
     keyChecksum: ""
   extraEnv: []
 
+# OpenTelemetry export (traces, metrics, logs) over OTLP. Empty endpoint: nothing is exported.
+# With `collector.enabled` the API and the renderer send to a collector pod in the cluster, which alone holds the key and
+# reaches the backend; the renderer's NetworkPolicy then allows only that collector (and DNS). Without it the API exports
+# directly and the renderer exports nothing, because opening egress for it would weaken its isolation.
+telemetry:
+  # e.g. https://api.honeycomb.io (OTLP over HTTP).
+  endpoint: ""
+  # Secret holding the OTLP headers, under `headersKey`, as `x-honeycomb-team=<ingest key>`. Create it outside Helm:
+  #   kubectl -n <ns> create secret generic laya-otel --from-literal=headers="x-honeycomb-team=<ingest key>"
+  # A missing Secret leaves the pod starting with no headers (the backend then rejects the data) instead of failing.
+  existingSecret: ""
+  headersKey: headers
+  # Short hash of the headers (never the headers), set by CI so pods restart when the key is rotated.
+  headersChecksum: ""
+  collector:
+    enabled: false
+    # OpenTelemetry Collector (contrib distribution, Apache-2.0). Pin the tag.
+    image: docker.io/otel/opentelemetry-collector-contrib
+    tag: 0.162.0
+    # With the collector, the Secret above also needs the bare key under `apiKeyKey`, sent as the `headerName` header
+    # (Honeycomb: x-honeycomb-team). The `headersKey` entry is only used when the API exports directly.
+    headerName: x-honeycomb-team
+    apiKeyKey: api-key
+    resources:
+      requests: { cpu: 25m, memory: 96Mi }
+      limits: { memory: 256Mi }
+
 renderer:
   image: laya-sample-renderer
   replicas: 1

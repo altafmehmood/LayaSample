@@ -1,0 +1,37 @@
+{{- if .Values.telemetry.collector.enabled }}
+{{- $name := printf "%s-otel-collector" (include "laya.fullname" .) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "laya.labels" (dict "root" . "component" "otel-collector") | nindent 4 }}
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      memory_limiter:
+        check_interval: 5s
+        limit_mib: 160
+        spike_limit_mib: 40
+      batch: {}
+    exporters:
+      otlphttp:
+        endpoint: {{ required "telemetry.endpoint is required when telemetry.collector.enabled" .Values.telemetry.endpoint | quote }}
+        {{- if .Values.telemetry.existingSecret }}
+        headers:
+          {{ .Values.telemetry.collector.headerName }}: ${env:BACKEND_API_KEY}
+        {{- end }}
+    service:
+      telemetry:
+        metrics:
+          level: none
+      pipelines:
+        traces: { receivers: [otlp], processors: [memory_limiter, batch], exporters: [otlphttp] }
+        metrics: { receivers: [otlp], processors: [memory_limiter, batch], exporters: [otlphttp] }
+        logs: { receivers: [otlp], processors: [memory_limiter, batch], exporters: [otlphttp] }
+{{- end }}

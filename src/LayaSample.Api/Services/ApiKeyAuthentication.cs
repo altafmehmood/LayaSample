@@ -103,6 +103,8 @@ public sealed class ApiKeyMiddleware(
     private async Task Reject(HttpContext context, int status, string reason, string detail)
     {
         metrics.RecordAuthRejection(reason);
+        Telemetry.TagRequest(context, "laya.auth.rejected", reason);
+        Telemetry.TagRequest(context, "laya.outcome", "auth_" + reason);
         logger.LogWarning("Rejected a request to {Path}: API key {Reason}", context.Request.Path.Value, reason);
         if (status == StatusCodes.Status401Unauthorized)
             context.Response.Headers.WWWAuthenticate = "ApiKey";

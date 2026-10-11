@@ -48,6 +48,25 @@
         }
       }
     },
+    "telemetry": {
+      "type": "object",
+      "properties": {
+        "endpoint": { "type": "string", "pattern": "^(https?://.+)?$" },
+        "existingSecret": { "type": "string" },
+        "headersKey": { "type": "string", "minLength": 1 },
+        "headersChecksum": { "type": "string" },
+        "collector": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "image": { "type": "string", "minLength": 1 },
+            "tag": { "type": "string", "minLength": 1, "not": { "const": "latest" } },
+            "headerName": { "type": "string", "minLength": 1 },
+            "apiKeyKey": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
     "renderer": {
       "type": "object",
       "properties": {

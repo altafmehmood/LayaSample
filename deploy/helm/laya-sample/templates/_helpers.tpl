@@ -74,3 +74,26 @@ readOnlyRootFilesystem: true
 capabilities:
   drop: [ALL]
 {{- end -}}
+
+{{/* In-cluster OTLP endpoint of the collector, when the chart runs one. */}}
+{{- define "laya.collectorEndpoint" -}}
+{{- printf "http://%s-otel-collector:4318" (include "laya.fullname" .) -}}
+{{- end -}}
+
+{{/* Env shared by both services: where telemetry goes and which pod it came from. Takes the chart context. */}}
+{{- define "laya.telemetryEnv" -}}
+- name: POD_NAME
+  valueFrom:
+    fieldRef: { fieldPath: metadata.name }
+- name: POD_NAMESPACE
+  valueFrom:
+    fieldRef: { fieldPath: metadata.namespace }
+- name: OTEL_RESOURCE_ATTRIBUTES
+  value: {{ printf "k8s.pod.name=$(POD_NAME),k8s.namespace.name=$(POD_NAMESPACE),laya.image.tag=%s" .Values.image.tag | quote }}
+{{- if .Values.telemetry.collector.enabled }}
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: {{ include "laya.collectorEndpoint" . | quote }}
+- name: OTEL_EXPORTER_OTLP_PROTOCOL
+  value: http/protobuf
+{{- end }}
+{{- end -}}

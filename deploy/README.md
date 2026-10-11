@@ -127,6 +127,33 @@ deploy again.
 OpenAI key its own OpenAI project and set a monthly budget there; that is the only limit that still holds if the access
 key leaks.
 
+## Telemetry (OpenTelemetry)
+
+Traces, metrics and logs go over OTLP when `telemetry.endpoint` is set; with it empty nothing leaves the pods. Store the
+Honeycomb ingest key outside Helm and point the chart at it:
+
+```sh
+kubectl -n laya create secret generic laya-otel \
+  --from-literal=api-key="<ingest key>" --from-literal=headers="x-honeycomb-team=<ingest key>"
+# values: telemetry.endpoint: https://api.honeycomb.io, telemetry.existingSecret: laya-otel
+```
+
+**With the collector (`telemetry.collector.enabled: true`, recommended).** The chart runs an OpenTelemetry Collector
+pod. The API and the renderer send OTLP to it inside the cluster; it alone holds the key (the `api-key` entry) and has
+egress to the backend (HTTPS and DNS only). The renderer's NetworkPolicy then allows exactly two things beyond the API's
+requests: the collector on port 4318 and DNS to kube-dns. Its isolation from the internet is unchanged, and its spans
+(`renderer.render`, `renderer.page`, `renderer.ocr`) join the API's trace. Check the collector pod is up with
+`kubectl -n laya get pods -l app.kubernetes.io/component=otel-collector`.
+
+**Without it** the API exports directly using the `headers` entry and the renderer exports nothing; its work shows as
+the API's client span to it.
+
+Spans cover each request (tagged with the document and the outcome), buffering, classification, preparation, the render
+round trip with per-page renderer and OCR spans, each extraction and model call (agent, model, tokens, retries, prompts
+and answers; page images are recorded only as sizes), and the calls to the renderer and the model provider. Prompts and
+answers are captured because this is a demonstrator; remove that (`laya.prompt.*` and `laya.extraction.result` in
+`DocumentExtractor`) before real documents flow through.
+
 ## Upgrade, roll back, remove
 
 ```sh

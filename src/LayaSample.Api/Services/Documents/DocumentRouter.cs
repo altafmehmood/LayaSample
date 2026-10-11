@@ -18,10 +18,16 @@ public sealed class DocumentRouter(IEnumerable<IDocumentAgent> agents) : IDocume
 {
     private readonly Dictionary<string, IDocumentAgent> _agents = agents.ToDictionary(a => a.Route, StringComparer.OrdinalIgnoreCase);
 
-    public Task<AgentResult> RouteAsync(DocumentClassification classification, PreparedDocument document, CancellationToken ct = default) =>
-        _agents.TryGetValue(classification.Route, out var agent)
-            ? agent.HandleAsync(classification, document, ct)
+    public Task<AgentResult> RouteAsync(DocumentClassification classification, PreparedDocument document, CancellationToken ct = default)
+    {
+        using var span = Telemetry.Source.StartActivity("laya.route");
+        span?.SetTag("laya.route", classification.Route);
+        var found = _agents.TryGetValue(classification.Route, out var agent);
+        span?.SetTag("laya.route.agent_registered", found);
+        return found
+            ? agent!.HandleAsync(classification, document, ct)
             : Task.FromResult(new AgentResult(classification.Route, "unrouted", "no agent registered for this route"));
+    }
 }
 
 /// <summary>Placeholder until a real agent is registered for the route.</summary>
