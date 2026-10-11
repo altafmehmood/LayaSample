@@ -1,7 +1,7 @@
 fullnameOverride: laya
 
 image:
-  tag: sha-00000000  # will be overridden by CI with actual commit SHA
+  tag: sha-000000002  # will be overridden by CI with actual commit SHA
 
 gateway:
   create: true
