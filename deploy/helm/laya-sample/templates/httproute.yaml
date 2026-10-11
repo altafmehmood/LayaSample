@@ -16,7 +16,13 @@ spec:
     - matches:
         - path:
             type: PathPrefix
-            value: /
+            value: /laya
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
       backendRefs:
         - name: {{ include "laya.fullname" . }}-api
           port: 8080
