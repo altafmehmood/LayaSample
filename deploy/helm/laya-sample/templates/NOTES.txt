@@ -1,0 +1,17 @@
+LayaSample {{ .Values.image.tag }} installed as {{ include "laya.fullname" . }}.
+
+{{- if .Values.gateway.enabled }}
+
+Public address: {{ ternary "https" "http" .Values.gateway.tls.enabled }}://{{ .Values.gateway.hostname }}   (docs: /scalar/v1)
+
+Point the DNS A record of {{ .Values.gateway.hostname }} at the Gateway's load balancer address:
+  kubectl get gateway {{ include "laya.gatewayName" . }} -n {{ .Release.Namespace }}
+{{- if and .Values.gateway.tls.enabled .Values.gateway.tls.clusterIssuer }}
+
+Certificate status (it is issued once the DNS record resolves):
+  kubectl get certificate -n {{ .Release.Namespace }}
+{{- end }}
+{{- end }}
+
+Pods start slowly on a small node (the API loads an 840 MB model):
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }} -w

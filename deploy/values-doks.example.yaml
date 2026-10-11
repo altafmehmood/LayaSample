@@ -1,0 +1,16 @@
+# Example values for a single 1 vCPU / 2 GB DOKS node. Copy, set the hostname and image tag, and install with
+#   helm upgrade --install laya deploy/helm/laya-sample -n laya --create-namespace -f my-values.yaml
+# (see deploy/README.md).
+
+# Short, predictable names: services laya-api and laya-renderer, Gateway laya (matches deploy/cluster-issuer.yaml).
+fullnameOverride: laya
+
+image:
+  tag: sha-REPLACE_WITH_COMMIT
+
+gateway:
+  hostname: laya.example.com
+  loadBalancerName: laya
+  tls:
+    # Switch to letsencrypt-prod once the staging certificate has been issued.
+    clusterIssuer: letsencrypt-staging

@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "laya.fullname" . }}-api
+  labels:
+    {{- include "laya.labels" (dict "root" . "component" "api") | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicas }}
+  # A single small node cannot hold the old and the new pod at once, so replace in place.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "laya.selectorLabels" (dict "root" . "component" "api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "laya.labels" (dict "root" . "component" "api") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "laya.podSecurityContext" . | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: api
+          image: {{ include "laya.image" (dict "root" . "image" .Values.api.image) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            # The API refuses to start without a renderer to talk to.
+            - name: DocumentAnalysis__RendererUrl
+              value: {{ printf "http://%s-renderer:8080" (include "laya.fullname" .) | quote }}
+            - name: DocumentAnalysis__MaxConcurrentAnalyses
+              value: {{ .Values.api.config.maxConcurrentAnalyses | int64 | quote }}
+            - name: DocumentAnalysis__MaxQueuedAnalyses
+              value: {{ .Values.api.config.maxQueuedAnalyses | int64 | quote }}
+            - name: DocumentAnalysis__RequestTimeoutSeconds
+              value: {{ .Values.api.config.requestTimeoutSeconds | int64 | quote }}
+            - name: DocumentAnalysis__MaxFileBytes
+              value: {{ .Values.api.config.maxFileBytes | int64 | quote }}
+            {{- with .Values.api.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          startupProbe:
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: {{ .Values.api.startupProbe.periodSeconds }}
+            failureThreshold: {{ .Values.api.startupProbe.failureThreshold }}
+          readinessProbe:
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: 15
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          securityContext:
+            {{- include "laya.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi

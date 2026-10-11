@@ -79,3 +79,33 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+
+  # The Helm chart must lint, render and validate against the Kubernetes and Gateway API schemas for every values
+  # file in deploy/helm/laya-sample/ci. Nothing is deployed.
+  helm:
+    runs-on: ubuntu-latest
+    env:
+      KUBECONFORM_VERSION: v0.8.0
+      KUBECONFORM_SHA256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
+      # datreeio/CRDs-catalog commit with the Gateway API JSON schemas (MIT).
+      CRD_SCHEMAS_COMMIT: 63669a570e231d4f1f8396d229a1de512bcf0a34
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -sfL -o kubeconform.tar.gz "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          echo "${KUBECONFORM_SHA256}  kubeconform.tar.gz" | sha256sum -c -
+          tar -xzf kubeconform.tar.gz kubeconform
+
+      - name: Lint, render and validate
+        run: |
+          helm version --short
+          for values in deploy/helm/laya-sample/ci/*.yaml; do
+            echo "::group::$values"
+            helm lint deploy/helm/laya-sample -f "$values"
+            helm template laya deploy/helm/laya-sample -f "$values" | ./kubeconform -strict -summary -kubernetes-version 1.33.0 \
+              -schema-location default \
+              -schema-location "https://raw.githubusercontent.com/datreeio/CRDs-catalog/${CRD_SCHEMAS_COMMIT}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
+            echo "::endgroup::"
+          done

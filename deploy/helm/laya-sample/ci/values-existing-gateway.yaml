@@ -1,0 +1,9 @@
+# Attach to a shared Gateway instead of creating one, without TLS handled by this chart.
+image:
+  tag: sha-0000000
+gateway:
+  hostname: laya.example.com
+  create: false
+  existing:
+    name: shared-gateway
+    namespace: gateway-system

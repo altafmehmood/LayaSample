@@ -1,0 +1,50 @@
+{{- if and .Values.gateway.enabled .Values.gateway.create }}
+{{- $tls := .Values.gateway.tls }}
+{{- $host := required "gateway.hostname is required" .Values.gateway.hostname }}
+{{- $annotations := dict }}
+{{- with .Values.gateway.loadBalancerName }}{{ $_ := set $annotations "service.beta.kubernetes.io/do-loadbalancer-name" . }}{{ end }}
+{{- /* The Gateway terminates TLS itself, so the DigitalOcean load balancer must pass TLS through untouched. */}}
+{{- if $tls.enabled }}{{ $_ := set $annotations "service.beta.kubernetes.io/do-loadbalancer-tls-passthrough" "true" }}{{ end }}
+{{- $annotations = merge $annotations .Values.gateway.infrastructureAnnotations }}
+{{- if gt (len $annotations) 8 }}{{ fail "gateway.infrastructure annotations: the Gateway API allows at most 8" }}{{ end }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ include "laya.gatewayName" . }}
+  labels:
+    {{- include "laya.labels" (dict "root" . "component" "gateway") | nindent 4 }}
+  {{- if and $tls.enabled $tls.clusterIssuer }}
+  annotations:
+    # cert-manager issues the certificate for the HTTPS listener and keeps it renewed.
+    cert-manager.io/cluster-issuer: {{ $tls.clusterIssuer | quote }}
+  {{- end }}
+spec:
+  gatewayClassName: {{ .Values.gateway.className }}
+  {{- if $annotations }}
+  infrastructure:
+    annotations:
+      {{- toYaml $annotations | nindent 6 }}
+  {{- end }}
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      hostname: {{ $host | quote }}
+      allowedRoutes:
+        namespaces:
+          from: Same
+    {{- if $tls.enabled }}
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: {{ $host | quote }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: {{ default (printf "%s-tls" (include "laya.gatewayName" .)) $tls.secretName }}
+      allowedRoutes:
+        namespaces:
+          from: Same
+    {{- end }}
+{{- end }}

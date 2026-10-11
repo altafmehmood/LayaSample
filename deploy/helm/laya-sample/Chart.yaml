@@ -1,0 +1,7 @@
+apiVersion: v2
+name: laya-sample
+description: LayaSample API and isolated document renderer, exposed through the Gateway API
+type: application
+version: 0.1.0
+# The images are tagged by CI (sha-<commit>); set image.tag at install time instead of relying on this.
+appVersion: "0.1.0"

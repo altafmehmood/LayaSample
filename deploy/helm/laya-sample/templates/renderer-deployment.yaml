@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "laya.fullname" . }}-renderer
+  labels:
+    {{- include "laya.labels" (dict "root" . "component" "renderer") | nindent 4 }}
+spec:
+  replicas: {{ .Values.renderer.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "laya.selectorLabels" (dict "root" . "component" "renderer") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "laya.labels" (dict "root" . "component" "renderer") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "laya.podSecurityContext" . | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: renderer
+          image: {{ include "laya.image" (dict "root" . "image" .Values.renderer.image) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DocumentAnalysis__MaxConcurrentJobs
+              value: {{ .Values.renderer.config.maxConcurrentJobs | int64 | quote }}
+            - name: DocumentAnalysis__MaxQueuedJobs
+              value: {{ .Values.renderer.config.maxQueuedJobs | int64 | quote }}
+            {{- with .Values.renderer.config.ocrModel }}
+            - name: DocumentAnalysis__OcrModel
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.renderer.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          startupProbe:
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: {{ .Values.renderer.startupProbe.periodSeconds }}
+            failureThreshold: {{ .Values.renderer.startupProbe.failureThreshold }}
+          readinessProbe:
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: 15
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.renderer.resources | nindent 12 }}
+          securityContext:
+            {{- include "laya.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi

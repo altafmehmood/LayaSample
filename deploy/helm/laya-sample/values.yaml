@@ -1,0 +1,78 @@
+# Defaults are sized for a single 1 vCPU / 2 GB node: one replica each, one document at a time, short queues.
+# See deploy/README.md. Settings under `config` map to DocumentAnalysis__* environment variables.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  registry: ghcr.io/altafmehmood
+  # Required. Pin the commit tag CI pushes (sha-<commit>); `latest` moves under you.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+api:
+  image: laya-sample-api
+  replicas: 1
+  config:
+    # Documents analysed at once, and requests allowed to wait for a slot (further ones get 503 + Retry-After).
+    maxConcurrentAnalyses: 1
+    maxQueuedAnalyses: 5
+    # Includes time spent queued. OCR on one vCPU is slow, so this is above the app's 120 s default.
+    requestTimeoutSeconds: 300
+    maxFileBytes: 20971520
+  resources:
+    # No CPU limit: a limit would throttle OCR-heavy requests and lower the CPU count the app sizes itself from.
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+  # The Laya model loads at startup; allow failureThreshold x periodSeconds (default 10 minutes) before restarting.
+  startupProbe: { periodSeconds: 10, failureThreshold: 60 }
+  extraEnv: []
+
+renderer:
+  image: laya-sample-renderer
+  replicas: 1
+  config:
+    maxConcurrentJobs: 1
+    maxQueuedJobs: 5
+    # Leave empty to keep the model baked into the image (PPOCRv5Latin unless built otherwise).
+    ocrModel: ""
+  resources:
+    requests: { cpu: 100m, memory: 384Mi }
+    # Measured peak is about 550 MiB OCRing a five-page scan.
+    limits: { memory: 1Gi }
+  startupProbe: { periodSeconds: 10, failureThreshold: 60 }
+  extraEnv: []
+
+# The renderer parses untrusted documents with native code: only the API may reach it, and it may reach nothing.
+networkPolicy:
+  enabled: true
+
+gateway:
+  enabled: true
+  # Public DNS name of the API. Required when the gateway is enabled.
+  hostname: ""
+  # true: this chart creates the Gateway. false: attach the route to a Gateway that already exists (see `existing`).
+  create: true
+  # GatewayClass for the Gateway. DOKS provides `cilium` (managed Gateway API) on VPC-native clusters, 1.33+.
+  className: cilium
+  # Name of the Gateway this chart creates; defaults to the release's full name.
+  name: ""
+  # DigitalOcean load balancer name (annotation service.beta.kubernetes.io/do-loadbalancer-name). Optional.
+  loadBalancerName: ""
+  # Extra load balancer annotations. DigitalOcean allows at most 8 in total.
+  infrastructureAnnotations: {}
+  existing:
+    name: ""
+    namespace: ""
+    httpSectionName: http
+    httpsSectionName: https
+  tls:
+    enabled: true
+    # Secret the Gateway terminates TLS with. cert-manager creates it when clusterIssuer is set. Defaults to <gateway>-tls.
+    secretName: ""
+    # ClusterIssuer cert-manager uses for the HTTPS listener (deploy/cluster-issuer.yaml). Empty: bring your own Secret.
+    clusterIssuer: letsencrypt-prod
+  # Longer than the API's request timeout (api.config.requestTimeoutSeconds), so the API answers before the gateway cuts in.
+  requestTimeout: 330s

@@ -1,0 +1,5 @@
+# Values for helm lint / helm template in CI.
+image:
+  tag: sha-0000000
+gateway:
+  hostname: laya.example.com
