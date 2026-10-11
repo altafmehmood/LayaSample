@@ -6,6 +6,7 @@ image:
 gateway:
   create: true
   hostname: api.mehmood.us
+  pathPrefix: /laya
   loadBalancerName: laya
   tls:
     clusterIssuer: letsencrypt-prod

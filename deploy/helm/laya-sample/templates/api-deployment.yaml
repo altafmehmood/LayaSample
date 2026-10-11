@@ -46,6 +46,11 @@ spec:
               value: {{ .Values.api.config.requestTimeoutSeconds | int64 | quote }}
             - name: DocumentAnalysis__MaxFileBytes
               value: {{ .Values.api.config.maxFileBytes | int64 | quote }}
+            {{- if .Values.gateway.enabled }}
+            # Public URL Scalar's "Try it" calls: the OpenAPI document would otherwise advertise http:// and no path prefix.
+            - name: OpenApi__ServerUrl
+              value: {{ printf "%s://%s%s" (ternary "https" "http" .Values.gateway.tls.enabled) .Values.gateway.hostname (.Values.gateway.pathPrefix | trimSuffix "/") | quote }}
+            {{- end }}
             {{- with .Values.api.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

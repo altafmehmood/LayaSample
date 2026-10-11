@@ -20,7 +20,14 @@ builder.Services.AddLocalDecisions(o =>
     if (!string.IsNullOrEmpty(o.CacheDirectory))
         o.CacheDirectory = Path.GetFullPath(o.CacheDirectory, builder.Environment.ContentRootPath);
 });
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(o => o.AddDocumentTransformer((document, _, _) =>
+{
+    // Behind a gateway the request URL is not the public one; OpenApi:ServerUrl says what clients (Scalar) should call.
+    var serverUrl = builder.Configuration["OpenApi:ServerUrl"];
+    if (!string.IsNullOrWhiteSpace(serverUrl))
+        document.Servers = [new() { Url = serverUrl }];
+    return Task.CompletedTask;
+}));
 builder.Services.AddProblemDetails();
 builder.Services.AddSingleton<IDissatisfactionAnalyzer, DissatisfactionAnalyzer>();
 builder.Services.AddOptions<DocumentAnalysisOptions>()

@@ -74,5 +74,7 @@ gateway:
     secretName: ""
     # ClusterIssuer cert-manager uses for the HTTPS listener (deploy/cluster-issuer.yaml). Empty: bring your own Secret.
     clusterIssuer: letsencrypt-prod
+  # Path the API is published under, e.g. /laya. The prefix is stripped before the request reaches the API.
+  pathPrefix: /
   # Longer than the API's request timeout (api.config.requestTimeoutSeconds), so the API answers before the gateway cuts in.
   requestTimeout: 330s

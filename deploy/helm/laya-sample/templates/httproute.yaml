@@ -16,7 +16,7 @@ spec:
     - matches:
         - path:
             type: PathPrefix
-            value: /laya
+            value: {{ .Values.gateway.pathPrefix | quote }}
       filters:
         - type: URLRewrite
           urlRewrite:
