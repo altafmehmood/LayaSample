@@ -24,6 +24,8 @@ public sealed class RendererEntryPoint
     {
         var builder = WebApplication.CreateBuilder(args);
 
+        builder.AddLayaTelemetry("laya-sample-renderer");
+
         builder.Services.AddProblemDetails();
         builder.Services.AddOptions<RenderingOptions>()
             .Bind(builder.Configuration.GetSection(RenderingOptions.Section))
@@ -51,6 +53,10 @@ public sealed class RendererEntryPoint
             o.RejectionStatusCode = StatusCodes.Status503ServiceUnavailable;
             o.OnRejected = (context, _) =>
             {
+                RenderingMetrics.Rejections.Add(1);
+                System.Diagnostics.Activity.Current?.SetTag("laya.rejected", "rate_limit");
+                context.HttpContext.RequestServices.GetRequiredService<ILogger<RendererEntryPoint>>()
+                    .LogWarning("Render request rejected: every slot and queue place is taken");
                 context.HttpContext.Response.Headers.RetryAfter = "10";
                 return context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsService>().WriteAsync(new ProblemDetailsContext
                 {
@@ -112,6 +118,8 @@ public sealed class RendererEntryPoint
             try
             {
                 var pages = await rasterizer.RenderAsync(new RenderJob(bytes, spec.MediaType, spec.Pages), ct);
+                logger.LogInformation("Rendered {Pages} page(s) of a {Bytes}-byte {MediaType} document ({Ocr} with OCR)",
+                    pages.Count, bytes.Length, spec.MediaType, pages.Count(p => p.OcrText is not null));
                 return Results.Ok(new RenderResponse(pages));
             }
             catch (InvalidDataException ex)

@@ -1,0 +1,10 @@
+# Telemetry through the in-cluster collector.
+image:
+  tag: sha-0000000
+gateway:
+  hostname: laya.example.com
+telemetry:
+  endpoint: https://api.honeycomb.io
+  existingSecret: laya-otel
+  collector:
+    enabled: true

@@ -336,12 +336,45 @@ static class Corpus
                 facts["filingDate"] = Short(d.UccDate);
                 facts["filingOffice"] = d.FilingOffice;
                 facts["collateral"] = string.Join(", ", d.Collateral.Select(k => CollateralKinds[k].Short));
+                // Every other box on the page. "" means the box is printed empty; checkboxes are "true" / "false".
+                facts["debtorEntityType"] = Cap(d.EntityType);
+                facts["debtorJurisdiction"] = d.State;
+                facts["debtorOrganizationId"] = "SOS-" + d.Ein[^6..];
+                facts["additionalDebtorName"] = "";
+                facts["alternativeDesignation"] = "None";
+                facts["realEstateRecords"] = "false";
+                facts["searchAllDebtors"] = "false";
+                facts["searchDebtor1"] = "false";
+                facts["searchDebtor2"] = "false";
+                facts["filerReference"] = $"{d.Lender.Split(' ')[0]} / Loan {d.ApplicationNo} / {d.LoanType}";
+                facts["contactName"] = $"Loan Documentation, {d.LenderPhone}";
+                facts["acknowledgmentTo"] = $"{d.Lender}, {d.LenderStreet}, {d.LenderCityLine}";
                 break;
             case "ucc3":
                 facts["initialFileNumber"] = d.UccFileNo;
                 facts["fileNumber"] = d.Ucc3FileNo;
                 facts["filingDate"] = Short(d.Ucc3Date);
                 facts["action"] = d.Ucc3Kind;
+                // Every other box on the page (see the Ucc3 page builder). Box 5 is never used by these samples.
+                facts["realEstateRecords"] = "false";
+                facts["termination"] = (d.Ucc3Kind == "Termination").ToString().ToLowerInvariant();
+                facts["assignment"] = (d.Ucc3Kind == "Assignment").ToString().ToLowerInvariant();
+                facts["continuation"] = "false";
+                facts["partyInformationChange"] = "false";
+                facts["partyChangeAffects"] = "None";
+                facts["partyChangeType"] = "None";
+                facts["assigneeName"] = d.Ucc3Kind == "Assignment" ? "Pacific Rim Capital Partners, L.P." : "";
+                facts["recordPartyName"] = "";
+                facts["changedPartyName"] = "";
+                facts["collateralChange"] = d.Ucc3Kind == "Amendment" ? "Add" : "None";
+                facts["collateralChangeDescription"] = d.Ucc3Kind == "Amendment"
+                    ? "all deposit accounts and general intangibles of Debtor, now owned or hereafter acquired, and all proceeds thereof" : "";
+                facts["authorizingPartyName"] = d.Lender;
+                facts["authorizedByDebtor"] = "false";
+                facts["filerReference"] = $"{d.Lender.Split(' ')[0]} / Loan {d.ApplicationNo} / UCC-3 {d.Ucc3Kind}";
+                facts["contactName"] = $"Loan Documentation, {d.LenderPhone}";
+                facts["contactEmail"] = d.LenderEmail;
+                facts["acknowledgmentTo"] = $"{d.Lender}, {d.LenderStreet}, {d.LenderCityLine}";
                 break;
             default:
                 facts["agreementDate"] = Short(d.AgreementDate);

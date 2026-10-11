@@ -24,6 +24,46 @@
             "requestTimeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 3600 },
             "maxFileBytes": { "type": "integer", "minimum": 1 }
           }
+        },
+        "auth": {
+          "type": "object",
+          "properties": {
+            "existingSecret": { "type": "string" },
+            "secretKeys": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "maxItems": 4 },
+            "keyChecksum": { "type": "string" }
+          }
+        },
+        "extraction": {
+          "type": "object",
+          "properties": {
+            "existingSecret": { "type": "string" },
+            "secretKey": { "type": "string", "minLength": 1 },
+            "keyChecksum": { "type": "string" },
+            "provider": { "enum": ["openai"] },
+            "visionModel": { "type": "string", "minLength": 1 },
+            "textModel": { "type": "string", "minLength": 1 },
+            "maxConcurrent": { "type": "integer", "minimum": 1, "maximum": 32 },
+            "timeoutSeconds": { "type": "integer", "minimum": 5, "maximum": 600 }
+          }
+        }
+      }
+    },
+    "telemetry": {
+      "type": "object",
+      "properties": {
+        "endpoint": { "type": "string", "pattern": "^(https?://.+)?$" },
+        "existingSecret": { "type": "string" },
+        "headersKey": { "type": "string", "minLength": 1 },
+        "headersChecksum": { "type": "string" },
+        "collector": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "image": { "type": "string", "minLength": 1 },
+            "tag": { "type": "string", "minLength": 1, "not": { "const": "latest" } },
+            "headerName": { "type": "string", "minLength": 1 },
+            "apiKeyKey": { "type": "string", "minLength": 1 }
+          }
         }
       }
     },

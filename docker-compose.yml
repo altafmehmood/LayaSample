@@ -19,6 +19,16 @@ services:
       - "8080:8080"
     environment:
       DocumentAnalysis__RendererUrl: http://renderer:8080
+      # Enables POST /api/documents/extract; empty leaves it answering 503.
+      Extraction__ApiKey: ${OPENAI_API_KEY:-}
+      # Callers must send this as X-Api-Key to /api/documents/extract; empty makes extraction answer 503.
+      Auth__ApiKeys__0: ${LAYA_API_KEY:-}
+      # OpenTelemetry export. Either straight to a backend (OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io and
+      # OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=<ingest key>), or through the collector below
+      # (LAYA_OTLP_ENDPOINT=http://collector:4318), which also carries the renderer's telemetry. Empty exports nothing.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${LAYA_OTLP_ENDPOINT:-${OTEL_EXPORTER_OTLP_ENDPOINT:-}}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
     networks: [public, internal]
     mem_limit: 3g
     cpus: 4
@@ -31,6 +41,10 @@ services:
       args:
         OCR_MODEL: ${OCR_MODEL:-PPOCRv5Latin}
     image: laya-sample-renderer
+    environment:
+      # Set with the collector profile; the renderer can reach nothing else.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${LAYA_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
     networks: [internal]
     read_only: true
     tmpfs:
@@ -43,6 +57,19 @@ services:
     pids_limit: 512
     # A document that crashes the renderer fails its own request (502 from the API); the renderer comes straight back.
     restart: always
+
+  # docker compose --profile telemetry up   with LAYA_OTLP_ENDPOINT=http://collector:4318 and HONEYCOMB_API_KEY=<ingest key>
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.162.0
+    profiles: [telemetry]
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./deploy/otel-collector-compose.yaml:/etc/otelcol/config.yaml:ro
+    environment:
+      HONEYCOMB_API_KEY: ${HONEYCOMB_API_KEY:-}
+    # On the internal network to receive from the renderer, and on the public one to reach the backend.
+    networks: [public, internal]
+    restart: unless-stopped
 
 networks:
   public: {}

@@ -14,13 +14,23 @@ public sealed class LayaHealthCheck(ModelWarmup warmup) : IHealthCheck
 /// Unhealthy: text PDFs, Office files and feedback analysis still work, and the renderer is usually shared, so taking
 /// every API instance out of rotation would turn a partial outage into a full one.
 /// </summary>
-public sealed class RendererHealthCheck(RemotePageRasterizer renderer) : IHealthCheck
+public sealed class RendererHealthCheck(RemotePageRasterizer renderer, ILogger<RendererHealthCheck> logger) : IHealthCheck
 {
-    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken ct = default) =>
-        await renderer.GetReadinessAsync(ct) switch
+    private string? _last;
+
+    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken ct = default)
+    {
+        var result = await renderer.GetReadinessAsync(ct) switch
         {
             null => HealthCheckResult.Degraded("unreachable; scanned pages, images and page images are unavailable"),
             "Healthy" => HealthCheckResult.Healthy("ready"),
             var status => HealthCheckResult.Degraded($"renderer is {status}")
         };
+        // The probe runs every few seconds; only a change is an event.
+        var now = $"{result.Status}: {result.Description}";
+        if (Interlocked.Exchange(ref _last, now) is { } before && before != now)
+            logger.Log(result.Status == HealthStatus.Healthy ? LogLevel.Information : LogLevel.Warning,
+                "Renderer readiness changed from {Before} to {Now}", before, now);
+        return result;
+    }
 }

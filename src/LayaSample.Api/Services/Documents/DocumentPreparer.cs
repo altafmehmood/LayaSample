@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Xml;
 using ClosedXML.Excel;
@@ -128,6 +129,10 @@ public sealed class DocumentPreparer(
                 Ocr: pageStrategy == PreparationStrategy.Hybrid && NeedsOcr(page) && _options.EnableOcr));
         }
 
+        if (pages.Count > slots.Count)
+            logger.LogWarning("Page budget of {Max} renders reached: {Skipped} of {Pages} page(s) are not in the result",
+                _options.MaxPages, pages.Count - slots.Count, pages.Count);
+        Activity.Current?.SetTag("laya.prepare.slots", string.Join(",", slots.GroupBy(s => s.Strategy).Select(g => $"{g.Key}={g.Count()}")));
         var rendered = (await RenderAsync(bytes, DocumentSniffer.Pdf, requests, ct)).ToDictionary(p => p.Number);
         var parts = new List<PreparedPart>();
         foreach (var (page, pageStrategy, markdown) in slots)
@@ -166,8 +171,32 @@ public sealed class DocumentPreparer(
 
     private static bool NeedsOcr(PageClassification page) => page.Content is PageContent.Scanned or PageContent.Fax or PageContent.BrokenText;
 
-    private async Task<IReadOnlyList<RenderedPage>> RenderAsync(byte[] bytes, string mediaType, List<PageRequest> requests, CancellationToken ct) =>
-        requests.Count == 0 ? [] : await rasterizer.RenderAsync(new RenderJob(bytes, mediaType, requests), ct);
+    private async Task<IReadOnlyList<RenderedPage>> RenderAsync(byte[] bytes, string mediaType, List<PageRequest> requests, CancellationToken ct)
+    {
+        if (requests.Count == 0) return [];
+
+        // The round trip to the renderer as the API sees it; the renderer's own spans nest under it.
+        using var span = Telemetry.Source.StartActivity("laya.render");
+        span?.SetTag("laya.render.media_type", mediaType);
+        span?.SetTag("laya.render.input_bytes", bytes.Length);
+        span?.SetTag("laya.render.pages_requested", requests.Count);
+        span?.SetTag("laya.render.pages_ocr", requests.Count(r => r.Ocr));
+        span?.SetTag("laya.render.pages_grayscale", requests.Count(r => r.Grayscale));
+        try
+        {
+            var pages = await rasterizer.RenderAsync(new RenderJob(bytes, mediaType, requests), ct);
+            span?.SetTag("laya.render.output_bytes", pages.Sum(p => (long)p.Png.Length));
+            span?.SetTag("laya.render.ocr_characters", pages.Sum(p => p.OcrText?.Length ?? 0));
+            logger.LogInformation("Rendered {Pages} of {Requested} requested page(s) of a {Bytes}-byte {MediaType} document ({Ocr} with OCR)",
+                pages.Count, requests.Count, bytes.Length, mediaType, requests.Count(r => r.Ocr));
+            return pages;
+        }
+        catch (Exception ex)
+        {
+            span.RecordFailure(ex);
+            throw;
+        }
+    }
 
     /// <summary>
     /// Textual attachments (e-invoice XML, JSON) are passed through; embedded documents are classified and prepared

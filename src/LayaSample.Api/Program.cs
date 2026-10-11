@@ -1,17 +1,22 @@
 using System.Diagnostics;
 using System.Threading.RateLimiting;
 using ElBruno.LocalLLMs.Decisions;
+using LayaSample.Api;
 using LayaSample.Api.Models;
 using LayaSample.Api.Services;
 using LayaSample.Api.Services.Documents;
+using LayaSample.Api.Services.Documents.Extraction;
 using LayaSample.Rendering;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
+using Microsoft.OpenApi;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.AddLayaTelemetry("laya-sample-api", DocumentMetrics.MeterName);
 
 builder.Services.AddLocalDecisions(o =>
 {
@@ -20,14 +25,41 @@ builder.Services.AddLocalDecisions(o =>
     if (!string.IsNullOrEmpty(o.CacheDirectory))
         o.CacheDirectory = Path.GetFullPath(o.CacheDirectory, builder.Environment.ContentRootPath);
 });
-builder.Services.AddOpenApi(o => o.AddDocumentTransformer((document, _, _) =>
+builder.Services.AddOpenApi(o =>
 {
-    // Behind a gateway the request URL is not the public one; OpenApi:ServerUrl says what clients (Scalar) should call.
-    var serverUrl = builder.Configuration["OpenApi:ServerUrl"];
-    if (!string.IsNullOrWhiteSpace(serverUrl))
-        document.Servers = [new() { Url = serverUrl }];
-    return Task.CompletedTask;
-}));
+    o.AddDocumentTransformer((document, _, _) =>
+    {
+        // Behind a gateway the request URL is not the public one; OpenApi:ServerUrl says what clients (Scalar) should call.
+        var serverUrl = builder.Configuration["OpenApi:ServerUrl"];
+        if (!string.IsNullOrWhiteSpace(serverUrl))
+            document.Servers = [new() { Url = serverUrl }];
+
+        // Lets Scalar ask for the key; it is attached to the endpoints that need it by the operation transformer below.
+        document.Components ??= new OpenApiComponents();
+        document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
+        document.Components.SecuritySchemes["ApiKey"] = new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.ApiKey,
+            In = ParameterLocation.Header,
+            Name = ApiAccessOptions.HeaderName,
+            Description = "Access key for the endpoints that spend model-provider money."
+        };
+        return Task.CompletedTask;
+    });
+    o.AddOperationTransformer((operation, context, _) =>
+    {
+        if (context.Description.ActionDescriptor.EndpointMetadata.OfType<RequireApiKeyMetadata>().Any())
+        {
+            operation.Security ??= [];
+            operation.Security.Add(new OpenApiSecurityRequirement { [new OpenApiSecuritySchemeReference("ApiKey", context.Document)] = [] });
+        }
+        return Task.CompletedTask;
+    });
+});
+builder.Services.AddOptions<ApiAccessOptions>()
+    .Bind(builder.Configuration.GetSection(ApiAccessOptions.Section))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
 builder.Services.AddProblemDetails();
 builder.Services.AddSingleton<IDissatisfactionAnalyzer, DissatisfactionAnalyzer>();
 builder.Services.AddOptions<DocumentAnalysisOptions>()
@@ -39,6 +71,9 @@ builder.Services.AddSingleton<IDocumentClassifier, DocumentClassifier>();
 builder.Services.AddSingleton<IDocumentPreparer, DocumentPreparer>();
 builder.Services.AddSingleton<IDocumentRouter, DocumentRouter>();
 builder.Services.AddSingleton<DocumentMetrics>();
+builder.Services.AddSingleton<DocumentPipeline>();
+builder.Services.AddSingleton<DocumentProblems>();
+builder.Services.AddExtraction(builder.Configuration);
 foreach (var route in DocumentRoutes.All)
     builder.Services.AddSingleton<IDocumentAgent>(new StubDocumentAgent(route));
 builder.Services.AddSingleton<ModelWarmup>();
@@ -48,6 +83,7 @@ var healthChecks = builder.Services.AddHealthChecks().AddCheck<LayaHealthCheck>(
 // Endpoint limits and where rendering runs are fixed when the app is built, so the options are read here;
 // ValidateOnStart still checks them (and refuses to start with neither a renderer nor in-process rendering allowed).
 var documentOptions = builder.Configuration.GetSection(DocumentAnalysisOptions.Section).Get<DocumentAnalysisOptions>() ?? new();
+var extractionOptions = builder.Configuration.GetSection(ExtractionOptions.Section).Get<ExtractionOptions>() ?? new();
 if (!string.IsNullOrWhiteSpace(documentOptions.RendererUrl))
 {
     // Untrusted bytes reach PDFium, ImageMagick and OCR only inside the isolated renderer service.
@@ -76,6 +112,7 @@ else
 }
 
 const string DocumentsPolicy = "documents";
+const string ExtractionPolicy = "extraction";
 builder.Services.AddRequestTimeouts();
 builder.Services.AddRateLimiter(o =>
 {
@@ -86,9 +123,25 @@ builder.Services.AddRateLimiter(o =>
         l.QueueLimit = documentOptions.MaxQueuedAnalyses;
         l.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
     });
+    // Extraction mostly waits on the model provider, so it gets its own slots rather than competing with analysis.
+    o.AddConcurrencyLimiter(ExtractionPolicy, l =>
+    {
+        l.PermitLimit = extractionOptions.MaxConcurrentExtractions;
+        l.QueueLimit = extractionOptions.MaxQueuedExtractions;
+        l.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+    });
     o.RejectionStatusCode = StatusCodes.Status503ServiceUnavailable;
     o.OnRejected = (context, ct) =>
     {
+        // The policy is the endpoint's metadata name; the metric says which pool ran dry.
+        var policy = context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName ?? "unknown";
+        var services = context.HttpContext.RequestServices;
+        services.GetRequiredService<DocumentMetrics>().RecordRateLimited(policy);
+        Telemetry.TagRequest(context.HttpContext, "laya.outcome", "rate_limited");
+        Telemetry.TagRequest(context.HttpContext, "laya.ratelimit.policy", policy);
+        services.GetRequiredService<ILoggerFactory>().CreateLogger("LayaSample.RateLimiting")
+            .LogWarning("Rejected {Path}: every {Policy} slot and queue place is taken (waited {WaitedMs:F0} ms)",
+                context.HttpContext.Request.Path.Value, policy, Telemetry.RequestAge(context.HttpContext).TotalMilliseconds);
         context.HttpContext.Response.Headers.RetryAfter = "10";
         return context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsService>().WriteAsync(new ProblemDetailsContext
         {
@@ -106,6 +159,8 @@ app.UseExceptionHandler(new ExceptionHandlerOptions
     StatusCodeSelector = ex => ex is BadHttpRequestException bad ? bad.StatusCode : StatusCodes.Status500InternalServerError
 });
 app.UseStatusCodePages();
+// Before the timeout and the rate limiter, so a rejected caller never has its body read or takes a slot.
+app.UseMiddleware<ApiKeyMiddleware>();
 // Timeouts run first so time spent queued for an analysis slot counts against the request.
 app.UseRequestTimeouts();
 app.UseRateLimiter();
@@ -115,7 +170,16 @@ app.MapScalarApiReference(); // /scalar/v1
 
 const int MaxTextLength = 4000;
 
-static IResult Problem(int status, string detail) => Results.Problem(detail: detail, statusCode: status);
+static IResult Problem(int status, string detail) => DocumentProblems.Problem(status, detail);
+
+// What the upload turned out to be, on the request's own span.
+static void TagDocument(HttpContext context, DocumentClassification classification, PreparedDocument prepared)
+{
+    Telemetry.TagRequest(context, "laya.document.kind", classification.Kind.ToString());
+    Telemetry.TagRequest(context, "laya.document.strategy", prepared.Strategy.ToString());
+    Telemetry.TagRequest(context, "laya.document.pages", classification.PageCount);
+    Telemetry.TagRequest(context, "laya.document.parts", prepared.Parts.Count);
+}
 
 // Liveness: the process is up. Readiness: the models are loaded (Degraded, still 200, when one failed for good).
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false, ResponseWriter = HealthReporting.WriteJson });
@@ -148,8 +212,8 @@ app.MapPost("/api/documents/analyze", async (
     IFormFile? file,
     bool? dispatch,
     bool? includeData,
-    IDocumentClassifier classifier,
-    IDocumentPreparer preparer,
+    DocumentPipeline pipeline,
+    DocumentProblems problems,
     IDocumentRouter router,
     IOptions<DocumentAnalysisOptions> options,
     DocumentMetrics metrics,
@@ -162,35 +226,23 @@ app.MapPost("/api/documents/analyze", async (
     if (file.Length > options.Value.MaxFileBytes)
         return Problem(StatusCodes.Status413PayloadTooLarge, $"file must be at most {options.Value.MaxFileBytes} bytes");
 
-    DocumentClassification? classification = null;
+    var run = pipeline.NewRun();
+    Telemetry.TagRequest(httpContext, "laya.file.bytes", file.Length);
+    metrics.RecordQueueWait("analyze", Telemetry.RequestAge(httpContext));
     try
     {
-        // Buffered once: PDF, ZIP and TIFF need random access. The buffer is sized exactly so classify and prepare
-        // share it rather than each taking a copy.
-        await using var stream = new MemoryStream((int)file.Length);
-        await file.CopyToAsync(stream, ct);
-
-        var started = Stopwatch.GetTimestamp();
-        var stage = started;
-        TimeSpan Lap(string name)
-        {
-            var elapsed = Stopwatch.GetElapsedTime(stage);
-            metrics.RecordStage(name, elapsed);
-            stage = Stopwatch.GetTimestamp();
-            return elapsed;
-        }
-
-        classification = await classifier.ClassifyAsync(stream, ct);
-        Lap("classify");
-        var prepared = await preparer.PrepareAsync(stream, classification, ct);
-        Lap("prepare");
+        await pipeline.PrepareAsync(file, run, ct);
+        var classification = run.Classification!;
+        var prepared = run.Prepared!;
+        TagDocument(httpContext, classification, prepared);
         var agent = dispatch == false ? null : await router.RouteAsync(classification, prepared, ct);
-        Lap("route");
+        run.Lap("route");
+        Telemetry.TagRequest(httpContext, "laya.outcome", "ok");
 
         // Content only, never file names or text: both can carry personal data.
         logger.LogInformation("Analysed {Bytes}-byte {Kind} document: {Strategy}, {Pages} page(s), {Parts} part(s) in {ElapsedMs:F0} ms",
             file.Length, classification.Kind, prepared.Strategy, classification.PageCount, prepared.Parts.Count,
-            Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            run.Elapsed.TotalMilliseconds);
         metrics.RecordDocument(classification.Kind.ToString(), prepared.Strategy.ToString(), StatusCodes.Status200OK);
 
         var parts = prepared.Parts
@@ -198,33 +250,9 @@ app.MapPost("/api/documents/analyze", async (
             .ToList();
         return Results.Ok(new AnalyzeDocumentResponse(file.FileName, classification, parts, agent));
     }
-    catch (DocumentException ex)
+    catch (Exception ex) when (DocumentProblems.Handles(ex))
     {
-        // The inner exception says why a library rejected the content; the client only gets the summary.
-        logger.LogInformation(ex.InnerException, "Rejected {Bytes}-byte {Kind} document with {Status}: {Reason}",
-            file.Length, classification?.Kind.ToString() ?? "unclassified", ex.StatusCode, ex.Message);
-        metrics.RecordDocument(classification?.Kind.ToString() ?? "unclassified", "none", ex.StatusCode);
-        return Problem(ex.StatusCode, ex.Message);
-    }
-    catch (OcrUnavailableException ex)
-    {
-        logger.LogError(ex, "OCR is unavailable");
-        metrics.RecordDocument(classification?.Kind.ToString() ?? "unclassified", "none", StatusCodes.Status503ServiceUnavailable);
-        return Problem(StatusCodes.Status503ServiceUnavailable, "OCR is unavailable; retry later");
-    }
-    catch (RendererUnavailableException ex)
-    {
-        logger.LogWarning(ex, "Renderer is unavailable");
-        metrics.RecordDocument(classification?.Kind.ToString() ?? "unclassified", "none", StatusCodes.Status503ServiceUnavailable);
-        httpContext.Response.Headers.RetryAfter = "10";
-        return Problem(StatusCodes.Status503ServiceUnavailable, "document rendering is unavailable; retry later");
-    }
-    catch (RenderingFailedException ex)
-    {
-        // Most likely this document crashed the renderer; retrying it would crash it again.
-        logger.LogError(ex, "Renderer failed on a {Bytes}-byte {Kind} document", file.Length, classification?.Kind.ToString() ?? "unclassified");
-        metrics.RecordDocument(classification?.Kind.ToString() ?? "unclassified", "none", StatusCodes.Status502BadGateway);
-        return Problem(StatusCodes.Status502BadGateway, "document could not be rendered");
+        return problems.ToResult(ex, file.Length, run.Classification, httpContext);
     }
 })
 .DisableAntiforgery()
@@ -245,6 +273,91 @@ app.MapPost("/api/documents/analyze", async (
 .WithMetadata(new RequestSizeLimitAttribute(maxBodyBytes), new RequestFormLimitsAttribute { MultipartBodyLengthLimit = maxBodyBytes })
 .WithRequestTimeout(TimeSpan.FromSeconds(documentOptions.RequestTimeoutSeconds))
 .RequireRateLimiting(DocumentsPolicy);
+
+app.MapPost("/api/documents/extract", async (
+    IFormFile? file,
+    DocumentPipeline pipeline,
+    DocumentProblems problems,
+    IDocumentExtractor extractor,
+    IOptions<DocumentAnalysisOptions> options,
+    DocumentMetrics metrics,
+    HttpContext httpContext,
+    ILogger<Program> logger,
+    CancellationToken ct) =>
+{
+    if (!extractor.IsConfigured)
+        return Problem(StatusCodes.Status503ServiceUnavailable, "extraction is not configured");
+    if (file is null || file.Length == 0)
+        return Problem(StatusCodes.Status400BadRequest, "file is required");
+    if (file.Length > options.Value.MaxFileBytes)
+        return Problem(StatusCodes.Status413PayloadTooLarge, $"file must be at most {options.Value.MaxFileBytes} bytes");
+
+    var run = pipeline.NewRun();
+    Telemetry.TagRequest(httpContext, "laya.file.bytes", file.Length);
+    metrics.RecordQueueWait("extract", Telemetry.RequestAge(httpContext));
+    try
+    {
+        await pipeline.PrepareAsync(file, run, ct);
+        TagDocument(httpContext, run.Classification!, run.Prepared!);
+        var response = await extractor.ExtractAsync(file.FileName, run.Classification!, run.Prepared!, ct);
+        run.Lap("extract");
+        Telemetry.TagRequest(httpContext, "laya.outcome", "ok");
+        Telemetry.TagRequest(httpContext, "laya.extraction.document_type", response.DocumentType.ToString());
+        metrics.RecordDocument(run.Classification!.Kind.ToString(), run.Prepared!.Strategy.ToString(), StatusCodes.Status200OK);
+        return Results.Ok(response);
+    }
+    catch (Exception ex) when (DocumentProblems.Handles(ex))
+    {
+        return problems.ToResult(ex, file.Length, run.Classification, httpContext);
+    }
+    catch (ExtractionException ex)
+    {
+        // Not the exception itself: provider error text can echo parts of the API key or of the document.
+        var cause = ex.InnerException?.GetType().Name ?? "none";
+        Telemetry.TagRequest(httpContext, "laya.outcome", ex.IsMisconfiguration ? "provider_misconfigured" : "extraction_failed");
+        Telemetry.TagRequest(httpContext, "laya.failure.cause", cause);
+        Activity.Current?.RecordFailure(ex, "extraction");
+        if (ex.IsMisconfiguration)
+            logger.LogError("The extraction provider rejected our credentials ({Cause}); check the API key", cause);
+        else
+            logger.LogWarning("Extraction failed with {Status}: {Reason} ({Cause})", ex.StatusCode, ex.Message, cause);
+        metrics.RecordDocument(run.Classification?.Kind.ToString() ?? "unclassified", "none", ex.StatusCode);
+        if (ex.RetryAfterSeconds is { } seconds)
+            httpContext.Response.Headers.RetryAfter = seconds.ToString();
+        return Problem(ex.StatusCode, ex.Message);
+    }
+})
+.DisableAntiforgery()
+.RequireApiKey()
+.WithName("ExtractDocument")
+.WithSummary("Extract borrower, lender, collateral and UCC details from a lending document")
+.WithDescription("Reads a loan application, UCC-1, UCC-3 or loan and security agreement with an OpenAI model (page images when the "
+    + "document is scanned or laid out, text otherwise). Returns the parties and the document's fields, each with its page and a short quote; "
+    + "every box on the UCC-1 and UCC-3 forms is its own attribute, checkboxes are true, false or null when they cannot be told, "
+    + "and anything else printed on the document comes back in otherFields as name/value pairs. The document's pages leave this service "
+    + "and go to the model provider.")
+.Produces<ExtractDocumentResponse>()
+.ProducesProblem(StatusCodes.Status401Unauthorized)
+.ProducesProblem(StatusCodes.Status400BadRequest)
+.ProducesProblem(StatusCodes.Status413PayloadTooLarge)
+.ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+.ProducesProblem(StatusCodes.Status502BadGateway)
+.ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+.ProducesProblem(StatusCodes.Status504GatewayTimeout)
+.WithMetadata(new RequestSizeLimitAttribute(maxBodyBytes), new RequestFormLimitsAttribute { MultipartBodyLengthLimit = maxBodyBytes })
+.WithRequestTimeout(TimeSpan.FromSeconds(documentOptions.RequestTimeoutSeconds))
+.RequireRateLimiting(ExtractionPolicy);
+
+// One line that says how this instance was configured, so a trace can be read against it. No secrets.
+app.Lifetime.ApplicationStarted.Register(() => app.Logger.LogInformation(
+    "LayaSample API {Version} started in {Environment}: renderer {Renderer}, extraction {Extraction} (vision {Vision}, text {Text}), "
+    + "{Analyses} analyses and {Extractions} extractions at once, telemetry export {Telemetry}",
+    LayaTelemetry.Version, app.Environment.EnvironmentName,
+    string.IsNullOrWhiteSpace(documentOptions.RendererUrl) ? "in-process" : documentOptions.RendererUrl,
+    app.Services.GetRequiredService<ExtractionClients>().IsConfigured ? "configured" : "not configured",
+    extractionOptions.VisionModel, extractionOptions.TextModel,
+    documentOptions.EffectiveMaxConcurrentAnalyses, extractionOptions.MaxConcurrentExtractions,
+    string.IsNullOrWhiteSpace(app.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]) ? "off" : "on"));
 
 app.Run();
 

@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      evaluate_extraction:
+        description: Run the AI extraction evaluation over the lending corpus (calls the paid OpenAI API)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -130,6 +135,34 @@ jobs:
         env:
           LETSENCRYPT_EMAIL: ${{ secrets.LETSENCRYPT_EMAIL }}
 
+      # The key lives only in this Secret (created outside Helm, so it never enters the release history). Without
+      # the GitHub secret, deployment still works and /api/documents/extract answers 503.
+      - name: Store the model provider API key
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "OPENAI_API_KEY is not set; extraction will answer 503"
+            exit 0
+          fi
+          kubectl create namespace laya --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n laya create secret generic laya-llm --from-literal=api-key="$OPENAI_API_KEY" --dry-run=client -o yaml | kubectl apply -f -
+          echo "KEY_CHECKSUM=$(printf %s "$OPENAI_API_KEY" | sha256sum | cut -c1-16)" >> "$GITHUB_ENV"
+
+      # Callers of POST /api/documents/extract must send this as X-Api-Key. Without the GitHub secret the deploy still
+      # works, but extraction answers 503 (it fails closed) until the secret is added.
+      - name: Store the API access key
+        env:
+          LAYA_API_KEY: ${{ secrets.LAYA_API_KEY }}
+        run: |
+          if [ -z "$LAYA_API_KEY" ]; then
+            echo "::warning::LAYA_API_KEY is not set; /api/documents/extract will answer 503"
+            exit 0
+          fi
+          kubectl create namespace laya --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n laya create secret generic laya-api-key --from-literal=api-key="$LAYA_API_KEY" --dry-run=client -o yaml | kubectl apply -f -
+          echo "AUTH_KEY_CHECKSUM=$(printf %s "$LAYA_API_KEY" | sha256sum | cut -c1-16)" >> "$GITHUB_ENV"
+
       - name: Deploy Helm chart
         run: |
           # Get the commit SHA short form
@@ -140,6 +173,8 @@ jobs:
             --create-namespace \
             --values deploy/values-prod.yaml \
             --set image.tag=sha-${COMMIT_SHA} \
+            --set-string api.extraction.keyChecksum="${KEY_CHECKSUM:-}" \
+            --set-string api.auth.keyChecksum="${AUTH_KEY_CHECKSUM:-}" \
             --wait \
             --timeout 10m
 
@@ -149,3 +184,19 @@ jobs:
           kubectl rollout status deploy/laya-renderer -n laya --timeout=5m
           kubectl get gateway -n laya -o wide
           kubectl get pods -n laya
+
+  # Manual only: scores the real model against the lending corpus manifest. Needs the OPENAI_API_KEY secret.
+  extraction-eval:
+    if: github.event_name == 'workflow_dispatch' && inputs.evaluate_extraction
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Evaluate extraction accuracy
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: dotnet run --project tests/LayaSample.Tests -c Release -- -trait "Category=Evaluation" -showLiveOutput

@@ -82,6 +82,78 @@ curl -F "file=@docs/samples/pdf/corpus/redwood-mechanical-loan-application-scan.
 The first start is slow on a small node: the API image is 2 GB and it loads an 840 MB model. The startup probes allow
 ten minutes.
 
+## AI extraction key
+
+`POST /api/documents/extract` needs a model provider API key. Create it as a Secret, outside Helm, so the key never
+enters the release history, and point the chart at it (`api.extraction.existingSecret: laya-llm`, already in the example values):
+
+```sh
+kubectl create namespace laya --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n laya create secret generic laya-llm --from-literal=api-key="$OPENAI_API_KEY"
+```
+
+The Secret reference is `optional`: without it the pod still starts and the endpoint answers 503. Environment
+variables are read at start, so after changing the key run `kubectl rollout restart deploy/laya-api -n laya`. The CI
+deploy job does this for you: it stores the `OPENAI_API_KEY` GitHub secret in `laya-llm` and passes a short hash of the
+key as `api.extraction.keyChecksum`, which rolls the pods when the key changes. Models are `api.extraction.visionModel`
+and `textModel`; tune them with the evaluation job (Actions, Run workflow, tick the evaluation box).
+
+The API pod needs outbound HTTPS to `api.openai.com`; there is no NetworkPolicy on it, so nothing blocks that. The
+documents' pages leave the cluster for OpenAI; see the privacy note in the main README.
+
+## API access key
+
+`POST /api/documents/extract` spends OpenAI money, so it requires an `X-Api-Key` header; everything else stays open.
+Without a configured key it answers 503 (it fails closed). Create the key as a Secret, outside Helm, like the OpenAI key
+(`api.auth.existingSecret: laya-api-key` is already in the example values):
+
+```sh
+kubectl -n laya create secret generic laya-api-key --from-literal=api-key="$(openssl rand -base64 32)"
+```
+
+The CI deploy job does this from the **`LAYA_API_KEY`** GitHub secret and passes a short hash of it as
+`api.auth.keyChecksum`, so pods restart when it changes. Add the GitHub secret before the next push to `main`;
+without it the deploy succeeds but extraction answers 503. Callers then send the same value:
+
+```sh
+curl -H "X-Api-Key: $LAYA_API_KEY" -F "file=@document.pdf" https://api.mehmood.us/laya/api/documents/extract
+```
+
+**Rotate without downtime.** Add the new key to the Secret under a second entry, list both entries in the chart
+(`api.auth.secretKeys: [api-key, api-key-next]`), deploy, move callers to the new key, then remove the old entry and
+deploy again.
+
+**Cap the spend.** The access key decides who may call; it does not limit how much they spend. Give this service's
+OpenAI key its own OpenAI project and set a monthly budget there; that is the only limit that still holds if the access
+key leaks.
+
+## Telemetry (OpenTelemetry)
+
+Traces, metrics and logs go over OTLP when `telemetry.endpoint` is set; with it empty nothing leaves the pods. Store the
+Honeycomb ingest key outside Helm and point the chart at it:
+
+```sh
+kubectl -n laya create secret generic laya-otel \
+  --from-literal=api-key="<ingest key>" --from-literal=headers="x-honeycomb-team=<ingest key>"
+# values: telemetry.endpoint: https://api.honeycomb.io, telemetry.existingSecret: laya-otel
+```
+
+**With the collector (`telemetry.collector.enabled: true`, recommended).** The chart runs an OpenTelemetry Collector
+pod. The API and the renderer send OTLP to it inside the cluster; it alone holds the key (the `api-key` entry) and has
+egress to the backend (HTTPS and DNS only). The renderer's NetworkPolicy then allows exactly two things beyond the API's
+requests: the collector on port 4318 and DNS to kube-dns. Its isolation from the internet is unchanged, and its spans
+(`renderer.render`, `renderer.page`, `renderer.ocr`) join the API's trace. Check the collector pod is up with
+`kubectl -n laya get pods -l app.kubernetes.io/component=otel-collector`.
+
+**Without it** the API exports directly using the `headers` entry and the renderer exports nothing; its work shows as
+the API's client span to it.
+
+Spans cover each request (tagged with the document and the outcome), buffering, classification, preparation, the render
+round trip with per-page renderer and OCR spans, each extraction and model call (agent, model, tokens, retries, prompts
+and answers; page images are recorded only as sizes), and the calls to the renderer and the model provider. Prompts and
+answers are captured because this is a demonstrator; remove that (`laya.prompt.*` and `laya.extraction.result` in
+`DocumentExtractor`) before real documents flow through.
+
 ## Upgrade, roll back, remove
 
 ```sh
@@ -92,9 +164,9 @@ helm uninstall laya -n laya
 
 ## Security notes
 
-- **The API has no authentication.** Anyone who knows the hostname can submit documents and read `/scalar/v1`; only the
-  built-in rate limiting and request limits apply. Add API-key authentication or restrict source addresses before
-  sharing the name.
+- **Only `POST /api/documents/extract` requires a key** (see above). The other endpoints (`analyze`, feedback) and
+  `/scalar/v1` are open: anyone who knows the hostname can submit documents for analysis, limited only by the built-in
+  rate limiting and request limits. Restrict source addresses or add a key to those too before sharing the name widely.
 - The renderer parses untrusted files with native code. A NetworkPolicy allows only the API to reach it and blocks all
   its egress; both pods run as UID 1654 with a read-only root filesystem, no capabilities and a default seccomp profile.
   The NetworkPolicy relies on the cluster's Cilium enforcing it, which DOKS does.
