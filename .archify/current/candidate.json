@@ -3,13 +3,13 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "LayaSample on DOKS: request and extraction flow",
-    "output": ".archify/architecture-laya-deployment-20261011-090552/laya-architecture.html",
+    "output": ".archify/current/laya-architecture.html",
     "quality_profile": "showcase",
     "repository": {
       "url": "https://github.com/altafmehmood/LayaSample.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "730b5fbaa4455fe5c14c9b872a5266d7adec5b5a"
+      "revision": "2252faa94d6203c01a384c62831f81fa06758662"
     }
   },
   "components": [

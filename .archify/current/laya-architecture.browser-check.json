@@ -6,10 +6,10 @@
   "status": "pass",
   "visualReview": "not-requested",
   "provenance": "current",
-  "deliveryReceiptId": "1bafb6d8-6fc3-4baf-b95c-4524cf7d8dc0",
+  "deliveryReceiptId": "e0448298-a9fe-4a7e-b5e1-7dcfc0edd393",
   "artifact": {
-    "path": "/Users/altafmehmood/Repos/LayaSample/.archify/architecture-laya-deployment-20261011-090552/laya-architecture.html",
-    "sha256": "a9ab13f169419b1e40ad87e55f9094f08c37eb196b7a9985e592d15bee491fe5",
+    "path": "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.html",
+    "sha256": "b674b6410fd40e060a835731acb2a045995c1cf894779882815920af694a2f7f",
     "bytes": 774226
   },
   "state": {

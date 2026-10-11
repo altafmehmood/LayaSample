@@ -5,15 +5,15 @@
   "status": "pass",
   "type": "architecture",
   "quality": "showcase",
-  "startedAt": "2026-10-11T14:06:13.844Z",
+  "startedAt": "2026-10-11T15:24:56.224Z",
   "specification": {
-    "path": "/Users/altafmehmood/Repos/LayaSample/.archify/architecture-laya-deployment-20261011-090552/candidate.json",
-    "sha256": "738df3f14f1f3674d62246869295ab17c37f3a3b138074363bccec38cd7fecd0",
-    "bytes": 9131
+    "path": "/Users/altafmehmood/Repos/LayaSample/.archify/current/candidate.json",
+    "sha256": "c23f6e5c5ddeb9b544d2dcb52e0fd0ebec745b61e9a7d1f7d66ceb78507e9c99",
+    "bytes": 9094
   },
   "artifact": {
-    "path": "/Users/altafmehmood/Repos/LayaSample/.archify/architecture-laya-deployment-20261011-090552/laya-architecture.html",
-    "sha256": "a9ab13f169419b1e40ad87e55f9094f08c37eb196b7a9985e592d15bee491fe5",
+    "path": "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.html",
+    "sha256": "b674b6410fd40e060a835731acb2a045995c1cf894779882815920af694a2f7f",
     "bytes": 774226
   },
   "stages": {
@@ -27,8 +27,8 @@
         "/Users/altafmehmood/.agents/skills/archify/bin/archify.mjs",
         "deliver",
         "architecture",
-        "/Users/altafmehmood/Repos/LayaSample/.archify/architecture-laya-deployment-20261011-090552/candidate.json",
-        "/Users/altafmehmood/Repos/LayaSample/.archify/architecture-laya-deployment-20261011-090552/laya-architecture.html",
+        "/Users/altafmehmood/Repos/LayaSample/.archify/current/candidate.json",
+        "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.html",
         "--quality",
         "showcase",
         "--repo-root",
@@ -40,8 +40,8 @@
         "ok": true,
         "command": "validate",
         "specification": {
-          "sha256": "738df3f14f1f3674d62246869295ab17c37f3a3b138074363bccec38cd7fecd0",
-          "bytes": 9131
+          "sha256": "c23f6e5c5ddeb9b544d2dcb52e0fd0ebec745b61e9a7d1f7d66ceb78507e9c99",
+          "bytes": 9094
         },
         "validation": {
           "checksPassed": 9,
@@ -56,14 +56,14 @@
     "deliver": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 370,
+      "durationMs": 419,
       "command": [
         "/opt/homebrew/Cellar/node/25.2.1/bin/node",
         "/Users/altafmehmood/.agents/skills/archify/bin/archify.mjs",
         "deliver",
         "architecture",
-        "/Users/altafmehmood/Repos/LayaSample/.archify/architecture-laya-deployment-20261011-090552/candidate.json",
-        "/Users/altafmehmood/Repos/LayaSample/.archify/architecture-laya-deployment-20261011-090552/laya-architecture.html",
+        "/Users/altafmehmood/Repos/LayaSample/.archify/current/candidate.json",
+        "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.html",
         "--quality",
         "showcase",
         "--repo-root",
@@ -72,18 +72,18 @@
       ],
       "receipt": {
         "schemaVersion": 1,
-        "receiptId": "1bafb6d8-6fc3-4baf-b95c-4524cf7d8dc0",
+        "receiptId": "e0448298-a9fe-4a7e-b5e1-7dcfc0edd393",
         "ok": true,
         "command": "deliver",
         "type": "architecture",
-        "input": "/Users/altafmehmood/Repos/LayaSample/.archify/architecture-laya-deployment-20261011-090552/candidate.json",
-        "output": "/Users/altafmehmood/Repos/LayaSample/.archify/architecture-laya-deployment-20261011-090552/laya-architecture.html",
+        "input": "/Users/altafmehmood/Repos/LayaSample/.archify/current/candidate.json",
+        "output": "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.html",
         "specification": {
-          "sha256": "738df3f14f1f3674d62246869295ab17c37f3a3b138074363bccec38cd7fecd0",
-          "bytes": 9131
+          "sha256": "c23f6e5c5ddeb9b544d2dcb52e0fd0ebec745b61e9a7d1f7d66ceb78507e9c99",
+          "bytes": 9094
         },
         "artifact": {
-          "sha256": "a9ab13f169419b1e40ad87e55f9094f08c37eb196b7a9985e592d15bee491fe5",
+          "sha256": "b674b6410fd40e060a835731acb2a045995c1cf894779882815920af694a2f7f",
           "bytes": 774226
         },
         "validation": {
@@ -97,7 +97,7 @@
         "evidence": {
           "verified": true,
           "repository": "https://github.com/altafmehmood/LayaSample",
-          "revision": "730b5fbaa4455fe5c14c9b872a5266d7adec5b5a",
+          "revision": "2252faa94d6203c01a384c62831f81fa06758662",
           "references": 17
         },
         "update": {
@@ -116,19 +116,19 @@
     "check": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 138,
+      "durationMs": 137,
       "command": [
         "/opt/homebrew/Cellar/node/25.2.1/bin/node",
         "/Users/altafmehmood/.agents/skills/archify/bin/archify.mjs",
         "check",
-        "/Users/altafmehmood/Repos/LayaSample/.archify/architecture-laya-deployment-20261011-090552/laya-architecture.html",
+        "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.html",
         "--require-provenance"
       ],
       "receipt": {
         "ok": true,
-        "file": "/Users/altafmehmood/Repos/LayaSample/.archify/architecture-laya-deployment-20261011-090552/laya-architecture.html",
+        "file": "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.html",
         "artifact": {
-          "sha256": "a9ab13f169419b1e40ad87e55f9094f08c37eb196b7a9985e592d15bee491fe5",
+          "sha256": "b674b6410fd40e060a835731acb2a045995c1cf894779882815920af694a2f7f",
           "bytes": 774226
         },
         "checks": [
@@ -257,18 +257,18 @@
           "issues": []
         },
         "provenance": "current",
-        "deliveryReceiptId": "1bafb6d8-6fc3-4baf-b95c-4524cf7d8dc0"
+        "deliveryReceiptId": "e0448298-a9fe-4a7e-b5e1-7dcfc0edd393"
       }
     },
     "browser-check": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 775,
+      "durationMs": 774,
       "command": [
         "/opt/homebrew/Cellar/node/25.2.1/bin/node",
         "/Users/altafmehmood/.agents/skills/archify/bin/archify.mjs",
         "browser-check",
-        "/Users/altafmehmood/Repos/LayaSample/.archify/architecture-laya-deployment-20261011-090552/laya-architecture.html",
+        "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.html",
         "--json",
         "--require-provenance"
       ],
@@ -281,10 +281,10 @@
         "status": "pass",
         "visualReview": "not-requested",
         "provenance": "current",
-        "deliveryReceiptId": "1bafb6d8-6fc3-4baf-b95c-4524cf7d8dc0",
+        "deliveryReceiptId": "e0448298-a9fe-4a7e-b5e1-7dcfc0edd393",
         "artifact": {
-          "path": "/Users/altafmehmood/Repos/LayaSample/.archify/architecture-laya-deployment-20261011-090552/laya-architecture.html",
-          "sha256": "a9ab13f169419b1e40ad87e55f9094f08c37eb196b7a9985e592d15bee491fe5",
+          "path": "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.html",
+          "sha256": "b674b6410fd40e060a835731acb2a045995c1cf894779882815920af694a2f7f",
           "bytes": 774226
         },
         "state": {
@@ -998,13 +998,13 @@
   },
   "diagnostics": [],
   "evidence": {
-    "receipt": "/Users/altafmehmood/Repos/LayaSample/.archify/architecture-laya-deployment-20261011-090552/laya-architecture.finalize.json",
-    "summaryReceipt": "/Users/altafmehmood/Repos/LayaSample/.archify/architecture-laya-deployment-20261011-090552/laya-architecture.finalize-summary.json",
-    "browserCheckReceipt": "/Users/altafmehmood/Repos/LayaSample/.archify/architecture-laya-deployment-20261011-090552/laya-architecture.browser-check.json"
+    "receipt": "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.finalize.json",
+    "summaryReceipt": "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.finalize-summary.json",
+    "browserCheckReceipt": "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.browser-check.json"
   },
   "visualReview": "not-requested",
-  "finishedAt": "2026-10-11T14:06:15.240Z",
-  "durationMs": 1396,
+  "finishedAt": "2026-10-11T15:24:57.662Z",
+  "durationMs": 1438,
   "update": {
     "status": "current",
     "installedVersion": "3.0.1",

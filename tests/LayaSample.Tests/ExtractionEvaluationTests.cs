@@ -29,8 +29,8 @@ public class ExtractionEvaluationTests(ITestOutputHelper output)
 
         var settings = new ExtractionOptions
         {
-            VisionModel = Environment.GetEnvironmentVariable("EVAL_VISION_MODEL") ?? "gpt-5.4-mini",
-            TextModel = Environment.GetEnvironmentVariable("EVAL_TEXT_MODEL") ?? "gpt-5.4-mini",
+            VisionModel = Environment.GetEnvironmentVariable("EVAL_VISION_MODEL") ?? "gpt-6.1-sol",
+            TextModel = Environment.GetEnvironmentVariable("EVAL_TEXT_MODEL") ?? "gpt-6-luna",
             ApiKey = apiKey
         };
         var filter = Environment.GetEnvironmentVariable("EVAL_FILTER");

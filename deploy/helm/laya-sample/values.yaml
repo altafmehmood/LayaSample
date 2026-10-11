@@ -39,8 +39,8 @@ api:
     keyChecksum: ""
     provider: openai
     # Models for documents sent as page images / as text. Tune with the evaluation harness (see deploy/README.md).
-    visionModel: gpt-5.4-mini
-    textModel: gpt-5.4-mini
+    visionModel: gpt-6.1-sol
+    textModel: gpt-6-luna
     # Extractions in flight at once. They mostly wait on the provider but each holds the buffered document and its page images.
     maxConcurrent: 4
     # One provider call, including retries by the SDK. The request timeout above still caps the whole request.
