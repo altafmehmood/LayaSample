@@ -3,6 +3,12 @@ fullnameOverride: laya
 image:
   tag: sha-000000002  # will be overridden by CI with actual commit SHA
 
+telemetry:
+  endpoint: https://api.honeycomb.io
+  existingSecret: laya-otel
+  collector:
+    enabled: true
+
 gateway:
   create: true
   hostname: api.mehmood.us
