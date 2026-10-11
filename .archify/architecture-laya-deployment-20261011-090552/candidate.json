@@ -1,0 +1,455 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "LayaSample on DOKS: request and extraction flow",
+    "output": ".archify/architecture-laya-deployment-20261011-090552/laya-architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/altafmehmood/LayaSample.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "730b5fbaa4455fe5c14c9b872a5266d7adec5b5a"
+    }
+  },
+  "components": [
+    {
+      "id": "ci",
+      "type": "external",
+      "label": "GitHub Actions",
+      "sublabel": "deploy on main push",
+      "pos": [
+        40,
+        80
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "sources": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "line": 119,
+          "end_line": 171,
+          "label": "deploy job"
+        }
+      ]
+    },
+    {
+      "id": "secrets",
+      "type": "cloud",
+      "label": "Kubernetes Secrets",
+      "sublabel": "API + OpenAI keys",
+      "pos": [
+        480,
+        80
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "sources": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "line": 142,
+          "end_line": 164,
+          "label": "secret steps"
+        },
+        {
+          "path": "deploy/helm/laya-sample/templates/api-deployment.yaml",
+          "line": 71,
+          "end_line": 90,
+          "label": "secretKeyRef"
+        }
+      ]
+    },
+    {
+      "id": "client",
+      "type": "external",
+      "label": "API client",
+      "sublabel": "browser · curl",
+      "pos": [
+        40,
+        260
+      ],
+      "size": [
+        130,
+        62
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "security",
+      "label": "Gateway + HTTPRoute",
+      "sublabel": "HTTPS :443 · /laya",
+      "pos": [
+        260,
+        260
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "sources": [
+        {
+          "path": "deploy/helm/laya-sample/templates/gateway.yaml",
+          "line": 11,
+          "end_line": 40,
+          "label": "listeners"
+        },
+        {
+          "path": "deploy/helm/laya-sample/templates/httproute.yaml",
+          "line": 16,
+          "end_line": 28,
+          "label": "/laya route"
+        }
+      ]
+    },
+    {
+      "id": "certmgr",
+      "type": "cloud",
+      "label": "cert-manager",
+      "sublabel": "HTTP-01 solver",
+      "pos": [
+        260,
+        440
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "sources": [
+        {
+          "path": "deploy/cluster-issuer.yaml",
+          "line": 15,
+          "end_line": 19,
+          "label": "gatewayHTTPRoute solver"
+        }
+      ]
+    },
+    {
+      "id": "le",
+      "type": "external",
+      "label": "Let's Encrypt",
+      "sublabel": "ACME server",
+      "pos": [
+        40,
+        440
+      ],
+      "size": [
+        130,
+        62
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "LayaSample.Api",
+      "sublabel": "analyze · extract",
+      "pos": [
+        480,
+        260
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "sources": [
+        {
+          "path": "src/LayaSample.Api/Program.cs",
+          "line": 190,
+          "label": "analyze endpoint"
+        },
+        {
+          "path": "src/LayaSample.Api/Program.cs",
+          "line": 252,
+          "end_line": 298,
+          "label": "extract endpoint"
+        }
+      ]
+    },
+    {
+      "id": "laya",
+      "type": "backend",
+      "label": "Laya decision model",
+      "sublabel": "feedback only",
+      "pos": [
+        480,
+        440
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "sources": [
+        {
+          "path": "src/LayaSample.Api/Services/ModelWarmup.cs",
+          "line": 23,
+          "end_line": 26,
+          "label": "model load"
+        },
+        {
+          "path": "src/LayaSample.Api/Services/DissatisfactionAnalyzer.cs",
+          "line": 26,
+          "label": "evaluate"
+        }
+      ]
+    },
+    {
+      "id": "gate",
+      "type": "security",
+      "label": "API key gate",
+      "sublabel": "X-Api-Key first",
+      "pos": [
+        700,
+        260
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "sources": [
+        {
+          "path": "src/LayaSample.Api/Services/ApiKeyAuthentication.cs",
+          "line": 64,
+          "end_line": 96,
+          "label": "key check"
+        },
+        {
+          "path": "src/LayaSample.Api/Program.cs",
+          "line": 151,
+          "label": "middleware order"
+        }
+      ]
+    },
+    {
+      "id": "pipeline",
+      "type": "backend",
+      "label": "Classify + prepare",
+      "sublabel": "PdfPig · OCR",
+      "pos": [
+        920,
+        260
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "sources": [
+        {
+          "path": "src/LayaSample.Api/Services/Documents/DocumentPipeline.cs",
+          "line": 29,
+          "end_line": 38,
+          "label": "PrepareAsync"
+        }
+      ]
+    },
+    {
+      "id": "extractor",
+      "type": "backend",
+      "label": "Document extractor",
+      "sublabel": "keyword routing",
+      "pos": [
+        1140,
+        260
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "sources": [
+        {
+          "path": "src/LayaSample.Api/Services/Documents/Extraction/DocumentExtractor.cs",
+          "line": 33,
+          "end_line": 37,
+          "label": "detect and route"
+        }
+      ]
+    },
+    {
+      "id": "openai",
+      "type": "external",
+      "label": "OpenAI",
+      "sublabel": "Chat Completions",
+      "pos": [
+        1140,
+        440
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "sources": [
+        {
+          "path": "src/LayaSample.Api/Services/Documents/Extraction/ExtractionClients.cs",
+          "line": 59,
+          "end_line": 71,
+          "label": "client factory"
+        }
+      ]
+    },
+    {
+      "id": "renderer",
+      "type": "backend",
+      "label": "Renderer",
+      "sublabel": "PDFium · OCR",
+      "pos": [
+        920,
+        440
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "sources": [
+        {
+          "path": "src/LayaSample.Renderer/Program.cs",
+          "line": 99,
+          "label": "render endpoint"
+        },
+        {
+          "path": "deploy/helm/laya-sample/templates/networkpolicy.yaml",
+          "line": 11,
+          "end_line": 23,
+          "label": "API-only ingress"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "DOKS cluster · laya workloads",
+      "wraps": [
+        "gateway",
+        "secrets",
+        "api",
+        "laya",
+        "gate",
+        "pipeline",
+        "extractor",
+        "renderer"
+      ],
+      "pad": 20
+    },
+    {
+      "kind": "security-group",
+      "label": "renderer network",
+      "wraps": [
+        "renderer"
+      ],
+      "pad": 14
+    }
+  ],
+  "connections": [
+    {
+      "from": "client",
+      "to": "gateway",
+      "label": "HTTPS",
+      "variant": "emphasis"
+    },
+    {
+      "from": "gateway",
+      "to": "api",
+      "label": "/laya",
+      "variant": "emphasis"
+    },
+    {
+      "from": "api",
+      "to": "gate",
+      "label": "/extract",
+      "variant": "security"
+    },
+    {
+      "from": "gate",
+      "to": "pipeline",
+      "label": "key valid",
+      "variant": "security"
+    },
+    {
+      "from": "api",
+      "to": "pipeline",
+      "label": "/analyze",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "top",
+      "via": [
+        [
+          545,
+          215
+        ],
+        [
+          985,
+          215
+        ]
+      ]
+    },
+    {
+      "from": "pipeline",
+      "to": "extractor",
+      "label": "routed"
+    },
+    {
+      "from": "extractor",
+      "to": "openai",
+      "label": "vision + text",
+      "variant": "security"
+    },
+    {
+      "from": "pipeline",
+      "to": "renderer",
+      "label": "render",
+      "variant": "security"
+    },
+    {
+      "from": "api",
+      "to": "laya",
+      "label": "feedback",
+      "variant": "dashed"
+    },
+    {
+      "from": "certmgr",
+      "to": "gateway",
+      "label": "TLS Secret",
+      "variant": "dashed"
+    },
+    {
+      "from": "certmgr",
+      "to": "le",
+      "label": "ACME",
+      "variant": "dashed"
+    },
+    {
+      "from": "ci",
+      "to": "secrets",
+      "label": "creates Secrets",
+      "variant": "dashed"
+    },
+    {
+      "from": "secrets",
+      "to": "api",
+      "label": "env keys",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Public path",
+      "items": [
+        "HTTPS terminates at the Gateway",
+        "/laya is stripped before the API sees the path",
+        "Scalar and OpenAPI stay open"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Money-spending path",
+      "items": [
+        "extract needs X-Api-Key, checked before the body is read",
+        "Document pages leave for OpenAI with store=false",
+        "Renderer accepts traffic from the API only, with no egress"
+      ]
+    }
+  ]
+}
