@@ -163,6 +163,23 @@ jobs:
           kubectl -n laya create secret generic laya-api-key --from-literal=api-key="$LAYA_API_KEY" --dry-run=client -o yaml | kubectl apply -f -
           echo "AUTH_KEY_CHECKSUM=$(printf %s "$LAYA_API_KEY" | sha256sum | cut -c1-16)" >> "$GITHUB_ENV"
 
+      # Telemetry goes to Honeycomb through the in-cluster collector, which alone holds the ingest key. Without the GitHub
+      # secret the deploy still works, but nothing is exported. `headers` is what the API would use without the collector.
+      - name: Store the Honeycomb ingest key
+        env:
+          HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
+        run: |
+          if [ -z "$HONEYCOMB_API_KEY" ]; then
+            echo "::warning::HONEYCOMB_API_KEY is not set; telemetry will not be exported"
+            exit 0
+          fi
+          kubectl create namespace laya --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n laya create secret generic laya-otel \
+            --from-literal=api-key="$HONEYCOMB_API_KEY" \
+            --from-literal=headers="x-honeycomb-team=$HONEYCOMB_API_KEY" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          echo "OTEL_CHECKSUM=$(printf %s "$HONEYCOMB_API_KEY" | sha256sum | cut -c1-16)" >> "$GITHUB_ENV"
+
       - name: Deploy Helm chart
         run: |
           # Get the commit SHA short form
@@ -175,6 +192,7 @@ jobs:
             --set image.tag=sha-${COMMIT_SHA} \
             --set-string api.extraction.keyChecksum="${KEY_CHECKSUM:-}" \
             --set-string api.auth.keyChecksum="${AUTH_KEY_CHECKSUM:-}" \
+            --set-string telemetry.headersChecksum="${OTEL_CHECKSUM:-}" \
             --wait \
             --timeout 10m
 
