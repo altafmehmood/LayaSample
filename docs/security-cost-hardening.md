@@ -69,6 +69,13 @@ retention policy.
 
 **Tests.** `UsageTests` (store, pricing, CSV, endpoints, scoping, writer), and the recording tests in `ExtractionTests`.
 
+**Updated 2026-10-12.** The writer lost queued records when it was stopped before its loop first ran. On .NET 10 the host
+schedules `ExecuteAsync` rather than running it inside `StartAsync`, so `StopAsync` could cancel it before it started (its task
+ends `Canceled`) and the records waiting in the queue were never written. CI caught it as
+`The_writer_stores_queued_records_on_shutdown` failing with "stored 0 of 250" on one run and passing on the next of the same
+commit. `UsageWriter.StopAsync` now drains the queue itself when the loop never ran. Regression test:
+`Records_queued_before_the_writer_loop_first_runs_are_still_stored_on_shutdown` (fails on the old code, 50 start/stop cycles).
+
 ## 2. Malware scanning (ClamAV)
 
 **What.** Before anything parses an upload it is streamed to a ClamAV daemon. Infected: 422 `document rejected: malware
@@ -227,7 +234,7 @@ job sets the flag.
 
 ## Verification summary
 
-Full suite: 362 tests, 6 skipped (the paid evaluation, four ClamAV integration tests, the real-OCR check). Built with
+Full suite: 363 tests, 6 skipped (the paid evaluation, four ClamAV integration tests, the real-OCR check). Built with
 `-warnaserror`; `helm lint` on the default, prod and CI value sets; `docker compose config`; the licence check. ClamAV was run
 for real (non-root, read-only) and tested through the real API: EICAR 422, clean PDF 200, daemon stopped 503 with
 `Retry-After`. Not run: a Kubernetes install, the DOKS deploy, a PVC on DigitalOcean, garak against the real API, and any

@@ -244,6 +244,27 @@ public class UsageTests
         Assert.True(rows.Count == 250, $"stored {rows.Count} of 250; writer task {writer.ExecuteTask?.Status}; log: {string.Join(" | ", log.Messages)}");
     }
 
+    [Fact]
+    public async Task Records_queued_before_the_writer_loop_first_runs_are_still_stored_on_shutdown()
+    {
+        // The host schedules ExecuteAsync, so stopping straight after starting often cancels it before it ever ran.
+        // Repeated so that case is hit on every machine, not only on a busy CI runner.
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            using var db = new TempDatabase();
+            var store = Store(db);
+            var writer = new UsageWriter(store, new DocumentMetrics(new NoMeters()), NullLogger<UsageWriter>.Instance);
+            await writer.StartAsync(CancellationToken.None);
+
+            for (var i = 0; i < 5; i++)
+                writer.Record(Row(file: $"f{i}.pdf"));
+            await writer.StopAsync(CancellationToken.None);
+
+            var rows = await store.QueryAsync(new UsageQuery(null, null, null, null, null, null, 100), TestContext.Current.CancellationToken);
+            Assert.True(rows.Count == 5, $"attempt {attempt}: stored {rows.Count} of 5; writer task {writer.ExecuteTask?.Status}");
+        }
+    }
+
     private sealed class CapturingLogger<T> : ILogger<T>
     {
         public List<string> Messages { get; } = [];
