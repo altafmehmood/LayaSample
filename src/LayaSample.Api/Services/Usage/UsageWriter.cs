@@ -37,9 +37,11 @@ public sealed class UsageWriter : BackgroundService, IUsageRecorder
         }
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    // Not the stopping token: shutdown completes the queue instead, and the loop ends once it is empty.
+    protected override Task ExecuteAsync(CancellationToken stoppingToken) => DrainAsync();
+
+    private async Task DrainAsync()
     {
-        // Not the stopping token: shutdown completes the queue instead, and the loop ends once it is empty.
         var batch = new List<UsageRecord>(BatchSize);
         while (await _queue.Reader.WaitToReadAsync(CancellationToken.None))
         {
@@ -67,6 +69,10 @@ public sealed class UsageWriter : BackgroundService, IUsageRecorder
     {
         _queue.Writer.TryComplete();
         await base.StopAsync(cancellationToken);
+        // The host starts ExecuteAsync on its own schedule; stopping first cancels it before it ever ran (its task ends
+        // Canceled), so whatever was queued in that window is written here. A loop that ran has already emptied the queue.
+        if (ExecuteTask is { IsCanceled: true })
+            await DrainAsync();
     }
 }
 
