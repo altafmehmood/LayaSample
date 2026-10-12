@@ -17,6 +17,12 @@ file. The order is unchanged: scan, classify, structure findings (refused before
 prepare, text findings. The streaming and memory limits on this page describe the gateway and the service separately now:
 the gateway still never holds the document in memory, and the service reads it from the spooled form file.
 
+**Update 2026-10-12 (extraction service):** model calls are made by the extraction service, not the gateway. The usage history
+is still written by the gateway: the service reports the model calls it made (with tokens and list-price cost) and the gateway
+adds who asked and what was uploaded. Where this page says "the extractor records", read "the extraction service reports and the
+gateway records". Pricing (`Extraction:Pricing`) is the extraction service's setting. The risk policy for the model's answer
+stays in the gateway: the service only finds instruction-like text.
+
 ## Why
 
 - Two extractions on DOKS showed about $3 on the OpenAI dashboard and nothing in the repository could explain it. (The cause

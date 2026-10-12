@@ -34,8 +34,6 @@ api:
     persistence:
       enabled: true
       size: 1Gi
-  extraction:
-    existingSecret: laya-llm
   resources:
     requests:
       cpu: 100m
@@ -60,3 +58,14 @@ renderer:
   config:
     maxConcurrentJobs: 1
     maxQueuedJobs: 5
+
+extraction:
+  replicas: 1
+  existingSecret: laya-llm
+  resources:
+    requests:
+      cpu: 50m
+      memory: 192Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi

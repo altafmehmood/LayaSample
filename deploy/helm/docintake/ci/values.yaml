@@ -6,5 +6,5 @@ gateway:
 api:
   auth:
     existingSecret: laya-api-key
-  extraction:
-    existingSecret: laya-llm
+extraction:
+  existingSecret: laya-llm

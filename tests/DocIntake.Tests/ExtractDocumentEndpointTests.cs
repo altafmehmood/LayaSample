@@ -1,3 +1,4 @@
+using DocIntake.ExtractionService;
 using System.ClientModel;
 using System.Net;
 using System.Net.Http.Json;
@@ -22,8 +23,7 @@ public class ExtractDocumentEndpointTests
             {
                 foreach (var d in s.Where(d => d.ServiceType == typeof(IHostedService)).ToList()) s.Remove(d);
                 s.UseDocumentService();
-                s.RemoveAll<ExtractionClients>();
-                s.AddSingleton(clients);
+                s.UseExtractionService(clients);
             });
     }
 

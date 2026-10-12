@@ -1,5 +1,6 @@
 using DocIntake.ServiceDefaults;
 using DocIntake.Api.Services.Documents;
+using DocIntake.Api.Services.Documents.Extraction;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace DocIntake.Api.Services;
@@ -32,6 +33,33 @@ public sealed class DocumentServiceHealthCheck(DocumentServiceClient client, ILo
         if (Interlocked.Exchange(ref _last, now) is { } before && before != now)
             logger.Log(result.Status == HealthStatus.Healthy ? LogLevel.Information : LogLevel.Warning,
                 "Document service readiness changed from {Before} to {Now}", before, now);
+        return result;
+    }
+}
+
+/// <summary>
+/// The extraction service's readiness. Degraded when it does not answer: uploads that are only analysed still work, and
+/// only extraction is affected. Not configuring a service URL at all is a choice, not an outage, and reports Healthy.
+/// </summary>
+public sealed class ExtractionServiceHealthCheck(ExtractionServiceClient client, Microsoft.Extensions.Options.IOptions<ExtractionGatewayOptions> options,
+    ILogger<ExtractionServiceHealthCheck> logger) : IHealthCheck
+{
+    private string? _last;
+
+    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken ct = default)
+    {
+        var result = string.IsNullOrWhiteSpace(options.Value.ServiceUrl)
+            ? HealthCheckResult.Healthy("not configured: Extraction:ServiceUrl is empty; extraction answers 503")
+            : await client.GetReadinessAsync(ct) switch
+            {
+                null => HealthCheckResult.Degraded("unreachable; extraction is unavailable"),
+                "Healthy" => HealthCheckResult.Healthy("ready"),
+                var status => HealthCheckResult.Degraded($"extraction service is {status}")
+            };
+        var now = $"{result.Status}: {result.Description}";
+        if (Interlocked.Exchange(ref _last, now) is { } before && before != now)
+            logger.Log(result.Status == HealthStatus.Healthy ? LogLevel.Information : LogLevel.Warning,
+                "Extraction service readiness changed from {Before} to {Now}", before, now);
         return result;
     }
 }

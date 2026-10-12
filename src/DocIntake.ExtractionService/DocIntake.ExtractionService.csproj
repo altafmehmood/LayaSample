@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    The only service that holds the model provider's key and reaches the internet: it turns a prepared document into
+    structured data. It receives the document from the gateway and answers with the data and the model calls it made.
+  -->
+
+  <PropertyGroup>
+    <!-- Development secrets (dotnet user-secrets): the model provider API key (Extraction:ApiKey) and the telemetry settings. Never read in Production. -->
+    <UserSecretsId>d3ba5487-1b27-454b-8be5-bffff2cdf5ab</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.AI" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DocIntake.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DocIntake.Contracts\DocIntake.Contracts.csproj" />
+    <ProjectReference Include="..\DocIntake.ServiceDefaults\DocIntake.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+</Project>

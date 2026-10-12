@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace DocIntake.Api.Services.Security;
+namespace DocIntake.Contracts;
 
 /// <summary>
 /// Phrases that address the model instead of the reader of the document. Precision matters more than recall here: a hit

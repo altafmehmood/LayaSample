@@ -1,11 +1,10 @@
+using DocIntake.ExtractionService;
 using DocIntake.Api.Services;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Text.Json;
 using DocIntake.Contracts;
-using DocIntake.Api.Services.Documents;
 using DocIntake.Api.Services.Documents.Extraction;
-using DocIntake.Api.Services.Security;
 using DocIntake.Api.Services.Usage;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -34,16 +33,45 @@ public class ExtractionTests
         Reason = "test", MediaType = "application/pdf", PageCount = pages
     };
 
-    private static DocumentExtractor Extractor(IChatClient? vision, IChatClient? text, ExtractionOptions? options = null, IExtractionErrorMapper? errors = null,
-        ModelPricing? pricing = null, IUsageRecorder? recorder = null, SecurityOptions? security = null)
+    /// <summary>
+    /// The extraction service's orchestrator, called directly, with usage recorded from the calls it reports the way the
+    /// gateway does it. The gateway's own wiring (over HTTP) is tested through <c>UsageTests</c> and the endpoint tests.
+    /// </summary>
+    private sealed class TestExtractor(ExtractionOrchestrator orchestrator, IUsageRecorder recorder)
+    {
+        public async Task<ExtractDocumentResponse> ExtractAsync(string fileName, DocumentClassification classification, PreparedDocument document,
+            CancellationToken ct, UsageContext? context = null)
+        {
+            ExtractAnswer answer;
+            try
+            {
+                answer = await orchestrator.ExtractAsync(new ExtractRequest(classification, document), ct);
+            }
+            catch (IntakeFailureException ex)
+            {
+                Record(context, ex.Calls);
+                throw;
+            }
+            Record(context, answer.Calls);
+            return new ExtractDocumentResponse(fileName, answer.DocumentType, answer.DetectedBy, answer.Agent, answer.Model, answer.Extraction,
+                answer.Usage, answer.Warnings, answer.AnswerRisks);
+        }
+
+        private void Record(UsageContext? context, IReadOnlyList<ModelCall> calls)
+        {
+            if (context is null) return;
+            foreach (var record in DocumentExtractor.RecordsFor(context, calls)) recorder.Record(record);
+        }
+    }
+
+    private static TestExtractor Extractor(IChatClient? vision, IChatClient? text, ExtractionOptions? options = null, IExtractionErrorMapper? errors = null,
+        ModelPricing? pricing = null, IUsageRecorder? recorder = null)
     {
         IExtractionAgent[] agents = [new LoanApplicationAgent(), new Ucc1Agent(), new Ucc3Agent(), new SecurityAgreementAgent(), new GenericLendingAgent()];
-        var metrics = new DocumentMetrics(new TestMeterFactory());
-        var riskScanner = new RiskScanner(Microsoft.Extensions.Options.Options.Create(security ?? new SecurityOptions()), metrics, NullLogger<RiskScanner>.Instance);
-        return new DocumentExtractor(Microsoft.Extensions.Options.Options.Create(options ?? Options()), new ExtractionClients(vision, text),
-            errors ?? new OpenAiExtractionErrorMapper(), agents, metrics,
-            pricing ?? new ModelPricing(Microsoft.Extensions.Options.Options.Create(new PricingOptions())), recorder ?? new NoopUsageRecorder(),
-            riskScanner, NullLogger<DocumentExtractor>.Instance);
+        var orchestrator = new ExtractionOrchestrator(Microsoft.Extensions.Options.Options.Create(options ?? Options()), new ExtractionClients(vision, text),
+            errors ?? new OpenAiExtractionErrorMapper(), agents, new ExtractionMetrics(new TestMeterFactory()),
+            pricing ?? new ModelPricing(Microsoft.Extensions.Options.Options.Create(new PricingOptions())), NullLogger<ExtractionOrchestrator>.Instance);
+        return new TestExtractor(orchestrator, recorder ?? new NoopUsageRecorder());
     }
 
     private sealed class TestMeterFactory : System.Diagnostics.Metrics.IMeterFactory

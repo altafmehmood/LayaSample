@@ -5,6 +5,7 @@
     "image",
     "api",
     "renderer",
+    "extraction",
     "gateway"
   ],
   "properties": {
@@ -93,44 +94,6 @@
             }
           }
         },
-        "extraction": {
-          "type": "object",
-          "properties": {
-            "existingSecret": {
-              "type": "string"
-            },
-            "secretKey": {
-              "type": "string",
-              "minLength": 1
-            },
-            "keyChecksum": {
-              "type": "string"
-            },
-            "provider": {
-              "enum": [
-                "openai"
-              ]
-            },
-            "visionModel": {
-              "type": "string",
-              "minLength": 1
-            },
-            "textModel": {
-              "type": "string",
-              "minLength": 1
-            },
-            "maxConcurrent": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 32
-            },
-            "timeoutSeconds": {
-              "type": "integer",
-              "minimum": 5,
-              "maximum": 600
-            }
-          }
-        },
         "usage": {
           "type": "object",
           "properties": {
@@ -159,6 +122,79 @@
               }
             }
           }
+        }
+      }
+    },
+    "renderer": {
+      "type": "object",
+      "properties": {
+        "replicas": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "maxConcurrentJobs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "maxQueuedJobs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "ocrModel": {
+              "enum": [
+                "",
+                "PPOCRv5Latin",
+                "PPOCRv6Tiny",
+                "PPOCRv6Small",
+                "PPOCRv6Medium"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "extraction": {
+      "type": "object",
+      "properties": {
+        "existingSecret": {
+          "type": "string"
+        },
+        "secretKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "keyChecksum": {
+          "type": "string"
+        },
+        "provider": {
+          "enum": [
+            "openai"
+          ]
+        },
+        "visionModel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "textModel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "maxConcurrent": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 600
+        },
+        "replicas": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     },
@@ -203,37 +239,6 @@
             "apiKeyKey": {
               "type": "string",
               "minLength": 1
-            }
-          }
-        }
-      }
-    },
-    "renderer": {
-      "type": "object",
-      "properties": {
-        "replicas": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "config": {
-          "type": "object",
-          "properties": {
-            "maxConcurrentJobs": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "maxQueuedJobs": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "ocrModel": {
-              "enum": [
-                "",
-                "PPOCRv5Latin",
-                "PPOCRv6Tiny",
-                "PPOCRv6Small",
-                "PPOCRv6Medium"
-              ]
             }
           }
         }

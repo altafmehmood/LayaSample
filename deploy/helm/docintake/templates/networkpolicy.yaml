@@ -44,4 +44,41 @@ spec:
   {{- else }}
   egress: []
   {{- end }}
+---
+# The extraction service holds the model provider's key and is the only pod that talks to the internet for it. Only the API may
+# call it. It may reach DNS, the collector (telemetry) and port 443 anywhere (the provider's addresses are not fixed).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "docintake.fullname" . }}-extraction
+  labels:
+    {{- include "docintake.labels" (dict "root" . "component" "extraction") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "docintake.selectorLabels" (dict "root" . "component" "extraction") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "docintake.selectorLabels" (dict "root" . "component" "api") | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - ports:
+        - { protocol: TCP, port: 443 }
+    {{- if .Values.telemetry.collector.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "docintake.selectorLabels" (dict "root" . "component" "otel-collector") | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 4318
+    {{- end }}
 {{- end }}

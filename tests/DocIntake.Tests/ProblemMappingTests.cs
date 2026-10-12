@@ -68,7 +68,8 @@ public class ProblemMappingTests
         [FailureKind.Busy] = 503,
         [FailureKind.Misconfigured] = 503,
         [FailureKind.Timeout] = 504,
-        [FailureKind.DependencyFailed] = 502
+        [FailureKind.DependencyFailed] = 502,
+        [FailureKind.DependencyUnavailable] = 503
     };
 
     public static TheoryData<FailureKind, int> Statuses
@@ -111,6 +112,7 @@ public class ProblemMappingTests
     [InlineData(FailureKind.Busy, "extraction_failed")]
     [InlineData(FailureKind.Timeout, "extraction_failed")]
     [InlineData(FailureKind.DependencyFailed, "extraction_failed")]
+    [InlineData(FailureKind.DependencyUnavailable, "extraction_failed")]
     [InlineData(FailureKind.Misconfigured, "provider_misconfigured")]
     public void The_request_span_says_how_it_ended(FailureKind kind, string outcome)
     {
@@ -147,6 +149,7 @@ public class ProblemMappingTests
 
     [Theory]
     [InlineData(FailureKind.DependencyFailed, LogLevel.Warning)]
+    [InlineData(FailureKind.DependencyUnavailable, LogLevel.Warning)]
     [InlineData(FailureKind.Declined, LogLevel.Warning)]
     [InlineData(FailureKind.Misconfigured, LogLevel.Error)]
     public void A_provider_failure_never_logs_the_provider_text(FailureKind kind, LogLevel level)

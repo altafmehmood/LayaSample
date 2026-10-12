@@ -81,8 +81,6 @@ public static class UsageServiceExtensions
     public static IServiceCollection AddUsageTracking(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<UsageOptions>().Bind(configuration.GetSection(UsageOptions.Section));
-        services.AddOptions<PricingOptions>().Bind(configuration.GetSection(PricingOptions.Section));
-        services.AddSingleton<ModelPricing>();
         services.AddSingleton<UsageStore>();
         services.AddSingleton<UsageWriter>();
         services.AddSingleton<IUsageRecorder>(sp => sp.GetRequiredService<UsageWriter>());

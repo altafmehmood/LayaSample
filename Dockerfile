@@ -1,13 +1,16 @@
 # syntax=docker/dockerfile:1
 #
-# Two images from one build; run them together with docker-compose.yml.
+# Three images from one build; run them together with docker-compose.yml.
 #
 #   docker build --target api -t docintake-api .
+#   docker build --target extraction -t docintake-extraction .
 #   docker build --target renderer -t docintake-renderer .                                    # PP-OCRv5 Latin OCR
 #   docker build --target renderer -t docintake-renderer --build-arg OCR_MODEL=PPOCRv6Medium .  # multilingual, ~4x slower
 #
-# api       The gateway: auth, scanning, risk policy, extraction, usage, Laya feedback analysis. It reads no document itself,
-#           so it carries no PDF, Office, image or OCR library.
+# api       The gateway: auth, scanning, risk policy, usage, Laya feedback analysis. It reads no document itself, so it
+#           carries no PDF, Office, image or OCR library, and it holds no model provider key.
+# extraction  Turns a prepared document into structured data with the model provider. The only process that holds the
+#           provider's key and reaches the internet; it never sees the caller or the file's name.
 # renderer  The document service (the target keeps its old name until the services are deployed one by one): classifies
 #           and prepares every upload with PdfPig, the Office libraries, PDFium, ImageMagick and OCR. The only process
 #           that reads untrusted bytes. Run it isolated (see docker-compose.yml).
@@ -48,12 +51,15 @@ COPY src/DocIntake.Contracts/DocIntake.Contracts.csproj src/DocIntake.Contracts/
 COPY src/DocIntake.ServiceDefaults/DocIntake.ServiceDefaults.csproj src/DocIntake.ServiceDefaults/packages.lock.json src/DocIntake.ServiceDefaults/
 COPY src/DocIntake.Rendering/DocIntake.Rendering.csproj src/DocIntake.Rendering/packages.lock.json src/DocIntake.Rendering/
 COPY src/DocIntake.DocumentService/DocIntake.DocumentService.csproj src/DocIntake.DocumentService/packages.lock.json src/DocIntake.DocumentService/
+COPY src/DocIntake.ExtractionService/DocIntake.ExtractionService.csproj src/DocIntake.ExtractionService/packages.lock.json src/DocIntake.ExtractionService/
 COPY src/DocIntake.Api/DocIntake.Api.csproj src/DocIntake.Api/packages.lock.json src/DocIntake.Api/
 RUN dotnet restore src/DocIntake.Api/DocIntake.Api.csproj -a $TARGETARCH \
- && dotnet restore src/DocIntake.DocumentService/DocIntake.DocumentService.csproj -a $TARGETARCH
+ && dotnet restore src/DocIntake.DocumentService/DocIntake.DocumentService.csproj -a $TARGETARCH \
+ && dotnet restore src/DocIntake.ExtractionService/DocIntake.ExtractionService.csproj -a $TARGETARCH
 COPY src/ src/
 # A runtime-specific publish keeps only this platform's native libraries (ImageMagick, PDFium, Skia, ONNX Runtime).
 RUN dotnet publish src/DocIntake.DocumentService/DocIntake.DocumentService.csproj -c Release -a $TARGETARCH --no-restore -o /app/document \
+ && dotnet publish src/DocIntake.ExtractionService/DocIntake.ExtractionService.csproj -c Release -a $TARGETARCH --no-restore -o /app/extraction \
  && dotnet publish src/DocIntake.Api/DocIntake.Api.csproj -c Release -a $TARGETARCH --no-restore -o /app/api
 
 # ---- Document service
@@ -70,6 +76,18 @@ USER $APP_UID
 HEALTHCHECK --interval=30s --timeout=5s --start-period=1m --retries=3 \
     CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
 ENTRYPOINT ["dotnet", "DocIntake.DocumentService.dll"]
+
+# ---- Extraction service
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS extraction
+WORKDIR /app
+COPY --from=build /app/extraction .
+# Extraction__ApiKey (or OPENAI_API_KEY) must be set at run time; without it the service runs and answers 503.
+EXPOSE 8080
+USER $APP_UID
+# Ready once it is running; it reports Healthy with or without a key.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
+ENTRYPOINT ["dotnet", "DocIntake.ExtractionService.dll"]
 
 # ---- API (last, so it is also the default target)
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS api

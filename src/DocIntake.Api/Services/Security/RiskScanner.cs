@@ -1,6 +1,5 @@
 using DocIntake.Contracts;
 using DocIntake.Api.Services.Documents;
-using DocIntake.Api.Services.Documents.Extraction;
 using DocIntake.Api.Services.Usage;
 using Microsoft.Extensions.Options;
 
@@ -9,7 +8,7 @@ namespace DocIntake.Api.Services.Security;
 /// <summary>
 /// Turns findings about an upload into a decision. Findings come from three places: the file's structure (active content,
 /// macros, executable attachments, hidden text; found while classifying), the text the model will read (prompt injection),
-/// and the model's answer (instructions repeated from the document). While <c>Security:OnFinding</c> is <c>reject</c> a
+/// and the model's answer (instructions repeated from the document; the extraction service finds them, this decides). While <c>Security:OnFinding</c> is <c>reject</c> a
 /// blocking finding refuses the request with 422; with <c>flag</c> every finding is reported and processing goes on.
 /// </summary>
 public sealed class RiskScanner(IOptions<SecurityOptions> options, DocumentMetrics metrics, ILogger<RiskScanner> logger)
@@ -54,34 +53,11 @@ public sealed class RiskScanner(IOptions<SecurityOptions> options, DocumentMetri
     }
 
     /// <summary>
-    /// What the model returned. An injected instruction that got through can be echoed into a field, its quote or the list
-    /// of other fields. Throws when that refuses the answer.
+    /// The findings the extraction service reported about the model's answer: an injected instruction that got through can
+    /// be echoed into a field, its quote or the list of other fields. Throws when that refuses the answer.
     /// </summary>
-    public IReadOnlyList<RiskFinding> CheckAnswer(ExtractionResult result)
+    public IReadOnlyList<RiskFinding> EnforceAnswer(IReadOnlyList<RiskFinding> findings)
     {
-        var findings = new List<RiskFinding>();
-        void Look(string? text, int? page)
-        {
-            foreach (var id in InjectionPatterns.Find(text))
-            {
-                var finding = new RiskFinding(RiskKinds.PromptInjection,
-                    InjectionPatterns.IsInformational(id) ? RiskSeverity.Info : RiskSeverity.Block, page, $"instruction-like text in the answer ({id})");
-                if (!findings.Contains(finding))
-                    findings.Add(finding);
-            }
-        }
-
-        foreach (var field in ExtractionValidator.Fields(result))
-        {
-            Look(field.Value, field.Page);
-            Look(field.Evidence, field.Page);
-        }
-        foreach (var other in result.OtherFields ?? [])
-        {
-            Look(other.Name, other.Page);
-            Look(other.Value, other.Page);
-        }
-
         Record(findings);
         if (Rejects && findings.Any(f => f.Severity == RiskSeverity.Block))
         {

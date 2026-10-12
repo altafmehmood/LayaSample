@@ -16,6 +16,12 @@ was written; the text after "Update" says what changed. This is a design and tes
 against the parsers. Finding 4.2 matters more now, because the document service sees every upload and still trusts any pod
 that reaches it.
 
+**Update 2026-10-12 (extraction service):** the model provider's key moved out of the gateway into the extraction service,
+which parses nothing and is reachable only from the gateway. A compromised parser or gateway request handler no longer has
+the key in its process or its environment, and a test checks that the gateway's code, build and Deployment never mention it.
+The extraction service trusts any pod that reaches it (the same open item 4.2), and it has no authentication of its own.
+The gateway's pod still has no NetworkPolicy (open item 4), but it no longer needs egress to the model provider.
+
 ## What is protected
 
 | Asset | Why it matters |
