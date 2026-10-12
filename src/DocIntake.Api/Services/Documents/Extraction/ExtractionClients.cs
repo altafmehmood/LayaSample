@@ -10,19 +10,6 @@ using OpenAI;
 
 namespace DocIntake.Api.Services.Documents.Extraction;
 
-/// <summary>A failure to extract that maps to a specific HTTP status.</summary>
-public sealed class ExtractionException(int statusCode, string message, int? retryAfterSeconds = null, bool isMisconfiguration = false, Exception? inner = null)
-    : Exception(message, inner)
-{
-    public int StatusCode { get; } = statusCode;
-    public int? RetryAfterSeconds { get; } = retryAfterSeconds;
-    public bool IsMisconfiguration { get; } = isMisconfiguration;
-
-    /// <summary>Tokens the provider billed for the call that failed, when it answered (a cut-off or refused answer still costs).</summary>
-    public ExtractionUsage? Usage { get; init; }
-}
-
-/// <summary>The chat clients the agents call; both null while no API key is configured.</summary>
 /// <summary>Counts and records the SDK's repeated attempts, which are otherwise invisible except as extra latency.</summary>
 public sealed class RecordingRetryPolicy(int maxRetries, DocumentMetrics? metrics) : ClientRetryPolicy(maxRetries)
 {
@@ -41,20 +28,21 @@ public sealed class RecordingRetryPolicy(int maxRetries, DocumentMetrics? metric
     protected override bool ShouldRetry(PipelineMessage message, Exception? exception) => ShouldRetryAsync(message, exception).AsTask().GetAwaiter().GetResult();
 }
 
+/// <summary>The chat clients the agents call; both null while no API key is configured.</summary>
 public sealed record ExtractionClients(IChatClient? Vision, IChatClient? Text)
 {
     public bool IsConfigured => Vision is not null && Text is not null;
 }
 
-/// <summary>Translates one provider's SDK exceptions into <see cref="ExtractionException"/>.</summary>
+/// <summary>Translates one provider's SDK exceptions into <see cref="IntakeFailureException"/>.</summary>
 public interface IExtractionErrorMapper
 {
-    ExtractionException? Map(Exception ex);
+    IntakeFailureException? Map(Exception ex);
 }
 
 public sealed class OpenAiExtractionErrorMapper : IExtractionErrorMapper
 {
-    public ExtractionException? Map(Exception ex)
+    public IntakeFailureException? Map(Exception ex)
     {
         if (ex is not ClientResultException cre)
             return null;
@@ -62,12 +50,12 @@ public sealed class OpenAiExtractionErrorMapper : IExtractionErrorMapper
         var retryAfter = cre.GetRawResponse()?.Headers.TryGetValue("retry-after", out var value) == true && int.TryParse(value, out var s) ? s : (int?)null;
         return cre.Status switch
         {
-            (int)HttpStatusCode.TooManyRequests => new ExtractionException(StatusCodes.Status503ServiceUnavailable, "extraction is busy; retry later", retryAfter ?? 30, inner: ex),
+            (int)HttpStatusCode.TooManyRequests => new IntakeFailureException(FailureKind.Busy, "extraction is busy; retry later", retryAfter ?? 30, ex),
             (int)HttpStatusCode.Unauthorized or (int)HttpStatusCode.Forbidden =>
-                new ExtractionException(StatusCodes.Status503ServiceUnavailable, "extraction is unavailable", isMisconfiguration: true, inner: ex),
+                new IntakeFailureException(FailureKind.Misconfigured, "extraction is unavailable", inner: ex),
             (int)HttpStatusCode.BadRequest or (int)HttpStatusCode.RequestEntityTooLarge or (int)HttpStatusCode.UnprocessableEntity =>
-                new ExtractionException(StatusCodes.Status422UnprocessableEntity, "the document is too large or not supported for extraction", inner: ex),
-            _ => new ExtractionException(StatusCodes.Status502BadGateway, "the extraction service failed", inner: ex)
+                new IntakeFailureException(FailureKind.Declined, "the document is too large or not supported for extraction", inner: ex),
+            _ => new IntakeFailureException(FailureKind.DependencyFailed, "the extraction service failed", inner: ex)
         };
     }
 }

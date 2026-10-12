@@ -86,7 +86,7 @@ public sealed class RiskScanner(IOptions<SecurityOptions> options, DocumentMetri
         if (Rejects && findings.Any(f => f.Severity == RiskSeverity.Block))
         {
             logger.LogWarning("Rejected an extraction whose answer repeated instruction-like text ({Count} finding(s))", findings.Count);
-            throw new ExtractionException(StatusCodes.Status422UnprocessableEntity,
+            throw new IntakeFailureException(FailureKind.PolicyRejected,
                 "extraction rejected: the answer repeated instruction-like text from the document");
         }
         return findings;
@@ -109,6 +109,6 @@ public sealed class RiskScanner(IOptions<SecurityOptions> options, DocumentMetri
         if (!Rejects)
             return;
         var what = string.Join(", ", blocking.Select(f => KindNames.GetValueOrDefault(f.Kind, f.Kind)).Distinct());
-        throw new DocumentException($"document rejected: it contains {what}", StatusCodes.Status422UnprocessableEntity);
+        throw new IntakeFailureException(FailureKind.PolicyRejected, $"document rejected: it contains {what}");
     }
 }

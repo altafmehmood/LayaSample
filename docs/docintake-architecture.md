@@ -33,6 +33,124 @@ Target, in later phases:
 | `docintake-extraction` | The model agents. The only service with internet access and the model key. |
 | `docintake-decisions` | The Laya model |
 
+## Phase 2: shared projects and one failure type (2026-10-12)
+
+**What it does.** Two new projects take the code every service will share, and one exception type replaces the two that
+carried HTTP status codes. HTTP statuses are now decided in exactly one place. Public routes, status codes, Retry-After
+headers and response bodies are unchanged.
+
+| Project | Holds | Depends on |
+|---|---|---|
+| `DocIntake.Contracts` | The models (documents, extraction, risk findings, feedback) and the failure types | Nothing but the runtime |
+| `DocIntake.ServiceDefaults` | `IntakeTelemetry` (OpenTelemetry setup, `RecordFailure`), `HealthReporting`, `WarmupState`, and the OpenTelemetry packages | ASP.NET Core, OpenTelemetry |
+
+`DocIntake.Rendering` lost its OpenTelemetry packages and now references ServiceDefaults. `OcrHealthCheck` stays in
+Rendering because it needs `OcrWarmup`. `AddIntakeTelemetry` no longer names the rendering meter: each service passes its
+own (`DocumentMetrics.MeterName` and `RenderingMetrics.MeterName` for the API; the renderer passes its own).
+
+**Failures.** `DocumentException` and `ExtractionException` are gone. Everything below the endpoints throws
+`IntakeFailureException(FailureKind, message, retryAfterSeconds?, inner?)`:
+
+| `FailureKind` | Status | Thrown for |
+|---|---|---|
+| `Unsupported` | 415 | Unknown type, legacy Office, plain text |
+| `Unreadable` | 422 | Corrupt or password-protected file, Word file with no body, PDF with no machine-readable data |
+| `OverLimit` | 422 | Too many PDF pages or image frames, a file that unpacks past the limit |
+| `Malicious` | 422 | The malware scanner found something |
+| `PolicyRejected` | 422 | `Security:OnFinding=reject` refused the document or the model's answer |
+| `Declined` | 422 | The model's content filter, or the provider calling the document too large or unsupported |
+| `Busy` | 503 | The provider rate-limited (carries Retry-After, 30 s if the provider gave none) |
+| `Misconfigured` | 503 | The provider rejected our credentials |
+| `Timeout` | 504 | The provider took too long |
+| `DependencyFailed` | 502 | The provider failed, or its answer was cut off or unreadable |
+
+The rendering and scanner exceptions (`OcrUnavailableException`, `RendererUnavailableException`,
+`RenderingFailedException`, `MalwareScannerUnavailableException`) are unchanged. They answer 503, 503, 502 and 503 with
+fixed messages, and Retry-After 10 for the renderer and the scanner.
+
+**`ProblemMapping`** (`src/DocIntake.Api/Services/ProblemMapping.cs`) replaces `DocumentProblems` and the inline
+`catch (ExtractionException)` in `Program.cs`. For every failure it sets, in one place:
+- the status and the problem body (the exception's message, or the fixed message above)
+- the Retry-After header
+- `intake.outcome`, `intake.document.kind` and `intake.failure.cause` on the request span, and the failure on the span
+- one log line, at Information for a bad file, Warning for a busy, slow or failing provider, Error for bad credentials or
+  a broken renderer
+- the `intake.document.analyzed` metric
+
+A bad file's log carries the inner exception, which says why a library rejected it. A provider failure never does: only
+the inner exception's type is logged, because provider error text can echo the API key or the document. For bad
+credentials the log line says to check the API key.
+
+**Behaviour changes.** All are in telemetry and logs; none change what a caller sees.
+- `PolicyRejected` for the model's answer now has `intake.outcome` = `rejected` (it was `extraction_failed`), like every
+  other refusal by our rules.
+- `intake.failure.kind` on the request span is now the outcome (for example `extraction_failed`). For extraction
+  failures it used to be the fixed word `extraction`.
+- `intake.failure.cause` is now set for every failure, not only extraction ones.
+- The per-case log messages became one message. The usage history still records `http_<status>` as a call's outcome
+  (`http_503`, `http_502`), so existing rows and queries keep working. Phase 4 revisits that label.
+
+**Deviation from the plan.** The plan called `ProblemMapping` an `IExceptionHandler`. It is a plain class that both
+endpoints call from one `catch`, because a global handler would lose the request's classification and upload size, which
+the metric, the span and the log need. It moves to a handler in Phase 6, when the endpoints are restructured. The kind
+`TooLarge` is called `OverLimit`, because the status is 422 and the endpoint's own 413 is a separate check.
+
+**Key files.**
+- `src/DocIntake.Contracts/Failures.cs`
+- `src/DocIntake.Api/Services/ProblemMapping.cs`
+- `src/DocIntake.ServiceDefaults/IntakeTelemetry.cs`, `HealthReporting.cs`
+- `Dockerfile` (the restore layer copies the two new projects)
+
+**Settings.** None.
+
+**How to try it.** Neither command spends money: both upload files that fail before any model call.
+
+    dotnet run --project src/DocIntake.Api
+    curl -i -F "file=@docs/samples/unsupported/legacy.doc" localhost:5091/api/documents/analyze
+    curl -i -F "file=@docs/samples/unsupported/notes.txt" localhost:5091/api/documents/extract
+
+Both answer `415` with the same problem body as before. With the OTLP user secrets set, the request span in
+`docintake-gateway` has `intake.outcome` = `rejected`, `intake.failure.cause` = `none` and the failure recorded on it.
+
+**What it does not do.**
+- The services still run in one process. This phase prepares the split; it does not make it.
+- `IFormFile` is still in `DocumentPipeline`'s signature.
+- The rendering and scanner exceptions are not folded into `FailureKind`.
+- No Honeycomb names change in this phase beyond the ones above.
+
+**Tests.** 399 tests, 393 passed and 6 skipped (the opt-in ones listed under Phase 1). The existing endpoint tests pass
+unchanged. The unit tests that read an exception's `StatusCode` now read `ProblemMapping.StatusOf(ex.Kind)`, so they
+still assert the same statuses. New:
+- `ProblemMappingTests` (33 tests): a status for every kind, with a test that fails if a kind is added without one; the
+  outcome for every kind; Retry-After; the rendering and scanner answers; the log level for each kind; the inner
+  exception logged for a bad file and never for a provider; and the "check the API key" hint. I confirmed the
+  provider-text tests fail (3 of them) when the inner exception is logged for every kind.
+- `ArchitectureTests`: `Contracts` references only the runtime, and nothing under `Services/Documents` or
+  `Services/Security` mentions `StatusCodes`.
+
+### Verified (2026-10-12)
+
+- `dotnet build`, and `dotnet test` (above).
+- The licence check passes. No package was added; the OpenTelemetry packages moved from Rendering to ServiceDefaults.
+- `docker build --target api` and `--target renderer` both succeed.
+- A local run: `analyze` and `extract` on `legacy.doc` and `notes.txt` answer 415 with the unchanged messages, and the
+  spans reached Honeycomb with the attributes listed above.
+
+### Not verified
+
+- Every failure path against the real provider (rate limit, bad key, timeout). The tests cover them with a fake client.
+  Extraction was not called, because it costs money.
+- The native crash seen once in the first full test run of this phase (`libc++abi: terminating due to uncaught
+  exception ... recursive_mutex lock failed`, reported after all tests had passed). Three further full runs were
+  clean. I don't know whether it also happens on `main`.
+
+### Before deploying (Phase 2)
+
+- [ ] On Honeycomb boards or triggers, queries on `intake.outcome` = `extraction_failed` no longer count answers
+      rejected for injected text; those are `rejected` now.
+- [ ] Anything that matched the old log messages ("Extraction failed with", "Rejected ... document with", "Renderer
+      failed on a") needs the new message, which starts with the outcome.
+
 ## Phase 1: rename LayaSample → DocIntake (2026-10-11)
 
 **What it does.** Renames the project everywhere it is not tied to a live deployment. Behaviour is unchanged.

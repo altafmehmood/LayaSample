@@ -1,3 +1,4 @@
+using DocIntake.Api.Services;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Text.Json;
@@ -142,7 +143,7 @@ public class ExtractionTests
     {
         var fake = FakeChatClient.Returning(new { });
         try { await agent.RunAsync(fake, [new ChatMessage(ChatRole.User, "x")], 1234, TestContext.Current.CancellationToken); }
-        catch (ExtractionException) { /* the empty payload is not a valid answer; only the request matters here */ }
+        catch (IntakeFailureException) { /* the empty payload is not a valid answer; only the request matters here */ }
 
         var options = Assert.Single(fake.Calls).Options!;
         Assert.Equal(1234, options.MaxOutputTokens);
@@ -193,13 +194,13 @@ public class ExtractionTests
     [Fact]
     public async Task Truncated_and_filtered_answers_are_failures()
     {
-        var truncated = await Assert.ThrowsAsync<ExtractionException>(() => new Ucc1Agent().RunAsync(
+        var truncated = await Assert.ThrowsAsync<IntakeFailureException>(() => new Ucc1Agent().RunAsync(
             FakeChatClient.Returning(Extracted.Ucc1Root(), ChatFinishReason.Length), [new ChatMessage(ChatRole.User, "x")], 10, TestContext.Current.CancellationToken));
-        var filtered = await Assert.ThrowsAsync<ExtractionException>(() => new Ucc1Agent().RunAsync(
+        var filtered = await Assert.ThrowsAsync<IntakeFailureException>(() => new Ucc1Agent().RunAsync(
             FakeChatClient.Returning(Extracted.Ucc1Root(), ChatFinishReason.ContentFilter), [new ChatMessage(ChatRole.User, "x")], 10, TestContext.Current.CancellationToken));
 
-        Assert.Equal(502, truncated.StatusCode);
-        Assert.Equal(422, filtered.StatusCode);
+        Assert.Equal(502, ProblemMapping.StatusOf(truncated.Kind));
+        Assert.Equal(422, ProblemMapping.StatusOf(filtered.Kind));
     }
 
     // --- extractor ---
@@ -284,20 +285,20 @@ public class ExtractionTests
     {
         var client = FakeChatClient.Throwing(new ClientResultException(new FakeProviderResponse(providerStatus, retryAfter)));
 
-        var ex = await Assert.ThrowsAsync<ExtractionException>(() =>
+        var ex = await Assert.ThrowsAsync<IntakeFailureException>(() =>
             Extractor(client, client).ExtractAsync("x.pdf", Classification(1), Ucc1Scan(), TestContext.Current.CancellationToken));
 
-        Assert.Equal((expectedStatus, expectedRetry), (ex.StatusCode, ex.RetryAfterSeconds));
-        Assert.Equal(providerStatus == 401, ex.IsMisconfiguration);
+        Assert.Equal((expectedStatus, expectedRetry), (ProblemMapping.StatusOf(ex.Kind), ex.RetryAfterSeconds));
+        Assert.Equal(providerStatus == 401, (ex.Kind == FailureKind.Misconfigured));
     }
 
     [Fact]
     public async Task A_provider_timeout_is_a_gateway_timeout_but_a_cancelled_request_is_not_swallowed()
     {
         var timedOut = FakeChatClient.Throwing(new TaskCanceledException("network timeout"));
-        var ex = await Assert.ThrowsAsync<ExtractionException>(() =>
+        var ex = await Assert.ThrowsAsync<IntakeFailureException>(() =>
             Extractor(timedOut, timedOut).ExtractAsync("x.pdf", Classification(1), Ucc1Scan(), TestContext.Current.CancellationToken));
-        Assert.Equal(504, ex.StatusCode);
+        Assert.Equal(504, ProblemMapping.StatusOf(ex.Kind));
 
         using var cts = new CancellationTokenSource();
         var cancelling = new FakeChatClient(() => { cts.Cancel(); throw new OperationCanceledException(cts.Token); });
@@ -469,10 +470,10 @@ public class ExtractionTests
         var client = FakeChatClient.Returning(Extracted.Ucc1Root(), finish: ChatFinishReason.Length, inputTokens: 5_000, outputTokens: 4_000);
         var recorder = new CollectingRecorder();
 
-        var ex = await Assert.ThrowsAsync<ExtractionException>(() => Extractor(client, client, pricing: Pricing("vision-model"), recorder: recorder)
+        var ex = await Assert.ThrowsAsync<IntakeFailureException>(() => Extractor(client, client, pricing: Pricing("vision-model"), recorder: recorder)
             .ExtractAsync("x.pdf", Classification(1), Ucc1Scan(), TestContext.Current.CancellationToken, Context));
 
-        Assert.Equal(502, ex.StatusCode);
+        Assert.Equal(502, ProblemMapping.StatusOf(ex.Kind));
         var record = Assert.Single(recorder.Records);
         Assert.Equal(("http_502", 5_000L, 4_000L), (record.Outcome, record.InputTokens, record.OutputTokens));
         Assert.Equal(0.05m, record.CostUsd);
@@ -484,7 +485,7 @@ public class ExtractionTests
         var client = FakeChatClient.Throwing(new ClientResultException(new FakeProviderResponse(429, null)));
         var recorder = new CollectingRecorder();
 
-        await Assert.ThrowsAsync<ExtractionException>(() => Extractor(client, client, pricing: Pricing("vision-model"), recorder: recorder)
+        await Assert.ThrowsAsync<IntakeFailureException>(() => Extractor(client, client, pricing: Pricing("vision-model"), recorder: recorder)
             .ExtractAsync("x.pdf", Classification(1), Ucc1Scan(), TestContext.Current.CancellationToken, Context));
 
         var record = Assert.Single(recorder.Records);

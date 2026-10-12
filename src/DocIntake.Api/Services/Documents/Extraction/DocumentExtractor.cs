@@ -1,6 +1,7 @@
 using DocIntake.ServiceDefaults;
 using System.Diagnostics;
 using DocIntake.Contracts;
+using DocIntake.Api.Services;
 using DocIntake.Api.Services.Security;
 using DocIntake.Api.Services.Usage;
 using DocIntake.Rendering;
@@ -68,8 +69,9 @@ public sealed class DocumentExtractor(
         {
             outcome = ex switch
             {
-                ExtractionException e when e.IsMisconfiguration => "misconfigured",
-                ExtractionException e => "http_" + e.StatusCode,
+                IntakeFailureException e when e.Kind == FailureKind.Misconfigured => "misconfigured",
+                // The usage history has always recorded the HTTP status the caller got; keep those values.
+                IntakeFailureException e => "http_" + ProblemMapping.StatusOf(e.Kind),
                 OperationCanceledException => "cancelled",
                 _ => "error"
             };
@@ -186,18 +188,18 @@ public sealed class DocumentExtractor(
         {
             Record(null, null, "timeout");
             span?.SetStatus(ActivityStatusCode.Error, "timed out");
-            throw new ExtractionException(StatusCodes.Status504GatewayTimeout, "the extraction service timed out");
+            throw new IntakeFailureException(FailureKind.Timeout, "the extraction service timed out");
         }
-        catch (ExtractionException ex)
+        catch (IntakeFailureException ex)
         {
             // The agent refused the answer (cut off, filtered, unreadable), but the provider billed the call.
             var priced = ex.Usage is { } billed ? pricing.Price(model, billed.InputTokens, billed.CachedInputTokens, billed.OutputTokens) : null;
-            Record(ex.Usage is null ? null : ex.Usage with { CostUsd = priced?.CostUsd }, priced, "http_" + ex.StatusCode);
+            Record(ex.Usage is null ? null : ex.Usage with { CostUsd = priced?.CostUsd }, priced, "http_" + ProblemMapping.StatusOf(ex.Kind));
             throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException && errors.Map(ex) is { } mapped)
         {
-            Record(null, null, "http_" + mapped.StatusCode);
+            Record(null, null, "http_" + ProblemMapping.StatusOf(mapped.Kind));
             span?.SetStatus(ActivityStatusCode.Error, mapped.Message);
             throw mapped;
         }

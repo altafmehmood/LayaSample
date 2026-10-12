@@ -110,8 +110,8 @@ public sealed class DocumentPipeline(IDocumentClassifier classifier, IDocumentPr
                 span?.SetTag("intake.scan.signature", scan.Signature);
                 logger.LogWarning("Malware found in a {Bytes}-byte upload: {Signature}", bytes, scan.Signature);
                 // The signature stays in the log and the trace; the response only says the document was refused.
-                throw new DocumentException("document rejected: malware detected", StatusCodes.Status422UnprocessableEntity,
-                    new InvalidDataException($"scanner signature {scan.Signature}"));
+                throw new IntakeFailureException(FailureKind.Malicious, "document rejected: malware detected",
+                    inner: new InvalidDataException($"scanner signature {scan.Signature}"));
             case ScanOutcome.Unavailable when security.Value.Malware.FailClosed:
                 span?.SetStatus(ActivityStatusCode.Error, "no verdict");
                 throw new MalwareScannerUnavailableException(scan.Error ?? "the scanner gave no verdict");
@@ -120,57 +120,4 @@ public sealed class DocumentPipeline(IDocumentClassifier classifier, IDocumentPr
                 break;
         }
     }
-}
-
-/// <summary>Maps failures caused by the uploaded document or the rendering services to problem responses.</summary>
-public sealed class DocumentProblems(ILogger<DocumentProblems> logger, DocumentMetrics metrics)
-{
-    public static bool Handles(Exception ex) =>
-        ex is DocumentException or OcrUnavailableException or RendererUnavailableException or RenderingFailedException or MalwareScannerUnavailableException;
-
-    public IResult ToResult(Exception ex, long bytes, DocumentClassification? classification, HttpContext httpContext)
-    {
-        var kind = classification?.Kind.ToString() ?? "unclassified";
-        var outcome = ex switch
-        {
-            DocumentException => "rejected",
-            OcrUnavailableException => "ocr_unavailable",
-            RendererUnavailableException => "renderer_unavailable",
-            MalwareScannerUnavailableException => "scanner_unavailable",
-            _ => "render_failed"
-        };
-        Telemetry.TagRequest(httpContext, "intake.outcome", outcome);
-        Telemetry.TagRequest(httpContext, "intake.document.kind", kind);
-        Activity.Current?.RecordFailure(ex, outcome);
-        switch (ex)
-        {
-            case DocumentException doc:
-                // The inner exception says why a library rejected the content; the client only gets the summary.
-                logger.LogInformation(doc.InnerException, "Rejected {Bytes}-byte {Kind} document with {Status}: {Reason}",
-                    bytes, kind, doc.StatusCode, doc.Message);
-                metrics.RecordDocument(kind, "none", doc.StatusCode);
-                return Problem(doc.StatusCode, doc.Message);
-            case OcrUnavailableException:
-                logger.LogError(ex, "OCR is unavailable");
-                metrics.RecordDocument(kind, "none", StatusCodes.Status503ServiceUnavailable);
-                return Problem(StatusCodes.Status503ServiceUnavailable, "OCR is unavailable; retry later");
-            case MalwareScannerUnavailableException:
-                logger.LogWarning(ex, "Malware scanner is unavailable; refusing the upload");
-                metrics.RecordDocument(kind, "none", StatusCodes.Status503ServiceUnavailable);
-                httpContext.Response.Headers.RetryAfter = "10";
-                return Problem(StatusCodes.Status503ServiceUnavailable, "document scanning is unavailable; retry later");
-            case RendererUnavailableException:
-                logger.LogWarning(ex, "Renderer is unavailable");
-                metrics.RecordDocument(kind, "none", StatusCodes.Status503ServiceUnavailable);
-                httpContext.Response.Headers.RetryAfter = "10";
-                return Problem(StatusCodes.Status503ServiceUnavailable, "document rendering is unavailable; retry later");
-            default:
-                // Most likely this document crashed the renderer; retrying it would crash it again.
-                logger.LogError(ex, "Renderer failed on a {Bytes}-byte {Kind} document", bytes, kind);
-                metrics.RecordDocument(kind, "none", StatusCodes.Status502BadGateway);
-                return Problem(StatusCodes.Status502BadGateway, "document could not be rendered");
-        }
-    }
-
-    public static IResult Problem(int status, string detail) => Results.Problem(detail: detail, statusCode: status);
 }

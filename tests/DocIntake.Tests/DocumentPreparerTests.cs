@@ -1,3 +1,4 @@
+using DocIntake.Api.Services;
 using DocIntake.Contracts;
 using DocIntake.Api.Services.Documents;
 using DocIntake.Rendering;
@@ -112,8 +113,8 @@ public class DocumentPreparerTests
     [Fact]
     public void Structured_data_without_any_data_is_unprocessable()
     {
-        var ex = Assert.Throws<DocumentException>(() => Prepare(DocumentFixtures.DynamicXfaPdfWithoutData()));
-        Assert.Equal(422, ex.StatusCode);
+        var ex = Assert.Throws<IntakeFailureException>(() => Prepare(DocumentFixtures.DynamicXfaPdfWithoutData()));
+        Assert.Equal(422, ProblemMapping.StatusOf(ex.Kind));
     }
 
     [Fact]

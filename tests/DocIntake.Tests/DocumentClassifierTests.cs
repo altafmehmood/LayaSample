@@ -1,3 +1,4 @@
+using DocIntake.Api.Services;
 using DocIntake.Contracts;
 using DocIntake.Api.Services.Documents;
 using DocIntake.Rendering;
@@ -141,15 +142,15 @@ public class DocumentClassifierTests
     public void Corrupt_image_is_unprocessable()
     {
         byte[] truncatedPng = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0];
-        var ex = Assert.Throws<DocumentException>(() => Classify(truncatedPng));
-        Assert.Equal(422, ex.StatusCode);
+        var ex = Assert.Throws<IntakeFailureException>(() => Classify(truncatedPng));
+        Assert.Equal(422, ProblemMapping.StatusOf(ex.Kind));
     }
 
     [Fact]
     public void Image_declaring_a_huge_size_is_rejected_before_decoding()
     {
-        var ex = Assert.Throws<DocumentException>(() => Classify(DocumentFixtures.OversizedPngHeader()));
-        Assert.Equal(422, ex.StatusCode);
+        var ex = Assert.Throws<IntakeFailureException>(() => Classify(DocumentFixtures.OversizedPngHeader()));
+        Assert.Equal(422, ProblemMapping.StatusOf(ex.Kind));
         Assert.Contains("out of range", ex.InnerException?.Message);
     }
 
@@ -176,16 +177,16 @@ public class DocumentClassifierTests
     [Fact]
     public void Plain_text_is_unsupported_even_if_named_pdf()
     {
-        var ex = Assert.Throws<DocumentException>(() => Classify("just some text"u8.ToArray()));
-        Assert.Equal(415, ex.StatusCode);
+        var ex = Assert.Throws<IntakeFailureException>(() => Classify("just some text"u8.ToArray()));
+        Assert.Equal(415, ProblemMapping.StatusOf(ex.Kind));
     }
 
     [Fact]
     public void Legacy_or_encrypted_office_file_is_unsupported()
     {
         byte[] ole = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0, 0, 0, 0];
-        var ex = Assert.Throws<DocumentException>(() => Classify(ole));
-        Assert.Equal(415, ex.StatusCode);
+        var ex = Assert.Throws<IntakeFailureException>(() => Classify(ole));
+        Assert.Equal(415, ProblemMapping.StatusOf(ex.Kind));
         Assert.Contains("password-protected", ex.Message);
     }
 
@@ -195,15 +196,15 @@ public class DocumentClassifierTests
         using var ms = new MemoryStream();
         using (var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
             zip.CreateEntry("readme.txt");
-        var ex = Assert.Throws<DocumentException>(() => Classify(ms.ToArray()));
-        Assert.Equal(415, ex.StatusCode);
+        var ex = Assert.Throws<IntakeFailureException>(() => Classify(ms.ToArray()));
+        Assert.Equal(415, ProblemMapping.StatusOf(ex.Kind));
     }
 
     [Fact]
     public void Truncated_pdf_is_unprocessable()
     {
-        var ex = Assert.Throws<DocumentException>(() => Classify("%PDF-1.7\n1 0 obj"u8.ToArray()));
-        Assert.Equal(422, ex.StatusCode);
+        var ex = Assert.Throws<IntakeFailureException>(() => Classify("%PDF-1.7\n1 0 obj"u8.ToArray()));
+        Assert.Equal(422, ProblemMapping.StatusOf(ex.Kind));
     }
 
     [Fact]
@@ -240,24 +241,24 @@ public class DocumentClassifierTests
     {
         var bomb = DocumentFixtures.XlsxWithPadding(2 * 1024 * 1024);
 
-        var ex = Assert.Throws<DocumentException>(() => Classify(bomb, new DocumentAnalysisOptions { MaxOfficeUncompressedBytes = 1024 * 1024 }));
-        Assert.Equal(422, ex.StatusCode);
+        var ex = Assert.Throws<IntakeFailureException>(() => Classify(bomb, new DocumentAnalysisOptions { MaxOfficeUncompressedBytes = 1024 * 1024 }));
+        Assert.Equal(422, ProblemMapping.StatusOf(ex.Kind));
         Assert.Contains("unpacked", ex.Message);
     }
 
     [Fact]
     public void Pdf_with_too_many_pages_is_rejected()
     {
-        var ex = Assert.Throws<DocumentException>(() => Classify(DocumentFixtures.TextPdf(), new DocumentAnalysisOptions { MaxPdfPages = 1 }));
-        Assert.Equal(422, ex.StatusCode);
+        var ex = Assert.Throws<IntakeFailureException>(() => Classify(DocumentFixtures.TextPdf(), new DocumentAnalysisOptions { MaxPdfPages = 1 }));
+        Assert.Equal(422, ProblemMapping.StatusOf(ex.Kind));
         Assert.Contains("2 pages", ex.Message);
     }
 
     [Fact]
     public void Tiff_with_too_many_pages_is_rejected()
     {
-        var ex = Assert.Throws<DocumentException>(() => Classify(DocumentFixtures.FaxTiff(pages: 3), new DocumentAnalysisOptions { MaxImageFrames = 2 }));
-        Assert.Equal(422, ex.StatusCode);
+        var ex = Assert.Throws<IntakeFailureException>(() => Classify(DocumentFixtures.FaxTiff(pages: 3), new DocumentAnalysisOptions { MaxImageFrames = 2 }));
+        Assert.Equal(422, ProblemMapping.StatusOf(ex.Kind));
     }
 
     [Fact]
