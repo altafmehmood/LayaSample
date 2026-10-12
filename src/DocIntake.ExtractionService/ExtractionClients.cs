@@ -7,14 +7,16 @@ using Microsoft.Extensions.AI;
 using DocIntake.Contracts;
 using OpenAI;
 
-namespace DocIntake.Api.Services.Documents.Extraction;
+namespace DocIntake.ExtractionService;
 
 /// <summary>Counts and records the SDK's repeated attempts, which are otherwise invisible except as extra latency.</summary>
-public sealed class RecordingRetryPolicy(int maxRetries, DocumentMetrics? metrics) : ClientRetryPolicy(maxRetries)
+public sealed class RecordingRetryPolicy(int maxRetries, ExtractionMetrics? metrics) : ClientRetryPolicy(maxRetries)
 {
-    protected override async ValueTask<bool> ShouldRetryAsync(PipelineMessage message, Exception? exception)
+    // Only the synchronous method is overridden: the base class's asynchronous one calls it, so a retry is recorded once on
+    // both paths. Overriding both and calling one from the other recurses until the stack overflows and the process dies.
+    protected override bool ShouldRetry(PipelineMessage message, Exception? exception)
     {
-        var retry = await base.ShouldRetryAsync(message, exception);
+        var retry = base.ShouldRetry(message, exception);
         if (retry)
         {
             var reason = exception is not null ? exception.GetType().Name : ((int?)message.Response?.Status)?.ToString() ?? "unknown";
@@ -23,11 +25,8 @@ public sealed class RecordingRetryPolicy(int maxRetries, DocumentMetrics? metric
         }
         return retry;
     }
-
-    protected override bool ShouldRetry(PipelineMessage message, Exception? exception) => ShouldRetryAsync(message, exception).AsTask().GetAwaiter().GetResult();
 }
 
-/// <summary>The chat clients the agents call; both null while no API key is configured.</summary>
 public sealed record ExtractionClients(IChatClient? Vision, IChatClient? Text)
 {
     public bool IsConfigured => Vision is not null && Text is not null;
@@ -62,7 +61,7 @@ public sealed class OpenAiExtractionErrorMapper : IExtractionErrorMapper
 /// <summary>The one place a provider's client is built. Everything else depends only on <see cref="IChatClient"/>.</summary>
 public static class ExtractionClientFactory
 {
-    public static ExtractionClients Create(ExtractionOptions options, DocumentMetrics? metrics = null)
+    public static ExtractionClients Create(ExtractionOptions options, ExtractionMetrics? metrics = null)
     {
         var key = options.ResolveApiKey();
         if (string.IsNullOrWhiteSpace(key))

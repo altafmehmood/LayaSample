@@ -1,3 +1,4 @@
+using DocIntake.ExtractionService;
 using DocIntake.DocumentService;
 using System.Globalization;
 using System.Text.Json;
@@ -30,9 +31,9 @@ public class ExtractionEvaluationTests(ITestOutputHelper output)
         Assert.SkipUnless(Environment.GetEnvironmentVariable("RUN_EXTRACTION_EVAL") == "1",
             "set RUN_EXTRACTION_EVAL=1 to run the extraction evaluation; it calls the paid OpenAI API for 39 documents");
 
-        // The environment variable wins; otherwise the same user secret the API reads in Development.
+        // The environment variable wins; otherwise the same user secret the extraction service reads in Development.
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY")
-            ?? new ConfigurationBuilder().AddUserSecrets(typeof(Program).Assembly, optional: true).Build()["Extraction:ApiKey"];
+            ?? new ConfigurationBuilder().AddUserSecrets(typeof(ExtractionServiceEntryPoint).Assembly, optional: true).Build()["Extraction:ApiKey"];
         Assert.SkipUnless(!string.IsNullOrWhiteSpace(apiKey), "set OPENAI_API_KEY or the Extraction:ApiKey user secret to run the extraction evaluation");
 
         var settings = new ExtractionOptions
@@ -51,10 +52,8 @@ public class ExtractionEvaluationTests(ITestOutputHelper output)
         var classifier = new DocumentClassifier(docOptions, rasterizer);
         var preparer = new DocumentPreparer(docOptions, classifier, rasterizer, NullLogger<DocumentPreparer>.Instance);
         IExtractionAgent[] agents = [new LoanApplicationAgent(), new Ucc1Agent(), new Ucc3Agent(), new SecurityAgreementAgent(), new GenericLendingAgent()];
-        var metrics = new DocumentMetrics(new NoMeterFactory());
-        var extractor = new DocumentExtractor(Options.Create(settings), ExtractionClientFactory.Create(settings), new OpenAiExtractionErrorMapper(), agents,
-            metrics, new ModelPricing(Options.Create(new PricingOptions())), new NoopUsageRecorder(),
-            new RiskScanner(Options.Create(new SecurityOptions()), metrics, NullLogger<RiskScanner>.Instance), NullLogger<DocumentExtractor>.Instance);
+        var extractor = new ExtractionOrchestrator(Options.Create(settings), ExtractionClientFactory.Create(settings), new OpenAiExtractionErrorMapper(), agents,
+            new ExtractionMetrics(new NoMeterFactory()), new ModelPricing(Options.Create(new PricingOptions())), NullLogger<ExtractionOrchestrator>.Instance);
 
         var corpus = LendingTypeDetectorTests.CorpusDirectory();
         using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(corpus, "manifest.json")));
@@ -76,7 +75,9 @@ public class ExtractionEvaluationTests(ITestOutputHelper output)
                 using var stream = new MemoryStream(bytes);
                 var classification = await classifier.ClassifyAsync(stream, ct);
                 var prepared = await preparer.PrepareAsync(stream, classification, ct);
-                var response = await extractor.ExtractAsync(file, classification, prepared, ct);
+                var answer = await extractor.ExtractAsync(new ExtractRequest(classification, prepared), ct);
+                var response = new ExtractDocumentResponse(file, answer.DocumentType, answer.DetectedBy, answer.Agent, answer.Model, answer.Extraction,
+                    answer.Usage, answer.Warnings, answer.AnswerRisks);
                 return (file, rendering, documentType, e.GetProperty("Facts"), response, (Exception?)null);
             }
             catch (Exception ex)

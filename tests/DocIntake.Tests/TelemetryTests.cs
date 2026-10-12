@@ -1,3 +1,4 @@
+using DocIntake.ExtractionService;
 using DocIntake.ServiceDefaults;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -22,8 +23,7 @@ public class TelemetryTests
             {
                 foreach (var d in s.Where(d => d.ServiceType == typeof(IHostedService)).ToList()) s.Remove(d);
                 s.UseDocumentService();
-                s.RemoveAll<ExtractionClients>();
-                s.AddSingleton(clients);
+                s.UseExtractionService(clients);
             });
     }
 
@@ -47,13 +47,19 @@ public class TelemetryTests
         request.Headers.Add("traceparent", $"00-{traceId}-{ActivitySpanId.CreateRandom()}-01");
         var response = await factory.CreateClient().SendAsync(request, TestContext.Current.CancellationToken);
 
-        // The server span ends after the response is written.
-        for (var i = 0; i < 40 && !spans.Any(s => s.Kind == ActivityKind.Server); i++)
+        // The gateway's server span ends after the response is written, after those of the services it called.
+        for (var i = 0; i < 40 && !spans.Any(IsGatewayRequest); i++)
             await Task.Delay(50, TestContext.Current.CancellationToken);
         return (response.StatusCode, spans.ToList());
     }
 
     private static object? Tag(Activity a, string key) => a.GetTagItem(key);
+
+    /// <summary>
+    /// The gateway's own request span: the services it calls have server spans in the same trace. Only the gateway tags its
+    /// request with how it ended (<c>intake.outcome</c>), which is the one thing known when the span stops.
+    /// </summary>
+    private static bool IsGatewayRequest(Activity a) => a.Kind == ActivityKind.Server && a.GetTagItem("intake.outcome") is not null;
 
     [Fact]
     public async Task An_extraction_leaves_the_stages_the_prompt_and_the_answer_on_its_trace()
@@ -68,7 +74,7 @@ public class TelemetryTests
         foreach (var expected in new[] { "intake.classify", "intake.prepare", "intake.extraction", "intake.extract" })
             Assert.Contains(expected, names);
 
-        var server = spans.Single(s => s.Kind == ActivityKind.Server);
+        var server = spans.Single(IsGatewayRequest);
         Assert.Equal("ok", Tag(server, "intake.outcome"));
         Assert.NotNull(Tag(server, "intake.document.kind"));
         Assert.NotNull(Tag(server, "intake.file.bytes"));
@@ -90,7 +96,7 @@ public class TelemetryTests
 
         Assert.NotEqual(HttpStatusCode.OK, status);
         Assert.Empty(fake.Calls);
-        var server = spans.Single(s => s.Kind == ActivityKind.Server);
+        var server = spans.Single(IsGatewayRequest);
         Assert.Equal("rejected", Tag(server, "intake.outcome"));
         Assert.Equal(ActivityStatusCode.Error, server.Status);
         Assert.Contains(server.Events, e => e.Name == "exception");

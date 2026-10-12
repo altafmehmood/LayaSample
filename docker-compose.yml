@@ -1,4 +1,4 @@
-# The gateway (api) plus the isolated document service (renderer).
+# The gateway (api), the isolated document service (renderer) and the extraction service.
 #
 #   docker compose up --build                                   # http://localhost:8080
 #   OCR_MODEL=PPOCRv6Medium docker compose up --build           # multilingual OCR
@@ -7,6 +7,9 @@
 # PDFium, ImageMagick and OCR. It sits on an internal network with no route out, a read-only file system, no Linux
 # capabilities and its own memory/CPU/process limits, so a malicious document that crashes or takes over a parser can
 # neither reach the network nor touch the gateway.
+#
+# Only the extraction service holds the model provider's key (OPENAI_API_KEY) and reaches the internet for it. The gateway
+# sends it the prepared document and gets back the data and the model calls made, which the gateway records as usage.
 
 name: docintake
 
@@ -20,8 +23,8 @@ services:
       - "8080:8080"
     environment:
       DocumentAnalysis__DocumentServiceUrl: http://renderer:8080
-      # Enables POST /api/documents/extract; empty leaves it answering 503.
-      Extraction__ApiKey: ${OPENAI_API_KEY:-}
+      # Where the extraction service is. It holds the provider key; without one it answers 503 and so does the gateway.
+      Extraction__ServiceUrl: http://extraction:8080
       # Callers must send this as X-Api-Key to /api/documents/extract; empty makes extraction answer 503.
       Auth__ApiKeys__0: ${DOCINTAKE_API_KEY:-}
       # Where the usage history (tokens and cost per model call) is kept: the volume below.
@@ -33,7 +36,7 @@ services:
       Security__OnFinding: ${DOCINTAKE_ON_FINDING:-reject}
       # OpenTelemetry export. Either straight to a backend (OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io and
       # OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=<ingest key>), or through the collector below
-      # (DOCINTAKE_OTLP_ENDPOINT=http://collector:4318), which also carries the renderer's telemetry. Empty exports nothing.
+      # (DOCINTAKE_OTLP_ENDPOINT=http://collector:4318), which also carries the other services' telemetry. Empty exports nothing.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${DOCINTAKE_OTLP_ENDPOINT:-${OTEL_EXPORTER_OTLP_ENDPOINT:-}}
       OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
@@ -66,6 +69,30 @@ services:
     ports:
       - "127.0.0.1:3310:3310"
     networks: [public]
+    restart: unless-stopped
+
+  # Turns a prepared document into structured data. On the public network only: it needs the internet to reach the model
+  # provider, and nothing it receives is ever executed or parsed here. Hardened like the renderer, but with egress.
+  extraction:
+    build:
+      context: .
+      target: extraction
+    image: docintake-extraction
+    environment:
+      # Enables extraction; empty leaves it answering 503.
+      Extraction__ApiKey: ${OPENAI_API_KEY:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${DOCINTAKE_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+    networks: [public]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    cpus: 2
+    pids_limit: 256
     restart: unless-stopped
 
   renderer:
@@ -101,7 +128,7 @@ services:
       - ./deploy/otel-collector-compose.yaml:/etc/otelcol/config.yaml:ro
     environment:
       HONEYCOMB_API_KEY: ${HONEYCOMB_API_KEY:-}
-    # On the internal network to receive from the renderer, and on the public one to reach the backend.
+    # On the internal network to receive from the renderer, and on the public one to receive from the extraction service and reach the backend.
     networks: [public, internal]
     restart: unless-stopped
 

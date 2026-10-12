@@ -1,4 +1,4 @@
-# One replica each, one document at a time, short queues. The API and the renderer alone fit a 1 vCPU / 2 GB node, but the
+# One replica each, one document at a time, short queues. The API, the renderer and the extraction service alone fit a 1 vCPU / 2 GB node, but the
 # ClamAV pod (malware.clamd, on by default) needs about 4 GB more: use a node with 8 GB, or turn it off.
 # See deploy/README.md. Settings under `config` map to DocumentAnalysis__* environment variables.
 
@@ -30,23 +30,6 @@ api:
     limits: { memory: 1Gi }
   # The Laya model loads at startup; allow failureThreshold x periodSeconds (default 10 minutes) before restarting.
   startupProbe: { periodSeconds: 10, failureThreshold: 60 }
-  # AI extraction (POST /api/documents/extract). Document pages are sent to the model provider.
-  extraction:
-    # Secret holding the provider API key, under `secretKey`. Empty, or the Secret missing: the endpoint answers 503.
-    # Create it outside Helm so the key never lands in the release history:
-    #   kubectl -n <ns> create secret generic laya-llm --from-literal=api-key=...
-    existingSecret: ""
-    secretKey: api-key
-    # Short hash of the key (never the key), set by CI so pods restart when the key is rotated.
-    keyChecksum: ""
-    provider: openai
-    # Models for documents sent as page images / as text. Tune with the evaluation harness (see deploy/README.md).
-    visionModel: gpt-6.1-sol
-    textModel: gpt-6-luna
-    # Extractions in flight at once. They mostly wait on the provider but each holds the buffered document and its page images.
-    maxConcurrent: 4
-    # One provider call, including retries by the SDK. The request timeout above still caps the whole request.
-    timeoutSeconds: 120
   # Access key for POST /api/documents/extract, which spends model-provider money. Callers send it as `X-Api-Key`.
   auth:
     # Secret holding the key(s), created outside Helm so they never land in the release history:
@@ -136,7 +119,37 @@ renderer:
   startupProbe: { periodSeconds: 10, failureThreshold: 60 }
   extraEnv: []
 
+# The extraction service (POST /api/documents/extract is answered by the gateway, which calls this). The only pod that holds the
+# model provider's API key and reaches the internet. Document pages are sent to the model provider, so they leave the cluster.
+extraction:
+  # Still the pre-rename GHCR package names, which CI pushes; they move with the services cutover (docs/docintake-architecture.md).
+  # A new package starts private on GitHub: make laya-sample-extraction public after CI first pushes it (deploy/README.md).
+  image: laya-sample-extraction
+  replicas: 1
+  # Secret holding the provider API key, under `secretKey`. Empty, or the Secret missing: extraction answers 503.
+  # Create it outside Helm so the key never lands in the release history:
+  #   kubectl -n <ns> create secret generic laya-llm --from-literal=api-key=...
+  existingSecret: ""
+  secretKey: api-key
+  # Short hash of the key (never the key), set by CI so pods restart when the key is rotated.
+  keyChecksum: ""
+  provider: openai
+  # Models for documents sent as page images / as text. Tune with the evaluation harness (see deploy/README.md).
+  visionModel: gpt-6.1-sol
+  textModel: gpt-6-luna
+  # Extractions in flight at once. They mostly wait on the provider but each holds the document and its page images.
+  maxConcurrent: 4
+  # One provider call, including retries by the SDK. The gateway's request timeout still caps the whole request.
+  timeoutSeconds: 120
+  resources:
+    requests: { cpu: 50m, memory: 192Mi }
+    limits: { memory: 768Mi }
+  startupProbe: { periodSeconds: 5, failureThreshold: 24 }
+  extraEnv: []
+
 # The renderer (the document service) reads every untrusted document: only the API may reach it, and it may reach nothing.
+# The extraction service may be reached only by the API and may reach only the internet on 443 (the model provider), DNS and
+# the collector.
 networkPolicy:
   enabled: true
 

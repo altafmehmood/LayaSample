@@ -5,6 +5,11 @@
     gateway never references any of them. Deploy it without network egress and with a read-only file system.
   -->
 
+  <PropertyGroup>
+    <!-- Development secrets (dotnet user-secrets): the telemetry settings, if exported from a local run. Never read in Production. -->
+    <UserSecretsId>89995126-f56a-459c-b5d2-035e41393f20</UserSecretsId>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="ClosedXML" />
     <PackageReference Include="DocumentFormat.OpenXml" />

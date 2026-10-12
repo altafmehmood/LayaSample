@@ -1,8 +1,11 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace DocIntake.Api.Services.Documents.Extraction;
+namespace DocIntake.ExtractionService;
 
-/// <summary>Settings for AI extraction, bound from the <c>Extraction</c> section.</summary>
+/// <summary>
+/// Settings for AI extraction, bound from the <c>Extraction</c> section. The gateway reads the same section for its own
+/// settings (<c>ExtractionGatewayOptions</c>: where this service is, and how many extractions it lets in).
+/// </summary>
 public sealed class ExtractionOptions : IValidatableObject
 {
     public const string Section = "Extraction";
@@ -42,6 +45,10 @@ public sealed class ExtractionOptions : IValidatableObject
 
     [Range(1000, 2_000_000)]
     public int MaxTextChars { get; set; } = 200_000;
+
+    /// <summary>Largest request the service accepts: the prepared document, page images included, as JSON.</summary>
+    [Range(1024 * 1024, 1L << 31)]
+    public long MaxRequestBytes { get; set; } = 256 * 1024 * 1024;
 
     [Range(1, 32)]
     public int MaxConcurrentExtractions { get; set; } = 4;

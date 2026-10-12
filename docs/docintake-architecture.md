@@ -33,6 +33,170 @@ Target, in later phases:
 | `docintake-extraction` | The model agents. The only service with internet access and the model key. |
 | `docintake-decisions` | The Laya model |
 
+## Phase 4: the extraction service (2026-10-12)
+
+**What it does.** AI extraction moved out of the gateway into `DocIntake.ExtractionService`. It is now the only process that
+holds the model provider's key and reaches the internet. The gateway no longer has the key, the models, the prompts or an
+OpenAI client. Callers see the same routes, answers and status codes.
+
+**How it works.** For `POST /api/documents/extract` the gateway scans, classifies and prepares the upload as before, then:
+
+1. Before any of that, it asks the service `GET /extraction/status` ("do you have a key?"), remembered for 5 seconds, so a
+   deployment without a key still answers `503 "extraction is not configured"` before anything is read, scanned or rendered.
+   An unreachable service is the same 503 with `Retry-After: 10`.
+2. It sends `POST /extract` with the classification and the prepared document, and **nothing else**: not the file's name, not the
+   caller, not the API keys. The service picks the agent, calls the model (page images when it has them, text otherwise),
+   validates the answer and replies with an `ExtractAnswer`: the data, the usage, the warnings, the **findings about the
+   answer**, and **the model calls it made**.
+3. The gateway records one usage row per call (`UsageRecord` = the call + who asked + what was uploaded), then applies the
+   risk policy to the findings (`Security:OnFinding`): the service finds, the gateway decides. Recording comes first, so a
+   refused answer, which was paid for, is still counted.
+4. On failure the service answers with problem details carrying the failure's `kind`, a `retryAfterSeconds` hint and the
+   `calls` made before it failed. The gateway's client rebuilds the same `IntakeFailureException`, so statuses, `Retry-After`
+   and the recording of a billed failed call are unchanged.
+
+**The wire contract** (`DocIntake.Contracts/ExtractionWire.cs`): `ExtractRequest(Classification, Document)`,
+`ModelCall(At, Agent, Model, Attempt, Images, Usage?, PriceKey?, Outcome, DurationMs)`, `ExtractAnswer(...)`,
+`ExtractionStatus(Configured)`. `IntakeFailureException` gained `Calls`, and `FailureKind` gained `DependencyUnavailable`
+(503), used when the extraction service cannot be reached or is saturated. A call's `Outcome` is unchanged: `ok`, `timeout`,
+`cancelled`, or `http_<status>`, so existing usage rows and queries keep working.
+
+**What moved where.**
+
+| Now in `DocIntake.ExtractionService` | Still in `DocIntake.Api` (gateway) | New shared |
+|---|---|---|
+| `ExtractionOrchestrator` (was `DocumentExtractor`), the agents and prompts, `ExtractionMessageBuilder`, the provider client, retry policy and error mapper, `ExtractionValidator`, `LendingTypeDetector`, `AnswerRisks`, `ModelPricing`, `ExtractionMetrics`, `ExtractionOptions` | `DocumentExtractor` (calls the service, records usage, applies the policy), `ExtractionServiceClient`, `ExtractionGatewayOptions`, `RiskScanner.EnforceAnswer`, usage storage and endpoints | `Contracts`: the wire types, `InjectionPatterns` (the gateway checks the document's text with it, the service neutralises prompts and checks answers). `ServiceDefaults`: the problem answer now carries `retryAfterSeconds` and `calls` |
+
+**Settings.** Same section (`Extraction`), split by who reads them, as for `DocumentAnalysis`:
+
+| Setting | Before | Now |
+|---|---|---|
+| `ApiKey` (or `OPENAI_API_KEY`), `Provider`, `Endpoint`, `VisionModel`, `TextModel`, `MaxImagePages`, `ImageDetail`, `TimeoutSeconds`, `MaxRetries`, `MaxOutputTokens`, `MaxTextChars`, `Pricing` | gateway | **Extraction service only** |
+| `MaxRequestBytes` (default 256 MB) | none | Extraction service: the largest request it accepts, page images included |
+| `MaxConcurrentExtractions`, `MaxQueuedExtractions` | gateway | Both: the gateway's limit (503 with `Retry-After`) and the service's own, since the gateway can be replicated |
+| `ServiceUrl` | none | **Gateway.** Optional: empty means extraction answers `503` "not configured" and the gateway still starts |
+
+Local development: the key is now an extraction-service user secret (`--project src/DocIntake.ExtractionService`); the old one
+in the gateway's secrets is not found. The two services have their own user-secrets IDs (telemetry settings too).
+
+**Deployment, pulled forward from Phase 7.** The service cannot wait for the cutover, because merging deploys: `Dockerfile`
+has an `extraction` target; `docker-compose.yml` an `extraction` service (public network only: it needs the internet for the
+provider; read-only, no capabilities, 1 GB, 256 pids); Helm has `extraction-deployment.yaml`, `extraction-service.yaml` and a
+NetworkPolicy (ingress from the API only; egress to DNS, the collector and TCP 443); the collector accepts its telemetry; CI
+builds and pushes the image and checks its rollout. **`api.extraction.*` values are now `extraction.*`**, and the chart's
+schema rejects the old shape, so a stale values file fails loudly instead of leaving extraction without a key. The rendered
+chart gives the `laya-llm` Secret to the extraction Deployment and to no other.
+
+**Behaviour changes.**
+- **Where the key lives**, and a **third process** to run locally for extraction (README quick start).
+- **An extraction service outage** fails extraction with 503 and `Retry-After`; analysis, feedback and everything else keep working,
+  and the gateway's readiness shows `extraction-service` as `Degraded`.
+- **A request the caller abandoned** (a disconnect, or the gateway's own request timeout) no longer leaves a `cancelled` usage
+  row: the service cannot report a call to a gateway that has hung up. Those rows never had tokens or a cost.
+- **A refused answer is counted by the service's metrics** (`intake.extraction.documents`, `.fields`, `.warnings`), because the
+  service does not know the gateway will refuse it. The usage row and the 422 are unchanged.
+- The extraction metrics moved to their own meter, **`DocIntake.Extraction`** (same metric names), and the spans
+  `intake.extraction` / `intake.extract` and the gen_ai spans now arrive in the dataset **`docintake-extraction`**.
+- A usage row's timestamp is the service's clock when the call ended.
+- The startup log line names the extraction service's address instead of the models.
+- `intake.failure.cause` and the log lines for extraction failures are written by the gateway and, separately, by the service.
+
+**Deviations from the plan.**
+- **Deployment was pulled forward** (above), so Phase 7 has less to do.
+- `ExtractionOrchestrator` was not split into an orchestrator and a `ModelCallRecorder`. The real separation is that usage
+  recording left the service altogether; what remains is a private method that builds a `ModelCall`.
+- `InjectionPatterns` went to Contracts (the plan put the answer detection in the service and left the text detection in the
+  gateway, but both use the same rules).
+
+**A production bug found and fixed.** The service crashed with a stack overflow the first time the fake provider answered 429.
+`RecordingRetryPolicy` overrode both `ShouldRetry` and `ShouldRetryAsync`, each calling the other; the SDK's base async method
+calls the sync one, so the first retryable response (a 429, a 5xx or a timeout) recursed until the process died. **The same
+code is on `main`, so today it would take down the API pod.** The old tests missed it because the fake chat client bypasses the
+SDK's retry pipeline. Fixed here and, separately and ahead of this change, in
+[#9](https://github.com/altafmehmood/LayaSample/pull/9). `RetryPolicyTests` now send through the real pipeline (async and sync):
+a 429 is retried and counted once, a provider that keeps refusing is given up on after `MaxRetries`, and a 400 is not retried.
+On the old code the test host dies with `Stack overflow.`
+
+**Key files.**
+- `src/DocIntake.ExtractionService/Program.cs` (the endpoints), `ExtractionOrchestrator.cs`, `ExtractionClients.cs`
+- `src/DocIntake.Api/Services/Documents/Extraction/DocumentExtractor.cs`, `ExtractionServiceClient.cs`
+- `src/DocIntake.Contracts/ExtractionWire.cs`, `Failures.cs`
+- `deploy/helm/docintake/templates/extraction-*.yaml`, `networkpolicy.yaml`
+
+**How to try it.** Needs your own key (the extract call is **paid**). Without a key everything but the extraction itself works.
+
+    dotnet user-secrets set "Extraction:ApiKey" "sk-..." --project src/DocIntake.ExtractionService
+    dotnet run --project src/DocIntake.DocumentService          # terminal 1
+    dotnet run --project src/DocIntake.ExtractionService        # terminal 2
+    dotnet run --project src/DocIntake.Api                      # terminal 3
+    curl -F "file=@docs/samples/pdf/corpus/redwood-mechanical-ucc1-fax.pdf" localhost:5091/api/documents/extract   # (paid)
+    curl localhost:5091/api/usage
+
+To try it for free, point the extraction service at any OpenAI-compatible endpoint (`Extraction__Endpoint=http://127.0.0.1:5099/v1`
+and `Extraction__ApiKey=anything`): that is how the cases below were run.
+
+**What it does not do.**
+- The extraction service has no authentication: any pod that can reach it is trusted (threat model 4.2).
+- The gateway still hosts Laya; it moves in Phase 5. The gateway's pod still has no NetworkPolicy.
+- Usage is not recorded by the service, so a gateway that is gone when the answer arrives records nothing.
+- The service buffers the request (the prepared document, images included) in memory.
+
+**Tests.** 454 tests, 448 passed and 6 skipped (the opt-in ones from Phase 1). Changed: the tests that built an extractor now
+drive the service's orchestrator and record usage from the calls it reports; the factories use `UseExtractionService`, which
+attaches an in-memory extraction service with the test's fake chat client, and the test handler now carries trace context like a
+real connection (so a request is one trace across the services). New:
+- `ExtractionServiceTests` (18): the service over HTTP through the gateway's client. The answer with the calls made and their
+  price; page images reaching the model; findings reported but not acted on; every provider failure keeping its kind, retry hint
+  and the call that failed; a cut-off answer reporting its billed tokens; the generic agent's second call; the status; the
+  client's reading of unreachable, dying, saturated and malformed services.
+- `GatewayExtractionTests` (6): the gateway as deployed. An unreachable service fails extraction but not analysis, and shows
+  `Degraded`; no URL means `503` and a gateway that starts; **a service without a key turns the upload away before the document
+  service is called once**; **the request to the service carries neither the file's name nor the caller**.
+- `UsageTests` (3 new, end to end through the gateway): a cut-off call is recorded with its tokens and cost; a refused answer
+  is recorded; a rate-limited call is recorded without tokens.
+- `RetryPolicyTests` (5): the real SDK pipeline (above).
+- `ArchitectureTests`: the gateway's build holds no model-provider library and no extraction service; the extraction service has
+  them and no document parser and no reference to the gateway; no source in it mentions `StatusCodes` outside its entry point; and the
+  key appears in no gateway source, no gateway Deployment and no gateway compose block.
+- `ProblemMappingTests`: the new kind in the status, outcome and log-level tables.
+
+### Verified (2026-10-12)
+
+- `dotnet build`, `dotnet test` (above), the licence check (no package was added: the AI packages moved), `helm lint` on the
+  three CI values files, `docker compose config`.
+- **The rendered chart:** the `laya-llm` Secret is referenced by the extraction Deployment and by no other; the API has
+  `Extraction__ServiceUrl` and no key or model setting.
+- **Three separate processes with real OCR, the extraction service pointed at a local fake of the provider** (the real SDK,
+  real HTTP between all three, a real SQLite usage database): a success (vision model, one page image, the key sent, cost
+  $0.01452 by hand and by the service); an instruction-like answer (`422`); a cut-off answer (`502`); a rate limit (`503` with
+  the provider's `Retry-After: 7` after the SDK's three attempts). **All four calls are in `/api/usage`**, with the caller and
+  the file name the service never saw.
+- **One trace across three Honeycomb datasets** (`docintake-gateway`, `docintake-document`, `docintake-extraction`).
+- The gateway survived the extraction service dying mid-request (the stack overflow above) and answered 502.
+
+### Not verified
+
+- The real model provider. The extract call costs money, so only a local fake was used: the real provider's own error bodies,
+  streaming and rate-limit headers are untested.
+- `docker compose up` of the trio, Kubernetes, and a rolling deploy with old and new pods together. The three images build
+  (below), but were not run together.
+- Memory and latency under load: the request, with its page images, now crosses the network twice more and is buffered in the
+  service.
+
+### Before deploying (Phase 4)
+
+- [ ] **Make the `laya-sample-extraction` package public after CI first pushes it** (deploy/README.md, "First deploy of the
+      extraction image"). A package new to GitHub starts private and the cluster pulls without credentials, so the first deploy
+      leaves the extraction pod in `ImagePullBackOff` and `helm upgrade --wait` fails until you do. Re-run the deploy afterwards.
+- [ ] **Merge [#9](https://github.com/altafmehmood/LayaSample/pull/9) first** (the stack overflow is on `main` today).
+- [ ] **Your local key moved**: set it again for the extraction service (README quick start).
+- [ ] Any values file that sets `api.extraction.*` must use `extraction.*`; the schema rejects the old keys.
+- [ ] **Rollout window**: the API and the new extraction Deployment come up separately, so for a moment an API without a service
+      to call answers extraction with 503. Analysis is not affected.
+- [ ] Honeycomb: extraction spans and metrics change dataset (`docintake-extraction`), and the metrics meter is
+      `DocIntake.Extraction`. Boards that read them from `docintake-gateway` go quiet.
+- [ ] The node must fit one more pod (192 MiB requested, 768 MiB limit).
+
 ## Phase 3: the document service (2026-10-12)
 
 **What it does.** The renderer grew into the **document service**. Classification and preparation moved into it, with

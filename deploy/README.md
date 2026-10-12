@@ -1,20 +1,23 @@
 # Deploying to DigitalOcean Kubernetes
 
-The Helm chart in [`helm/docintake`](helm/docintake) runs the API (the gateway) and the isolated renderer (now the document service: it classifies and prepares every upload) and publishes the API
-through the Gateway API.
+The Helm chart in [`helm/docintake`](helm/docintake) runs the API (the gateway), the isolated renderer (now the document
+service: it classifies and prepares every upload) and the extraction service (the only pod with the model provider's key), and
+publishes the API through the Gateway API.
 
 ```
 internet -> DigitalOcean load balancer -> Gateway (cilium, TLS) -> HTTPRoute -> api Service -> api pod
                                                                                    |
                                                        renderer Service <----------+  (NetworkPolicy: only the API may call it)
+                                                       extraction Service <--------+  (only the API may call it; it may reach 443, DNS, collector)
 ```
 
-The API and the renderer fit **one node with 1 vCPU and 2 GB of memory**: one replica of each, one document analysed at a
+The API, the renderer and the extraction service fit **one node with 1 vCPU and 2 GB of memory** (the extraction pod asks for
+192 MiB and is limited to 768 MiB): one replica of each, one document analysed at a
 time, short queues, no CPU limits, and a rolling update that replaces the pod in place (a second copy would not fit).
 Expect slow OCR and brief downtime on upgrades. **The malware scanner changes that:** the ClamAV pod (on by default) needs
 about 4 GB of its own, so use a node with 8 GB, or set `malware.clamd.enabled: false` (see
 [Malware scanning](#malware-scanning-clamav)). For real traffic use a bigger node and raise the values under `api.config`,
-`renderer.config` and `*.resources`.
+`renderer.config`, `extraction.maxConcurrent` and `*.resources`.
 
 ## Prerequisites
 
@@ -86,22 +89,37 @@ ten minutes.
 
 ## AI extraction key
 
-`POST /api/documents/extract` needs a model provider API key. Create it as a Secret, outside Helm, so the key never
-enters the release history, and point the chart at it (`api.extraction.existingSecret: laya-llm`, already in the example values):
+`POST /api/documents/extract` needs a model provider API key, and **only the extraction service gets it**: the gateway's pod
+has no key, no model setting and no OpenAI client. Create the key as a Secret, outside Helm, so it never enters the release
+history, and point the chart at it (`extraction.existingSecret: laya-llm`, already in the example values):
 
 ```sh
 kubectl create namespace laya --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n laya create secret generic laya-llm --from-literal=api-key="$OPENAI_API_KEY"
 ```
 
-The Secret reference is `optional`: without it the pod still starts and the endpoint answers 503. Environment
-variables are read at start, so after changing the key run `kubectl rollout restart deploy/laya-api -n laya`. The CI
-deploy job does this for you: it stores the `OPENAI_API_KEY` GitHub secret in `laya-llm` and passes a short hash of the
-key as `api.extraction.keyChecksum`, which rolls the pods when the key changes. Models are `api.extraction.visionModel`
-and `textModel`; tune them with the evaluation job (Actions, Run workflow, tick the evaluation box).
+The Secret reference is `optional`: without it the pod still starts and extraction answers 503. Environment variables are
+read at start, so after changing the key run `kubectl rollout restart deploy/laya-extraction -n laya`. The CI deploy job does
+this for you: it stores the `OPENAI_API_KEY` GitHub secret in `laya-llm` and passes a short hash of the key as
+`extraction.keyChecksum`, which rolls the extraction pods when the key changes. Models are `extraction.visionModel` and
+`textModel`; tune them with the evaluation job (Actions, Run workflow, tick the evaluation box).
 
-The API pod needs outbound HTTPS to `api.openai.com`; there is no NetworkPolicy on it, so nothing blocks that. The
-documents' pages leave the cluster for OpenAI; see the privacy note in the main README.
+**Values moved:** `api.extraction.*` is now `extraction.*` (and `extraction.replicas`, `extraction.resources`,
+`extraction.startupProbe` and `extraction.extraEnv` are new). A values file that still sets `api.extraction` fails schema
+validation, which is the point: it would otherwise silently leave extraction without a key.
+
+The extraction pod's NetworkPolicy lets only the API pod reach it, and lets it reach only DNS, the collector and TCP 443
+anywhere (the provider's addresses are not fixed). The API pod has no NetworkPolicy, so it is not blocked from the internet
+either; the threat model's open item 4 is still open. The documents' pages leave the cluster for OpenAI; see the privacy note
+in the main README.
+
+### First deploy of the extraction image: make the package public
+
+CI pushes the extraction image to `ghcr.io/<owner>/laya-sample-extraction`. **A package that is new to GitHub starts
+private**, and the cluster pulls images without credentials, so on the first deploy the extraction pod sits in
+`ImagePullBackOff` (and `helm upgrade --wait` times out) until the package is made public: GitHub, your profile, Packages,
+`laya-sample-extraction`, Package settings, Change visibility. After that the pod pulls on its own, or re-run the deploy.
+Do the same for any image package a later phase renames.
 
 ## API access key
 

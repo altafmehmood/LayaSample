@@ -9,8 +9,6 @@
     <PackageReference Include="ElBruno.LocalLLMs.Decisions" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
-    <PackageReference Include="Microsoft.Extensions.AI" />
-    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <PackageReference Include="Scalar.AspNetCore" />
   </ItemGroup>
 

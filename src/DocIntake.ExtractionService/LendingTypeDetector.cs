@@ -2,7 +2,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using DocIntake.Contracts;
 
-namespace DocIntake.Api.Services.Documents.Extraction;
+namespace DocIntake.ExtractionService;
 
 /// <summary>
 /// Recognises which lending document a prepared document is from its first page, using text that is already

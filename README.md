@@ -12,10 +12,11 @@ OpenAI vision and text models.
 | Feature | What it gives you | Run it |
 |---|---|---|
 | [Document analysis](#document-analysis) | Classifies a PDF, image or Office file and prepares it for an agent: page images, markdown, OCR text, form values. No model, no cost | `curl -F file=@docs/samples/pdf/corpus/redwood-mechanical-ucc1-fax.pdf localhost:5091/api/documents/analyze` |
-| [AI extraction](#ai-extraction) | Borrower, lender, collateral and every UCC box as structured data with page citations (OpenAI vision and text) | `dotnet user-secrets set "Extraction:ApiKey" "sk-..." --project src/DocIntake.Api`, then `POST /api/documents/extract` |
+| [AI extraction](#ai-extraction) | Borrower, lender, collateral and every UCC box as structured data with page citations (OpenAI vision and text) | `dotnet user-secrets set "Extraction:ApiKey" "sk-..." --project src/DocIntake.ExtractionService`, run that service, then `POST /api/documents/extract` |
 | [Usage and cost](#ai-extraction) | Every model call recorded (API key fingerprint, file name, input, cached, reasoning, output tokens, list-price cost) and served as JSON or CSV | `curl -H "X-Api-Key: $KEY" "localhost:5091/api/usage?format=csv"` |
 | [Security layers](#security) | Malware scan (ClamAV), active-content, hidden-text and prompt-injection checks, all reported in `risks` and refused with 422 by default | `docker compose up -d clamav`, then upload the EICAR test file |
 | [Authentication](#authentication) | `X-Api-Key` on the endpoints that spend money; key fingerprints in the usage history; optional admin keys | `dotnet user-secrets set "Auth:ApiKeys:0" "$(openssl rand -base64 32)" --project src/DocIntake.Api` |
+| [Extraction service](#architecture) | The only process with the model provider's key and internet access. It reports every model call; the gateway records them as usage, so a failed or refused call is still counted | `dotnet run --project src/DocIntake.ExtractionService`, or `docker compose up --build` with `OPENAI_API_KEY` |
 | [Document service](#architecture) | Classification, preparation, PDFium, ImageMagick and OCR in a separate container: no network, read-only file system. The gateway reads no document | `docker compose up --build` |
 | [Telemetry](#telemetry-honeycomb) | Traces, metrics and logs to Honeycomb, including prompts, answers, tokens and cost | set the `OTEL_EXPORTER_OTLP_*` user secrets, see [Telemetry](#telemetry-honeycomb) |
 | [Lending corpus and evaluation](#lending-corpus) | 39 synthetic lending PDFs with ground truth, and an opt-in accuracy score for the model | `RUN_EXTRACTION_EVAL=1 dotnet run --project tests/DocIntake.Tests -c Release -- -trait "Category=Evaluation"` (paid) |
@@ -27,7 +28,7 @@ Longer notes on how each feature set works, its settings, limits and what was ve
 [docs/security-cost-hardening.md](docs/security-cost-hardening.md) (usage tracking, ClamAV, content checks, streaming, red team) and
 [docs/threat-model.md](docs/threat-model.md) (what could go wrong at each trust boundary, and what is still open) and
 [docs/docintake-architecture.md](docs/docintake-architecture.md) (the DocIntake rename and the move to a gateway and
-services, with the full list of telemetry renames).
+services, with the full list of telemetry renames and the pre-deploy checklists).
 
 The README is kept in step with the code: a new feature gets a row here, a section below, and a line in the quick start
 or its own section if it needs setup.
@@ -36,9 +37,10 @@ or its own section if it needs setup.
 
 You need the .NET 10 SDK. Steps 1 to 3 need no Docker, API key or cluster.
 
-1. **Start the two services.** The gateway (the API) reads no document itself: every upload is classified and prepared by
+1. **Start the services.** The gateway (the API) reads no document itself: every upload is classified and prepared by
    the document service, so run both, each in its own terminal. The first run of the gateway downloads the Laya model
-   (~850 MB, several minutes); the OCR models ship with the document service.
+   (~850 MB, several minutes); the OCR models ship with the document service. A third service, for AI extraction, is only
+   needed for step 4.
 
        dotnet run --project src/DocIntake.DocumentService        # http://localhost:5092
        dotnet run --project src/DocIntake.Api                    # http://localhost:5091 (finds the service at 5092)
@@ -58,19 +60,22 @@ You need the .NET 10 SDK. Steps 1 to 3 need no Docker, API key or cluster.
 
    Or open Scalar at http://localhost:5091/scalar/v1 and use "Try it" on any endpoint.
 
-4. **Extract data with AI (optional).** This sends the document to OpenAI and costs money, so it needs your own key.
-   Store it once as a [user secret](https://learn.microsoft.com/aspnet/core/security/app-secrets) (kept in your user
-   profile, outside the repository, and read only when running in Development), then restart the API:
+4. **Extract data with AI (optional).** This sends the document to OpenAI and costs money, so it needs your own key. The
+   key belongs to the extraction service alone: the gateway never sees it. Store it once as a
+   [user secret](https://learn.microsoft.com/aspnet/core/security/app-secrets) of that service (kept in your user
+   profile, outside the repository, and read only when running in Development), then start it in a third terminal:
 
-       dotnet user-secrets set "Extraction:ApiKey" "sk-..." --project src/DocIntake.Api
-       dotnet run --project src/DocIntake.Api
+       dotnet user-secrets set "Extraction:ApiKey" "sk-..." --project src/DocIntake.ExtractionService
+       dotnet run --project src/DocIntake.ExtractionService      # http://localhost:5093 (the gateway finds it there)
        curl -F "file=@docs/samples/pdf/corpus/redwood-mechanical-ucc1-fax.pdf" localhost:5091/api/documents/extract
 
    Locally the endpoint needs no access key; see [Authentication](#authentication) for deployments.
 
-   Remove it with `dotnet user-secrets remove "Extraction:ApiKey" --project src/DocIntake.Api`. The `OPENAI_API_KEY`
-   environment variable works too (a configured `Extraction:ApiKey` wins). Without a key the endpoint answers `503` and
-   nothing else changes. The models are `Extraction:VisionModel` and `Extraction:TextModel` in `appsettings.json`;
+   **If you set the key before this change, it is in the gateway's user secrets** (`--project src/DocIntake.Api`) and the
+   extraction service will not find it: set it again as above (and remove the old one with
+   `dotnet user-secrets remove "Extraction:ApiKey" --project src/DocIntake.Api`). The `OPENAI_API_KEY` environment variable
+   works too (a configured `Extraction:ApiKey` wins). Without a key, or without the service running, the endpoint answers
+   `503` and nothing else changes. The models are `Extraction:VisionModel` and `Extraction:TextModel` in `appsettings.json`;
    override them with the `Extraction__VisionModel` and `Extraction__TextModel` environment variables.
 
 5. **Run the tests.** They are offline: OCR, the model provider and the malware scanner are faked.
@@ -93,6 +98,35 @@ One entry per day's work, newest first: what was added, the commands to try it a
 Compose on 8080.
 
 ### 2026-10-12
+
+**Extraction service: the model key leaves the gateway.** `POST /extract` now lives in `DocIntake.ExtractionService`, the
+only process that holds the OpenAI key and reaches the internet. The gateway sends it the prepared document and gets back the
+data, the findings about the answer and the model calls made; it records those as usage (it alone knows the caller and the
+file's name, which the service never sees) and applies the risk policy. A failed or refused extraction still records the
+calls made. Callers see the same answers. What changed for you: **the key's home** is the extraction service
+(`dotnet user-secrets set "Extraction:ApiKey" ... --project src/DocIntake.ExtractionService`, or `OPENAI_API_KEY` in that
+service's environment), **a third process locally**, and in Kubernetes **a new Deployment** (see the pre-deploy checklist
+in [docs/docintake-architecture.md](docs/docintake-architecture.md), Phase 4).
+
+    dotnet run --project src/DocIntake.DocumentService          # terminal 1, http://localhost:5092
+    dotnet run --project src/DocIntake.ExtractionService        # terminal 2, http://localhost:5093 (set the key first)
+    dotnet run --project src/DocIntake.Api                      # terminal 3, http://localhost:5091
+    curl -s localhost:5091/health/ready                          # laya, scanner, document-service, extraction-service
+    curl -F "file=@docs/samples/pdf/corpus/redwood-mechanical-ucc1-fax.pdf" localhost:5091/api/documents/extract   # (paid)
+    curl localhost:5091/api/usage                                # one row per model call, with the caller and the file name
+
+You should see the extraction (`agent` `ucc1-agent`, the fields, `usage` with a cost), and a row in `/api/usage` for the call.
+Without the key, or without the service, the extract endpoint answers `503`. Run on this machine without spending money: all
+three services as separate processes with real OCR and the extraction service pointed at a local fake of the provider
+(`Extraction__Endpoint`), which served a success, an instruction-like answer (refused, `422`), a cut-off answer (`502`) and a
+rate limit (`503` with the provider's `Retry-After`): all four calls were in the usage history. Not run: the real provider,
+Kubernetes, `docker compose up` of the trio.
+
+**A production crash found and fixed: a retryable provider response overflowed the stack.** The retry policy for the
+provider's SDK called itself, so the first 429, 5xx or timeout from OpenAI killed the process (on `main` today, the API pod).
+Fixed in [#9](https://github.com/altafmehmood/LayaSample/pull/9) on its own, and here. See
+[docs/docintake-architecture.md](docs/docintake-architecture.md), Phase 4. Nothing to run; `RetryPolicyTests` send through the
+SDK's real pipeline.
 
 **Document service: the gateway no longer reads documents.** `DocIntake.Renderer` became `DocIntake.DocumentService`, and
 classification and preparation moved into it, with PdfPig and the Office libraries. The gateway streams each upload to it
@@ -327,7 +361,9 @@ are checked against the document and quotes against the page text; quotes that c
 The code depends only on `IChatClient` (Microsoft.Extensions.AI), so another provider means a new client in
 `ExtractionClientFactory` and an error mapper for its exceptions.
 
-**Settings** (the `Extraction` section; in Kubernetes see [deploy/README.md](deploy/README.md)):
+**Settings** (the `Extraction` section, read by the extraction service; the gateway reads only `ServiceUrl`,
+`MaxConcurrentExtractions` and `MaxQueuedExtractions` from the same section. In Kubernetes see
+[deploy/README.md](deploy/README.md)):
 
 | Setting | Default | Effect |
 |---|---|---|
@@ -464,28 +500,38 @@ Details and the other, smaller samples are in [docs/samples](docs/samples/README
 
 ## Architecture
 
-Two services. The **gateway** (`DocIntake.Api`) is the public API: access keys, rate limits, the malware scan, the risk
-policy, AI extraction, the usage history and Laya. The **document service** (`DocIntake.DocumentService`) reads every
-upload: it classifies and prepares it with PdfPig, the Office libraries and the native C/C++ libraries (PDFium,
-ImageMagick, Skia, ONNX Runtime for OCR). A malicious or malformed file that crashes or takes over a parser therefore
-cannot take down the gateway or reach its data:
+Three services. The **gateway** (`DocIntake.Api`) is the public API: access keys, rate limits, the malware scan, the risk
+policy, the usage history and Laya. The **document service** (`DocIntake.DocumentService`) reads every upload: it
+classifies and prepares it with PdfPig, the Office libraries and the native C/C++ libraries (PDFium, ImageMagick, Skia,
+ONNX Runtime for OCR). The **extraction service** (`DocIntake.ExtractionService`) turns a prepared document into structured
+data with the model provider. Each holds only what it needs, so a malformed file that takes over a parser cannot reach the
+model key, and nothing that holds the key ever parses a file:
 
-| | `DocIntake.Api` (gateway) | `DocIntake.DocumentService` |
-|---|---|---|
-| Does | Auth, scanning, risk policy, routing, AI extraction, usage, Laya | File-type detection, PDF classification and text, Office conversion, form data, signatures, page rendering, image decoding, OCR |
-| Reads untrusted document bytes | No: it streams the upload on, and has no parser in its build | Yes, isolated: no network egress, read-only file system, no capabilities, own memory/CPU limits |
-| Talks to | The document service, ClamAV, and OpenAI for extraction | Nothing outside; only the gateway may reach it |
+| | `DocIntake.Api` (gateway) | `DocIntake.DocumentService` | `DocIntake.ExtractionService` |
+|---|---|---|---|
+| Does | Auth, scanning, risk policy, routing, usage, Laya | File-type detection, PDF classification and text, Office conversion, form data, signatures, rendering, image decoding, OCR | Agent choice, prompts, the model call, validation of the answer, list-price cost |
+| Reads untrusted document bytes | No: it streams the upload on, and has no parser in its build | Yes, isolated: no network egress, read-only file system, no capabilities | No: it receives prepared pages and text |
+| Holds the model provider's key | No | No | **Yes**, and it alone reaches the internet |
+| Knows who asked and the file's name | Yes | No | No |
+| Talks to | The two services and ClamAV | Nothing outside; only the gateway may reach it | The model provider; only the gateway may reach it |
 
-The gateway asks the document service twice per upload over HTTP: `POST /documents/classify`, then, if the risk policy lets
-the document through, `POST /documents/prepare`. Each call carries the file; the service keeps nothing between them. The
-service's address is `DocumentAnalysis:DocumentServiceUrl`, and without it the gateway refuses to start. If the service dies
-on a document, that request gets 502 and the service restarts. If it is down, **every** document upload gets 503 with
-`Retry-After` (classification happens there too), while feedback analysis keeps working, and the gateway's readiness reports
-`document-service` as `Degraded`. Shared types are in `src/DocIntake.Contracts` and the telemetry setup in
-`src/DocIntake.ServiceDefaults`; the rendering code the document service uses is in `src/DocIntake.Rendering`.
+The gateway asks the document service twice per upload, over HTTP: `POST /documents/classify`, then, if the risk policy
+lets the document through, `POST /documents/prepare`. For extraction it then sends the prepared document to the extraction
+service (`POST /extract`) and gets back the data, the findings about the answer and **the model calls made** (agent, model,
+tokens, cost, outcome). The gateway records each call as usage, adding the caller and the file's name, which the service
+never sees, and applies the risk policy to the findings: the service finds, the gateway decides. A failed extraction
+carries the calls made before it failed, so a call the provider billed is recorded even when the answer was refused.
 
-There is no in-process mode any more: `DocumentAnalysis:AllowInProcessRendering` is gone, and `appsettings.Development.json`
-points the gateway at `http://localhost:5092`. See [Quick start](#quick-start) for running both.
+The services' addresses are `DocumentAnalysis:DocumentServiceUrl` (required: the gateway refuses to start without it) and
+`Extraction:ServiceUrl` (optional: empty, extraction answers `503` "not configured"). If the document service dies on a
+document, that request gets 502 and it restarts; if it is down, **every** document upload gets 503 with `Retry-After`. If the
+extraction service is down, extraction gets 503 with `Retry-After` while analysis and feedback keep working. The gateway's
+readiness reports `document-service` and `extraction-service` as `Degraded`. Shared types are in `src/DocIntake.Contracts`
+and the telemetry setup in `src/DocIntake.ServiceDefaults`; the rendering code the document service uses is in
+`src/DocIntake.Rendering`.
+
+There is no in-process mode: `appsettings.Development.json` points the gateway at `http://localhost:5092` and
+`http://localhost:5093`. See [Quick start](#quick-start) for running them.
 
 ## Limits
 
@@ -575,8 +621,9 @@ rather than being reported as unreadable. Local models live in [`models/`](model
 
 ## Docker
 
-`docker-compose.yml` runs the gateway and the hardened document service (the `renderer` service and image target keep their
-old name for now). Both images bake in their models (Laya in the gateway, OCR in the document service), so containers never download anything and run offline. The build itself takes models from the local
+`docker-compose.yml` runs the gateway, the hardened document service (the `renderer` service and image target keep their old
+name for now) and the extraction service. The images bake in their models (Laya in the gateway, OCR in the document service;
+the extraction service has none), so containers never download anything and run offline. The build itself takes models from the local
 [`models/`](models/README.md) folder when their SHA-256 matches the pinned version and downloads only what is missing,
 so a machine that cannot download (a proxy or TLS inspection blocking curl) can build once the files are there: run
 the API once with `dotnet run`, or copy `models/` from another machine.
@@ -589,18 +636,21 @@ A third container, `clamav`, scans every upload for malware; see [Security](#sec
 signature database (a minute or two), and the API starts once it reports healthy. It has no memory or CPU limit and uses
 about 1 GiB when idle.
 
-Containers run in Production, where user secrets are not read, so the keys come from the environment, and extraction
-answers 503 without `DOCINTAKE_API_KEY` (callers send it as `X-Api-Key`). The renderer
-is on an internal network with no route out, has a read-only file system (`/tmp` is a tmpfs), drops all Linux
-capabilities, and has its own memory, CPU and process limits; it restarts automatically after a crash. Both run as
+Containers run in Production, where user secrets are not read, so the keys come from the environment: `OPENAI_API_KEY` goes to
+the **extraction service only**, and extraction answers 503 without `DOCINTAKE_API_KEY` (callers send it as `X-Api-Key`; the
+gateway checks it). The renderer is on an internal network with no route out, and the extraction service is on the public
+network only (it needs the internet for the model provider). Both have a read-only file system (`/tmp` is a tmpfs), drop all
+Linux capabilities, and have their own memory, CPU and process limits; they restart automatically after a crash. All run as
 non-root users and have a `HEALTHCHECK` on `/health/ready`. The images are built from one `Dockerfile`
-(`--target api` / `--target renderer`); model downloads use a BuildKit cache, so rebuilds don't fetch them again.
+(`--target api` / `--target renderer` / `--target extraction`); model downloads use a BuildKit cache, so rebuilds don't fetch
+them again.
 
 ## Kubernetes
 
-[`deploy/`](deploy/README.md) has a Helm chart that deploys both services to a DigitalOcean Kubernetes cluster: the API
+[`deploy/`](deploy/README.md) has a Helm chart that deploys the services to a DigitalOcean Kubernetes cluster: the API
 is public through the Gateway API with a Let's Encrypt certificate, the renderer (now the document service) is reachable only
-from the API and has no egress. The CI `deploy` job runs it on every push to `main`, with the cluster credentials, the Let's Encrypt
+from the API and has no egress, and the extraction service, the only pod that gets the OpenAI key, is reachable only from the
+API and may reach only port 443, DNS and the collector. The CI `deploy` job runs it on every push to `main`, with the cluster credentials, the Let's Encrypt
 e-mail, the OpenAI key and the API access key (`LAYA_API_KEY`) taken from GitHub secrets. The chart also runs a ClamAV
 pod that scans uploads, and keeps the usage history on a PersistentVolumeClaim. ClamAV has no resource requests or
 limits, so the cluster's node needs the memory for it (see [deploy/README.md](deploy/README.md#malware-scanning-clamav)).
@@ -608,9 +658,12 @@ The chart, the secrets and the cluster setup are described in [deploy/README.md]
 
 ## Telemetry (Honeycomb)
 
-Both services send traces, metrics and logs over OpenTelemetry (OTLP) when `OTEL_EXPORTER_OTLP_ENDPOINT` is set; unset,
-they export nothing. In Kubernetes and in compose the renderer has no route out, so both services send to a small
-collector that alone talks to Honeycomb (see below), and the renderer's spans join the API's trace.
+Every service sends traces, metrics and logs over OpenTelemetry (OTLP) when `OTEL_EXPORTER_OTLP_ENDPOINT` is set; unset,
+it exports nothing. Locally set the three `OTEL_EXPORTER_OTLP_*` user secrets below for each service you run
+(`--project src/DocIntake.Api`, `src/DocIntake.DocumentService`, `src/DocIntake.ExtractionService`), or the same variables
+in the environment. In Kubernetes and in compose the document service has no route out, so the services send to a small
+collector that alone talks to Honeycomb (see below). The services' spans join the gateway's trace, so one request is one
+trace across the datasets `docintake-gateway`, `docintake-document` and `docintake-extraction`.
 
 **What you get.** One extract request is a single trace: the HTTP request (tagged `intake.file.bytes`, `intake.document.kind`,
 `intake.document.strategy`, `intake.document.pages`, `intake.outcome` = `ok` / `rejected` / `renderer_unavailable` / `rate_limited` /
