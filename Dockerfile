@@ -2,9 +2,9 @@
 #
 # Two images from one build; run them together with docker-compose.yml.
 #
-#   docker build --target api -t laya-sample-api .
-#   docker build --target renderer -t laya-sample-renderer .                                   # PP-OCRv5 Latin OCR
-#   docker build --target renderer -t laya-sample-renderer --build-arg OCR_MODEL=PPOCRv6Medium .  # multilingual, ~4x slower
+#   docker build --target api -t docintake-api .
+#   docker build --target renderer -t docintake-renderer .                                    # PP-OCRv5 Latin OCR
+#   docker build --target renderer -t docintake-renderer --build-arg OCR_MODEL=PPOCRv6Medium .  # multilingual, ~4x slower
 #
 # api       Classification, Office conversion, Laya feedback analysis. Never parses PDFs or images with native code.
 # renderer  PDFium, ImageMagick and OCR: the only process that does. Run it isolated (see docker-compose.yml).
@@ -41,15 +41,15 @@ FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG TARGETARCH
 WORKDIR /src
 COPY global.json Directory.Build.props Directory.Packages.props ./
-COPY src/LayaSample.Rendering/LayaSample.Rendering.csproj src/LayaSample.Rendering/packages.lock.json src/LayaSample.Rendering/
-COPY src/LayaSample.Renderer/LayaSample.Renderer.csproj src/LayaSample.Renderer/packages.lock.json src/LayaSample.Renderer/
-COPY src/LayaSample.Api/LayaSample.Api.csproj src/LayaSample.Api/packages.lock.json src/LayaSample.Api/
-RUN dotnet restore src/LayaSample.Api/LayaSample.Api.csproj -a $TARGETARCH \
- && dotnet restore src/LayaSample.Renderer/LayaSample.Renderer.csproj -a $TARGETARCH
+COPY src/DocIntake.Rendering/DocIntake.Rendering.csproj src/DocIntake.Rendering/packages.lock.json src/DocIntake.Rendering/
+COPY src/DocIntake.Renderer/DocIntake.Renderer.csproj src/DocIntake.Renderer/packages.lock.json src/DocIntake.Renderer/
+COPY src/DocIntake.Api/DocIntake.Api.csproj src/DocIntake.Api/packages.lock.json src/DocIntake.Api/
+RUN dotnet restore src/DocIntake.Api/DocIntake.Api.csproj -a $TARGETARCH \
+ && dotnet restore src/DocIntake.Renderer/DocIntake.Renderer.csproj -a $TARGETARCH
 COPY src/ src/
 # A runtime-specific publish keeps only this platform's native libraries (ImageMagick, PDFium, Skia, ONNX Runtime).
-RUN dotnet publish src/LayaSample.Renderer/LayaSample.Renderer.csproj -c Release -a $TARGETARCH --no-restore -o /app/renderer \
- && dotnet publish src/LayaSample.Api/LayaSample.Api.csproj -c Release -a $TARGETARCH --no-restore -o /app/api \
+RUN dotnet publish src/DocIntake.Renderer/DocIntake.Renderer.csproj -c Release -a $TARGETARCH --no-restore -o /app/renderer \
+ && dotnet publish src/DocIntake.Api/DocIntake.Api.csproj -c Release -a $TARGETARCH --no-restore -o /app/api \
  # The API renders in-process only in development; production requires the renderer, so it carries no OCR models.
  && rm -rf /app/api/models
 
@@ -66,7 +66,7 @@ USER $APP_UID
 # Ready once the OCR models are loaded. The image has no curl, so bash's /dev/tcp makes the request.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=1m --retries=3 \
     CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
-ENTRYPOINT ["dotnet", "LayaSample.Renderer.dll"]
+ENTRYPOINT ["dotnet", "DocIntake.Renderer.dll"]
 
 # ---- API (last, so it is also the default target)
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS api
@@ -83,4 +83,4 @@ USER $APP_UID
 # the service works.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=2m --retries=3 \
     CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
-ENTRYPOINT ["dotnet", "LayaSample.Api.dll"]
+ENTRYPOINT ["dotnet", "DocIntake.Api.dll"]

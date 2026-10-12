@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <!-- xunit v3 test projects are self-hosting executables (Microsoft.Testing.Platform). -->
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.MTP" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- OCR tests draw text with this font, so they don't depend on the machine's fonts (CI runners have none). -->
+    <EmbeddedResource Include="Fonts\DejaVuSans.ttf" LogicalName="DejaVuSans.ttf" />
+    <None Include="Fonts\DejaVu-LICENSE.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\redteam\GarakShim\GarakShim.csproj" />
+    <ProjectReference Include="..\..\src\DocIntake.Api\DocIntake.Api.csproj" />
+    <ProjectReference Include="..\..\src\DocIntake.Renderer\DocIntake.Renderer.csproj" />
+    <!-- Direct, so RapidOcrNet's build targets (which copy the bundled OCR models) reach this project too. -->
+    <ProjectReference Include="..\..\src\DocIntake.Rendering\DocIntake.Rendering.csproj" />
+  </ItemGroup>
+
+</Project>

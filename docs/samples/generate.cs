@@ -1,11 +1,11 @@
-#:project ../../tests/LayaSample.Tests/LayaSample.Tests.csproj
+#:project ../../tests/DocIntake.Tests/DocIntake.Tests.csproj
 #:property RestorePackagesWithLockFile=false
 
 // Regenerates the manual-testing samples in this folder: dotnet run docs/samples/generate.cs
 // Most come from the test fixtures; the "-ocr" samples carry real text so OCR has something to read.
 
 using ImageMagick;
-using LayaSample.Tests;
+using DocIntake.Tests;
 using SkiaSharp;
 using UglyToad.PdfPig.Core;
 using UglyToad.PdfPig.Writer;

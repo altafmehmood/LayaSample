@@ -8,5 +8,5 @@ docs/
 tests/
 # models/ stays in the context: the model stages use matching files from it instead of downloading them. Earlier
 # model locations are excluded so they never end up in the .NET build stage.
-src/LayaSample.Api/model-cache/
-src/LayaSample.Rendering/ocr-models/
+src/DocIntake.Api/model-cache/
+src/DocIntake.Rendering/ocr-models/

@@ -1,4 +1,6 @@
-# LayaSample
+# DocIntake
+
+Formerly LayaSample; Laya is now the name of the feedback model only (see [docs/docintake-architecture.md](docs/docintake-architecture.md)).
 
 Lending-document intelligence on .NET 10. Upload a loan application, UCC-1, UCC-3 or loan and security agreement as a
 PDF, image or Office file. The service works out how to read it (text layer, rendered page image, OCR for scans and
@@ -10,20 +12,22 @@ OpenAI vision and text models.
 | Feature | What it gives you | Run it |
 |---|---|---|
 | [Document analysis](#document-analysis) | Classifies a PDF, image or Office file and prepares it for an agent: page images, markdown, OCR text, form values. No model, no cost | `curl -F file=@docs/samples/pdf/corpus/redwood-mechanical-ucc1-fax.pdf localhost:5091/api/documents/analyze` |
-| [AI extraction](#ai-extraction) | Borrower, lender, collateral and every UCC box as structured data with page citations (OpenAI vision and text) | `dotnet user-secrets set "Extraction:ApiKey" "sk-..." --project src/LayaSample.Api`, then `POST /api/documents/extract` |
+| [AI extraction](#ai-extraction) | Borrower, lender, collateral and every UCC box as structured data with page citations (OpenAI vision and text) | `dotnet user-secrets set "Extraction:ApiKey" "sk-..." --project src/DocIntake.Api`, then `POST /api/documents/extract` |
 | [Usage and cost](#ai-extraction) | Every model call recorded (API key fingerprint, file name, input, cached, reasoning, output tokens, list-price cost) and served as JSON or CSV | `curl -H "X-Api-Key: $KEY" "localhost:5091/api/usage?format=csv"` |
 | [Security layers](#security) | Malware scan (ClamAV), active-content, hidden-text and prompt-injection checks, all reported in `risks` and refused with 422 by default | `docker compose up -d clamav`, then upload the EICAR test file |
-| [Authentication](#authentication) | `X-Api-Key` on the endpoints that spend money; key fingerprints in the usage history; optional admin keys | `dotnet user-secrets set "Auth:ApiKeys:0" "$(openssl rand -base64 32)" --project src/LayaSample.Api` |
+| [Authentication](#authentication) | `X-Api-Key` on the endpoints that spend money; key fingerprints in the usage history; optional admin keys | `dotnet user-secrets set "Auth:ApiKeys:0" "$(openssl rand -base64 32)" --project src/DocIntake.Api` |
 | [Isolated renderer](#architecture) | PDFium, ImageMagick and OCR in a separate container: no network, read-only file system | `docker compose up --build` |
 | [Telemetry](#telemetry-honeycomb) | Traces, metrics and logs to Honeycomb, including prompts, answers, tokens and cost | set the `OTEL_EXPORTER_OTLP_*` user secrets, see [Telemetry](#telemetry-honeycomb) |
-| [Lending corpus and evaluation](#lending-corpus) | 39 synthetic lending PDFs with ground truth, and an opt-in accuracy score for the model | `RUN_EXTRACTION_EVAL=1 dotnet run --project tests/LayaSample.Tests -c Release -- -trait "Category=Evaluation"` (paid) |
+| [Lending corpus and evaluation](#lending-corpus) | 39 synthetic lending PDFs with ground truth, and an opt-in accuracy score for the model | `RUN_EXTRACTION_EVAL=1 dotnet run --project tests/DocIntake.Tests -c Release -- -trait "Category=Evaluation"` (paid) |
 | [Red team](redteam/README.md) | garak attacks the extraction API through a shim, with the defences on and in `flag` mode | `redteam/run.sh --smoke` (paid) |
 | [Kubernetes deploy](#kubernetes) | Helm chart and CI deploy to DOKS: Gateway API, TLS, ClamAV, usage PVC, collector | see [deploy/README.md](deploy/README.md) |
 | [Feedback sentiment](#feedback-sentiment) | The original sample: hotel feedback sentiment with the Laya decision model | `curl -H 'Content-Type: application/json' -d '{"text":"The room was dirty"}' localhost:5091/api/feedback/analyze` |
 
 Longer notes on how each feature set works, its settings, limits and what was verified:
 [docs/security-cost-hardening.md](docs/security-cost-hardening.md) (usage tracking, ClamAV, content checks, streaming, red team) and
-[docs/threat-model.md](docs/threat-model.md) (what could go wrong at each trust boundary, and what is still open).
+[docs/threat-model.md](docs/threat-model.md) (what could go wrong at each trust boundary, and what is still open) and
+[docs/docintake-architecture.md](docs/docintake-architecture.md) (the DocIntake rename and the move to a gateway and
+services, with the full list of telemetry renames).
 
 The README is kept in step with the code: a new feature gets a row here, a section below, and a line in the quick start
 or its own section if it needs setup.
@@ -34,7 +38,7 @@ You need the .NET 10 SDK. Steps 1 to 3 need no Docker, API key or cluster.
 
 1. **Start the API.** The first run downloads the Laya model (~850 MB, several minutes); the OCR models ship with the app.
 
-       dotnet run --project src/LayaSample.Api
+       dotnet run --project src/DocIntake.Api
 
 2. **Wait until it is ready.** `503` means the models are still loading, `200` means ready.
 
@@ -53,20 +57,20 @@ You need the .NET 10 SDK. Steps 1 to 3 need no Docker, API key or cluster.
    Store it once as a [user secret](https://learn.microsoft.com/aspnet/core/security/app-secrets) (kept in your user
    profile, outside the repository, and read only when running in Development), then restart the API:
 
-       dotnet user-secrets set "Extraction:ApiKey" "sk-..." --project src/LayaSample.Api
-       dotnet run --project src/LayaSample.Api
+       dotnet user-secrets set "Extraction:ApiKey" "sk-..." --project src/DocIntake.Api
+       dotnet run --project src/DocIntake.Api
        curl -F "file=@docs/samples/pdf/corpus/redwood-mechanical-ucc1-fax.pdf" localhost:5091/api/documents/extract
 
    Locally the endpoint needs no access key; see [Authentication](#authentication) for deployments.
 
-   Remove it with `dotnet user-secrets remove "Extraction:ApiKey" --project src/LayaSample.Api`. The `OPENAI_API_KEY`
+   Remove it with `dotnet user-secrets remove "Extraction:ApiKey" --project src/DocIntake.Api`. The `OPENAI_API_KEY`
    environment variable works too (a configured `Extraction:ApiKey` wins). Without a key the endpoint answers `503` and
    nothing else changes. The models are `Extraction:VisionModel` and `Extraction:TextModel` in `appsettings.json`;
    override them with the `Extraction__VisionModel` and `Extraction__TextModel` environment variables.
 
 5. **Run the tests.** They are offline: OCR, the model provider and the malware scanner are faked.
 
-       dotnet run --project tests/LayaSample.Tests -c Release
+       dotnet run --project tests/DocIntake.Tests -c Release
 
    CI runs them with `dotnet test`. Three kinds of test never run unless you ask: the AI accuracy evaluation (it calls the
    paid OpenAI API; it needs `RUN_EXTRACTION_EVAL=1`, even when a key is set, see [AI extraction](#ai-extraction)), the
@@ -83,6 +87,26 @@ One entry per day's work, newest first: what was added, the commands to try it a
 Compose on 8080.
 
 ### 2026-10-11
+
+**Renamed LayaSample → DocIntake.** The project, solution, namespaces, Helm chart, local images and telemetry now use
+the DocIntake name. Laya is now only the feedback model's name. Behaviour is unchanged, but **telemetry names
+changed**:
+- Honeycomb datasets: `laya-sample-api` is now `docintake-gateway`, and `laya-sample-renderer` is now
+  `docintake-document`.
+- Span, attribute and metric names: the `laya.` prefix is now `intake.`.
+- Meters: `LayaSample.*` is now `DocIntake.*`.
+
+Entries below this one still say `src/LayaSample.Api`; read it as `src/DocIntake.Api`. The live cluster keeps its names
+(namespace `laya`, `laya-*` secrets, GHCR images) until the services cutover. The full rename table is in
+[docs/docintake-architecture.md](docs/docintake-architecture.md).
+
+    dotnet run --project src/DocIntake.Api
+    curl -F "file=@docs/samples/pdf/corpus/redwood-mechanical-ucc1-fax.pdf" "localhost:5091/api/documents/analyze?includeData=false"
+
+You should see `"kind": "FaxPdf"` with strategy `Hybrid`. With the OTLP user secrets set, the trace shows up in the
+`docintake-gateway` dataset with `intake.classify` and `intake.prepare` spans. Nothing here is paid. With Docker Compose,
+the project is now `docintake`, so it starts with fresh volumes and the old `laya-sample_*` volumes stay until you
+remove them.
 
 **Threat model.** A STRIDE review of each trust boundary: what already stops each threat, what does not, and the order
 to fix the open ones. A desk review of commit `6fe4128`; nothing was attacked or tested. See
@@ -179,7 +203,7 @@ Only `POST /api/documents/extract` needs a key, because it is the endpoint that 
 the other endpoints are open, so put the service behind an authenticating gateway before exposing those to an
 untrusted network. Callers send the key in a header:
 
-    curl -H "X-Api-Key: $LAYA_API_KEY" -F "file=@document.pdf" https://api.example.com/api/documents/extract
+    curl -H "X-Api-Key: $DOCINTAKE_API_KEY" -F "file=@document.pdf" https://api.example.com/api/documents/extract
 
 - **Configure it** with `Auth:ApiKeys` (an array, so a key can be rotated without downtime): the environment variables
   `Auth__ApiKeys__0`, `Auth__ApiKeys__1`, a user secret, or in Kubernetes a Secret (see [deploy/README.md](deploy/README.md)).
@@ -187,10 +211,10 @@ untrusted network. Callers send the key in a header:
   `openssl rand -base64 32`.
 - **It fails closed.** In any environment except Development, extraction answers `503` until a key is configured. In
   Development it is open when no key is set, so the quick start needs no setup; set one to try it locally:
-  `dotnet user-secrets set "Auth:ApiKeys:0" "<key>" --project src/LayaSample.Api`.
+  `dotnet user-secrets set "Auth:ApiKeys:0" "<key>" --project src/DocIntake.Api`.
 - **The check runs first.** A request with a missing or wrong key gets `401` before its upload is read, before it can
   take a slot in the queue and before anything reaches OpenAI. Keys are compared in constant time and never logged;
-  rejections are counted on the `laya.auth.rejections` metric.
+  rejections are counted on the `intake.auth.rejections` metric.
 - **Scalar** shows an authentication field for `extract` (the docs page itself stays public). Enter the key there and
   "Try it" sends the header.
 - **A shared key is a gate, not a budget.** Anyone holding it can spend until OpenAI stops them, so also put this
@@ -276,7 +300,7 @@ The code depends only on `IChatClient` (Microsoft.Extensions.AI), so another pro
 Provider errors map to HTTP statuses: rate limiting is 503 with `Retry-After`, a rejected key is 503, a document the
 model cannot take is 422, a failed or unreadable answer is 502, a provider timeout is 504. Logs hold counts, kinds,
 models and token usage, never file names, values or quotes, and not the provider's error text, which can echo part of
-the API key. Metrics are on the `LayaSample.Documents` meter.
+the API key. Metrics are on the `DocIntake.Documents` meter.
 
 **Privacy.** The document's pages (images and text) are sent to OpenAI. Under OpenAI's API terms the data is not used
 for training and requests are not stored (`store` is false), but abuse monitoring may retain them for up to 30 days
@@ -289,8 +313,8 @@ call, the generic-agent retry and an answer that was cut off or refused (still b
 that failed before OpenAI answered has no tokens. The extract response also returns the totals in `usage`
 (`cachedInputTokens`, `reasoningTokens`, `costUsd`).
 
-    curl -H "X-Api-Key: $LAYA_API_KEY" "http://localhost:8080/api/usage?from=2026-10-01&format=csv" -o usage.csv
-    curl -H "X-Api-Key: $LAYA_API_KEY" "http://localhost:8080/api/usage/summary?groupBy=model"
+    curl -H "X-Api-Key: $DOCINTAKE_API_KEY" "http://localhost:8080/api/usage?from=2026-10-01&format=csv" -o usage.csv
+    curl -H "X-Api-Key: $DOCINTAKE_API_KEY" "http://localhost:8080/api/usage/summary?groupBy=model"
 
 | Endpoint | Returns |
 |---|---|
@@ -302,11 +326,11 @@ from the caller, so a CSV cell that starts with `=`, `+`, `-` or `@` gets a lead
 formula. Both endpoints need an `X-Api-Key`, and a key sees only its own rows; keys listed under `Auth:AdminKeys`
 (none by default) see everyone's and are also accepted for extraction.
 
-The history is a SQLite file at `Usage:DatabasePath` (`src/LayaSample.Api/data/usage.db` for `dotnet run`, `/data/usage.db`
+The history is a SQLite file at `Usage:DatabasePath` (`src/DocIntake.Api/data/usage.db` for `dotnet run`, `/data/usage.db`
 in the container, on the `usage-data` volume in compose and a PersistentVolumeClaim in Kubernetes). An empty path
 switches tracking off and the endpoints answer 503. Writing happens in the background, so a storage failure is logged and
-counted (`laya.usage.write_failures`) but never fails an extraction. Spend also goes to the `laya.llm.cost` and
-`laya.extraction.tokens` metrics.
+counted (`intake.usage.write_failures`) but never fails an extraction. Spend also goes to the `intake.llm.cost` and
+`intake.extraction.tokens` metrics.
 
 **The cost is a list-price estimate, not the invoice.** `Extraction:Pricing` holds the per-model prices (per million
 tokens, with a higher tier above 272,000 input tokens) and the date they were read; update it when OpenAI changes them.
@@ -320,7 +344,7 @@ rendering, the keyword detector's hit rate, and every miss. It calls the paid AP
 unless you set `RUN_EXTRACTION_EVAL=1` (and a key: `OPENAI_API_KEY` or the `Extraction:ApiKey` user secret). A key alone does
 not run it, so a plain `dotnet test` never spends money:
 
-    RUN_EXTRACTION_EVAL=1 dotnet run --project tests/LayaSample.Tests -c Release -- -trait "Category=Evaluation" -showLiveOutput
+    RUN_EXTRACTION_EVAL=1 dotnet run --project tests/DocIntake.Tests -c Release -- -trait "Category=Evaluation" -showLiveOutput
 
 Optional environment variables: `EVAL_VISION_MODEL`, `EVAL_TEXT_MODEL` (to compare models), `EVAL_FILTER` (a substring
 of the file name, e.g. `-fax`), `EVAL_MIN_ACCURACY` (default 0.9). In CI it is the manual `extraction-eval` job.
@@ -402,7 +426,7 @@ Untrusted PDFs and images are parsed by native C/C++ libraries (PDFium, ImageMag
 Those run only in a separate **renderer** service, so a malicious or malformed file that crashes or takes over a
 parser cannot take down the API or reach its data:
 
-| | `LayaSample.Api` | `LayaSample.Renderer` |
+| | `DocIntake.Api` | `DocIntake.Renderer` |
 |---|---|---|
 | Does | File-type detection, PDF classification and text (PdfPig, managed), Office conversion, form data, signatures, AI extraction, Laya, routing | Page rendering (PDFium), image decoding (ImageMagick), PNG encoding, OCR |
 | Sees untrusted bytes in native code | No | Yes, isolated: no network egress, read-only file system, no capabilities, own memory/CPU limits |
@@ -411,14 +435,14 @@ parser cannot take down the API or reach its data:
 The API calls the renderer over HTTP (`DocumentAnalysis:RendererUrl`). If the renderer dies on a document, that
 request gets 502 and the renderer restarts; if it is down, documents that need it get 503 with `Retry-After` while
 text PDFs, Office files and feedback analysis keep working, and the API's readiness reports the renderer as
-`Degraded`. Shared code is in `src/LayaSample.Rendering`.
+`Degraded`. Shared code is in `src/DocIntake.Rendering`.
 
 In development (`dotnet run`) the API renders in-process, because `appsettings.Development.json` sets
 `DocumentAnalysis:AllowInProcessRendering`. Without that setting or a `RendererUrl`, the API refuses to start, so a
 production deployment cannot fall back to in-process rendering by accident. To run the renderer locally as well:
 
-    dotnet run --project src/LayaSample.Renderer                  # http://localhost:5092
-    DocumentAnalysis__RendererUrl=http://localhost:5092 dotnet run --project src/LayaSample.Api
+    dotnet run --project src/DocIntake.Renderer                  # http://localhost:5092
+    DocumentAnalysis__RendererUrl=http://localhost:5092 dotnet run --project src/DocIntake.Api
 
 ## Limits
 
@@ -436,8 +460,8 @@ Document analysis is CPU-bound, so each request runs within limits set under `Do
 
 Invalid settings stop the app at startup. `?includeData=false` leaves base64 page images out of the response.
 
-Durations per stage and documents by kind and outcome are published on the `LayaSample.Documents` meter
-(`dotnet-counters monitor -n LayaSample.Api --counters LayaSample.Documents`).
+Durations per stage and documents by kind and outcome are published on the `DocIntake.Documents` meter
+(`dotnet-counters monitor -n DocIntake.Api --counters DocIntake.Documents`).
 
 ## Security
 
@@ -453,7 +477,7 @@ An upload goes through these layers. The first four run in the API; the native-c
 | **Isolation** | PDFium, ImageMagick and OCR run only in the renderer: no network, read-only file system, no capabilities. | |
 
 Every finding is in the `risks` list of the analyze and extract responses (kind, severity, page, detail), and counted on
-the `laya.risk.findings` metric. The detail names the kind of thing and where; it never repeats the document's text, and
+the `intake.risk.findings` metric. The detail names the kind of thing and where; it never repeats the document's text, and
 the malware signature stays in the log and the trace.
 
 | Setting | Default | Effect |
@@ -474,7 +498,7 @@ finding, including the scans and faxes read by the real OCR. Treat the extracted
 
 ClamAV is GPL-2.0 and runs as its own container, which the API talks to over TCP; it is not part of the application (see
 `CLAUDE.md`). Run the tests that use a real daemon with `docker compose up -d clamav` and then
-`CLAMD_HOST=localhost dotnet run --project tests/LayaSample.Tests -c Release -- -trait "Category=Integration"`; the real-OCR
+`CLAMD_HOST=localhost dotnet run --project tests/DocIntake.Tests -c Release -- -trait "Category=Integration"`; the real-OCR
 check of the sample scans runs with `REAL_OCR=1` in the same command.
 
 **Red team.** [redteam/](redteam/README.md) attacks the API with [garak](https://github.com/NVIDIA/garak), by hand or with the manual
@@ -501,7 +525,7 @@ that flips upside-down lines, and a recognizer that reads characters from a dict
 | `PPOCRv6Medium` | Multilingual, slowest (~4x v5 per page) | ~138 MB | `scripts/download-models.sh` |
 
     scripts/download-models.sh ocr PPOCRv6Small     # into models/ocr/v6; the build copies them next to the binary
-    DocumentAnalysis__OcrModel=PPOCRv6Small dotnet run --project src/LayaSample.Api
+    DocumentAnalysis__OcrModel=PPOCRv6Small dotnet run --project src/DocIntake.Api
 
 Downloads are pinned and SHA-256 verified. If the configured models are missing, documents that need OCR get a 503
 rather than being reported as unreadable. Local models live in [`models/`](models/README.md) (ignored by git).
@@ -516,14 +540,14 @@ the API once with `dotnet run`, or copy `models/` from another machine.
 
     docker compose up --build                                  # http://localhost:8080
     OCR_MODEL=PPOCRv6Small docker compose up --build           # multilingual OCR
-    OPENAI_API_KEY=sk-... LAYA_API_KEY=$(openssl rand -base64 32) docker compose up --build   # enables /api/documents/extract
+    OPENAI_API_KEY=sk-... DOCINTAKE_API_KEY=$(openssl rand -base64 32) docker compose up --build   # enables /api/documents/extract
 
 A third container, `clamav`, scans every upload for malware; see [Security](#security). Its first start downloads the
 signature database (a minute or two), and the API starts once it reports healthy. It has no memory or CPU limit and uses
 about 1 GiB when idle.
 
 Containers run in Production, where user secrets are not read, so the keys come from the environment, and extraction
-answers 503 without `LAYA_API_KEY` (callers send it as `X-Api-Key`). The renderer
+answers 503 without `DOCINTAKE_API_KEY` (callers send it as `X-Api-Key`). The renderer
 is on an internal network with no route out, has a read-only file system (`/tmp` is a tmpfs), drops all Linux
 capabilities, and has its own memory, CPU and process limits; it restarts automatically after a crash. Both run as
 non-root users and have a `HEALTHCHECK` on `/health/ready`. The images are built from one `Dockerfile`
@@ -545,15 +569,15 @@ Both services send traces, metrics and logs over OpenTelemetry (OTLP) when `OTEL
 they export nothing. In Kubernetes and in compose the renderer has no route out, so both services send to a small
 collector that alone talks to Honeycomb (see below), and the renderer's spans join the API's trace.
 
-**What you get.** One extract request is a single trace: the HTTP request (tagged `laya.file.bytes`, `laya.document.kind`,
-`laya.document.strategy`, `laya.document.pages`, `laya.outcome` = `ok` / `rejected` / `renderer_unavailable` / `rate_limited` /
-`auth_invalid` / `extraction_failed`...) with children `laya.buffer`, `laya.classify`, `laya.prepare`, `laya.render` (the
-call to the renderer, with `renderer.render` / `renderer.page` / `renderer.ocr` beneath it), `laya.extraction` and one
-`laya.extract` per model call. `laya.extract` carries the system prompt, the document text sent (page images appear only
-as `[image ..., N bytes]`), the model's answer (`laya.extraction.result`), token counts, and retry events. This is a
+**What you get.** One extract request is a single trace: the HTTP request (tagged `intake.file.bytes`, `intake.document.kind`,
+`intake.document.strategy`, `intake.document.pages`, `intake.outcome` = `ok` / `rejected` / `renderer_unavailable` / `rate_limited` /
+`auth_invalid` / `extraction_failed`...) with children `intake.buffer`, `intake.classify`, `intake.prepare`, `intake.render` (the
+call to the renderer, with `renderer.render` / `renderer.page` / `renderer.ocr` beneath it), `intake.extraction` and one
+`intake.extract` per model call. `intake.extract` carries the system prompt, the document text sent (page images appear only
+as `[image ..., N bytes]`), the model's answer (`intake.extraction.result`), token counts, and retry events. This is a
 technology demonstrator, so prompts and answers are recorded; do not keep that for real documents. Failures are recorded
-on the span (`exception.*`, `laya.failure.kind`) and logged. Metrics are on the `LayaSample.Documents` and
-`LayaSample.Rendering` meters (document size and pages, queue wait, extraction duration and in-flight, fields found,
+on the span (`exception.*`, `intake.failure.kind`) and logged. Metrics are on the `DocIntake.Documents` and
+`DocIntake.Rendering` meters (document size and pages, queue wait, extraction duration and in-flight, fields found,
 warnings, LLM retries, rate-limit rejections, render/OCR duration, model load times) plus ASP.NET Core, Kestrel,
 HttpClient and .NET runtime metrics. Startup logs one line with the version, renderer, models and limits.
 
@@ -561,30 +585,30 @@ HttpClient and .NET runtime metrics. Startup logs one line with the version, ren
 live in user secrets, next to the other keys (read in Development only, so they never reach git or a container):
 
 ```sh
-dotnet user-secrets set "OTEL_EXPORTER_OTLP_ENDPOINT" "https://api.honeycomb.io" --project src/LayaSample.Api
-dotnet user-secrets set "OTEL_EXPORTER_OTLP_HEADERS" "x-honeycomb-team=<ingest key>" --project src/LayaSample.Api
-dotnet user-secrets set "OTEL_EXPORTER_OTLP_PROTOCOL" "http/protobuf" --project src/LayaSample.Api
-dotnet run --project src/LayaSample.Api
+dotnet user-secrets set "OTEL_EXPORTER_OTLP_ENDPOINT" "https://api.honeycomb.io" --project src/DocIntake.Api
+dotnet user-secrets set "OTEL_EXPORTER_OTLP_HEADERS" "x-honeycomb-team=<ingest key>" --project src/DocIntake.Api
+dotnet user-secrets set "OTEL_EXPORTER_OTLP_PROTOCOL" "http/protobuf" --project src/DocIntake.Api
+dotnet run --project src/DocIntake.Api
 curl -F "file=@docs/samples/pdf/text.pdf" http://localhost:5091/api/documents/analyze
 ```
 
 The secret names are the standard OpenTelemetry variable names, exactly as above. The protocol line is needed for
 collectors that only take OTLP over HTTP (the SDK defaults to gRPC); Honeycomb accepts either. Remove them with
-`dotnet user-secrets remove <name> --project src/LayaSample.Api`.
+`dotnet user-secrets remove <name> --project src/DocIntake.Api`.
 
 Containers run in Production, where user secrets are not read, so with `docker compose` use environment variables.
 The renderer sits on a network with no route out, so run the bundled collector, which both services then send to:
 
 ```sh
-LAYA_OTLP_ENDPOINT=http://collector:4318 HONEYCOMB_API_KEY=<ingest key> \
+DOCINTAKE_OTLP_ENDPOINT=http://collector:4318 HONEYCOMB_API_KEY=<ingest key> \
   docker compose --profile telemetry up --build        # then use port 8080
 ```
 
 Without the profile, set `OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io` and
 `OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=<ingest key>"` to export from the API only (the renderer stays silent).
 
-Within a minute a `laya-sample-api` dataset appears in Honeycomb with a `POST` root span and `laya.classify` /
-`laya.prepare` children (plus `renderer.*` spans for rendered pages, from the `laya-sample-renderer` service). Add `-H "X-Api-Key: $LAYA_API_KEY"` and the `extract` endpoint to see `laya.extract` with the
+Within a minute a `docintake-gateway` dataset appears in Honeycomb with a `POST` root span and `intake.classify` /
+`intake.prepare` children (plus `renderer.*` spans for rendered pages, from the `docintake-document` service). Add `-H "X-Api-Key: $DOCINTAKE_API_KEY"` and the `extract` endpoint to see `intake.extract` with the
 model and token counts. To see the spans without a Honeycomb account, point the endpoint at a local OpenTelemetry
 Collector (`http://localhost:4318`, protocol `http/protobuf`).
 
@@ -610,7 +634,7 @@ download.
 
 ## Test and CI
 
-    dotnet run --project tests/LayaSample.Tests -c Release
+    dotnet run --project tests/DocIntake.Tests -c Release
 
 CI (`.github/workflows/ci.yml`) restores in locked mode (`packages.lock.json`), builds with warnings as errors, runs the
 tests, fails on vulnerable packages or licences outside `.github/allowed-licenses.json`, builds both Docker images,

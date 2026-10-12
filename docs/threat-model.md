@@ -25,7 +25,7 @@ It is a desk review: the code, charts and CI were read, and nothing here was att
 
 1. **Internet to gateway.** Callers are untrusted. Their documents are hostile until scanned.
 2. **Gateway to API.** The API is the only public workload; the HTTP route sends everything under the prefix to it
-   (`deploy/helm/laya-sample/templates/httproute.yaml:24-26`).
+   (`deploy/helm/docintake/templates/httproute.yaml:24-26`).
 3. **API to ClamAV.** Documents go out over TCP; a verdict comes back.
 4. **API to renderer.** The renderer runs native code (PDFium, ImageMagick) on untrusted bytes, so it is the most exposed
    component after the API itself.

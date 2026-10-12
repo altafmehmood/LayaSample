@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "docintake.fullname" . }}-renderer
+  labels:
+    {{- include "docintake.labels" (dict "root" . "component" "renderer") | nindent 4 }}
+spec:
+  replicas: {{ .Values.renderer.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "docintake.selectorLabels" (dict "root" . "component" "renderer") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "docintake.labels" (dict "root" . "component" "renderer") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "docintake.podSecurityContext" . | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: renderer
+          image: {{ include "docintake.image" (dict "root" . "image" .Values.renderer.image) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DocumentAnalysis__MaxConcurrentJobs
+              value: {{ .Values.renderer.config.maxConcurrentJobs | int64 | quote }}
+            - name: DocumentAnalysis__MaxQueuedJobs
+              value: {{ .Values.renderer.config.maxQueuedJobs | int64 | quote }}
+            {{- with .Values.renderer.config.ocrModel }}
+            - name: DocumentAnalysis__OcrModel
+              value: {{ . | quote }}
+            {{- end }}
+            {{- include "docintake.telemetryEnv" . | nindent 12 }}
+            {{- with .Values.renderer.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          startupProbe:
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: {{ .Values.renderer.startupProbe.periodSeconds }}
+            failureThreshold: {{ .Values.renderer.startupProbe.failureThreshold }}
+          readinessProbe:
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: 15
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.renderer.resources | nindent 12 }}
+          securityContext:
+            {{- include "docintake.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi

@@ -486,14 +486,14 @@ $RECYCLE.BIN/
 !/models/README.md
 
 # Earlier model locations
-src/LayaSample.Api/model-cache/
-src/LayaSample.Rendering/ocr-models/
+src/DocIntake.Api/model-cache/
+src/DocIntake.Rendering/ocr-models/
 
 # Test run output
 TestResults/
 
 # Usage history written by `dotnet run` (see Usage:DatabasePath)
-src/LayaSample.Api/data/
+src/DocIntake.Api/data/
 
 # garak red-team run output and its virtualenv
 redteam/reports/

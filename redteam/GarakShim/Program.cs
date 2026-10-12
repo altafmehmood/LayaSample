@@ -18,7 +18,7 @@ if (options.Error is not null)
     return 2;
 }
 
-var apiKey = Environment.GetEnvironmentVariable("LAYA_API_KEY");
+var apiKey = Environment.GetEnvironmentVariable("DOCINTAKE_API_KEY");
 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds) };
 using var listener = new HttpListener();
 listener.Prefixes.Add($"http://127.0.0.1:{options.Port}/");
@@ -71,7 +71,7 @@ async Task<string> Send(string prompt)
     using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(options.Target, "api/documents/extract")) { Content = form };
     if (!string.IsNullOrEmpty(apiKey))
         request.Headers.Add("X-Api-Key", apiKey);
-    request.Headers.UserAgent.ParseAdd($"laya-garak/{options.RunId}");
+    request.Headers.UserAgent.ParseAdd($"docintake-garak/{options.RunId}");
     try
     {
         using var response = await http.SendAsync(request);

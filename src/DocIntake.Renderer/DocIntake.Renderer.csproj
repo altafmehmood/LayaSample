@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\DocIntake.Rendering\DocIntake.Rendering.csproj" />
+  </ItemGroup>
+
+</Project>

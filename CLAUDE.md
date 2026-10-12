@@ -1,4 +1,4 @@
-# LayaSample
+# DocIntake
 
 ## Keep the README current
 
@@ -23,4 +23,4 @@
 - Use the latest stable version when adding or reviewing a package.
 - One approved exception: ClamAV (GPL-2.0) scans uploads. It runs as its own container, which the API reaches over TCP (clamd's INSTREAM protocol); it is not a package, and nothing of it is linked into or bundled with the application. Approved explicitly because it is open source software. Do not add other copyleft components on the strength of this.
 - Developer tools that run outside the build (for example garak for red-teaming, Apache-2.0) are pinned in their own requirements file and are not covered by the NuGet licence check, but they still must be permissively licensed.
-- CI enforces the licence list in `.github/allowed-licenses.json` (`dotnet dnx -y nuget-license@4.0.18 -- -i LayaSample.slnx -t -a .github/allowed-licenses.json` runs it locally).
+- CI enforces the licence list in `.github/allowed-licenses.json` (`dotnet dnx -y nuget-license@4.0.18 -- -i DocIntake.slnx -t -a .github/allowed-licenses.json` runs it locally).

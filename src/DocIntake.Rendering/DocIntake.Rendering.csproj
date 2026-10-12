@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Everything that hands untrusted document bytes to native code: PDFium (PDFtoImage), ImageMagick (Magick.NET),
+    Skia and OCR (RapidOcrNet / ONNX Runtime). Runs in the renderer service; the API uses it in-process only in
+    development.
+  -->
+
+  <PropertyGroup>
+    <!-- PDFtoImage is annotated with a platform list that excludes nothing we deploy to. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Magick.NET-Q8-AnyCPU" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+    <PackageReference Include="PDFtoImage" />
+    <!-- Its build targets copy the bundled PP-OCRv5 models next to the binary. Build assets are private by default, so
+         without this the renderer (which references this project, not the package) would publish no models. -->
+    <PackageReference Include="RapidOcrNet" PrivateAssets="contentfiles;analyzers" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DocIntake.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Optional PP-OCRv6 models in the repository's models/ocr/v6 (scripts/download-models.sh), copied to models/v6
+         next to the v5 set the NuGet copies (into every project that references this one). -->
+    <None Include="../../models/ocr/v6/*" Link="models/v6/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

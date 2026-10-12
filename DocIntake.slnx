@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DocIntake.Api/DocIntake.Api.csproj" />
+    <Project Path="src/DocIntake.Renderer/DocIntake.Renderer.csproj" />
+    <Project Path="src/DocIntake.Rendering/DocIntake.Rendering.csproj" />
+  </Folder>
+  <Folder Name="/redteam/">
+    <Project Path="redteam/GarakShim/GarakShim.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DocIntake.Tests/DocIntake.Tests.csproj" />
+  </Folder>
+</Solution>
