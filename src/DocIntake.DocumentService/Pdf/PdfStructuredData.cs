@@ -7,7 +7,7 @@ using UglyToad.PdfPig.AcroForms;
 using UglyToad.PdfPig.AcroForms.Fields;
 using UglyToad.PdfPig.Tokens;
 
-namespace DocIntake.Api.Services.Documents.Pdf;
+namespace DocIntake.DocumentService.Pdf;
 
 /// <summary>Reads machine-readable data out of a PDF: form values, XFA datasets and embedded files.</summary>
 public static class PdfStructuredData

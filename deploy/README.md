@@ -1,6 +1,6 @@
 # Deploying to DigitalOcean Kubernetes
 
-The Helm chart in [`helm/docintake`](helm/docintake) runs the API and the isolated renderer and publishes the API
+The Helm chart in [`helm/docintake`](helm/docintake) runs the API (the gateway) and the isolated renderer (now the document service: it classifies and prepares every upload) and publishes the API
 through the Gateway API.
 
 ```
@@ -231,7 +231,7 @@ helm uninstall laya -n laya
 | Gateway has no ADDRESS | `kubectl describe gateway laya -n laya`; the load balancer can take a few minutes. |
 | Certificate stays `False` | `kubectl describe certificate,order,challenge -n laya`. The DNS A record must resolve to the Gateway, and port 80 must reach it. |
 | Pods `Pending` | `kubectl describe pod -n laya`: not enough memory on the node. Check `kubectl describe node`. |
-| API pod `OOMKilled` or renderer restarts on big scans | Raise `renderer.resources.limits.memory` (a five-page scan peaks around 550 MiB) and give the node more memory. |
+| API pod `OOMKilled` or renderer restarts on big scans or big spreadsheets (the renderer now also loads Office files and every PDF's structure) | Raise `renderer.resources.limits.memory` (a five-page scan peaks around 550 MiB) and give the node more memory. |
 | 502 from the API | The renderer is down or was OOM-killed; `kubectl logs deploy/laya-renderer -n laya`. |
 | 503 with `Retry-After` | Queues are full (one document at a time by default). Raise `api.config.maxQueuedAnalyses` or add capacity. |
 | 504 | `api.config.requestTimeoutSeconds` elapsed; the route timeout (`gateway.requestTimeout`) must stay above it. |

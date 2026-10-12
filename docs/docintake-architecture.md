@@ -33,6 +33,151 @@ Target, in later phases:
 | `docintake-extraction` | The model agents. The only service with internet access and the model key. |
 | `docintake-decisions` | The Laya model |
 
+## Phase 3: the document service (2026-10-12)
+
+**What it does.** The renderer grew into the **document service**. Classification and preparation moved into it, with
+PdfPig, the Office libraries and the native libraries it already had. The gateway (`DocIntake.Api`) no longer contains
+any code that reads a document: no PDF, Office, image or OCR library, and no reference to `DocIntake.Rendering`. Callers
+see the same routes, answers and status codes.
+
+**How it works.** Per upload the gateway calls the service twice, over HTTP, each time sending the file itself (streamed
+from the spooled upload, never copied into memory):
+
+1. `POST /documents/classify` returns a `ClassifyResponse`: the classification and the findings about the file's structure.
+   The gateway's risk policy then decides, so with `Security:OnFinding=reject` a document with active content or hidden
+   text is refused **before** anything is prepared (rendered, OCRed).
+2. `POST /documents/prepare` (the file plus the classification as a JSON part) returns the `PreparedDocument`: page images,
+   page text, OCR text and structured data. The gateway then checks the text for instructions aimed at the model.
+
+The service keeps nothing between the calls. A failure comes back as problem details with a `kind` extension, and the
+gateway's `DocumentServiceClient` raises the same `IntakeFailureException` kind on its side (so `Unsupported` is still 415,
+`OverLimit` still 422). A service that cannot be reached or is saturated is a `RendererUnavailableException` (503 with
+`Retry-After: 10`); one that dies on the document is a `RenderingFailedException` (502). Nothing is retried: a document that
+crashed the service would crash it again.
+
+**What moved where.**
+
+| Now in `DocIntake.DocumentService` | Still in `DocIntake.Api` (gateway) | New shared |
+|---|---|---|
+| `DocumentClassifier`, `DocumentPreparer`, `DocumentSniffer`, `Pdf/*`, `OfficeInspector`, `ExecutableSniffer`, the classification and preparation limits | `DocumentPipeline`, `RiskScanner`, `DocumentRouter`, malware scan, extraction, usage, Laya, `ProblemMapping`, `DocumentServiceClient`, `DocumentGatewayOptions` | `Contracts`: `ClassifyResponse`, the exceptions for a bad or unavailable service, `IDocumentClassifier`, `IDocumentPreparer`, `DocumentRoutes`, `UsageFileName`, `IntakeJson`. `ServiceDefaults`: `ServiceProblems` (status table and the problem answer), `LeaveOpenStream` |
+
+`RemotePageRasterizer`, the renderer's `/render` and `/inspect` endpoints and in-process rendering are gone.
+
+**Settings.** Same section (`DocumentAnalysis`), split by who reads them:
+
+| Setting | Before | Now |
+|---|---|---|
+| `DocumentServiceUrl` | `RendererUrl` (or `AllowInProcessRendering`) | **Required** by the gateway; it refuses to start without it. `appsettings.Development.json` sets `http://localhost:5092` |
+| `AllowInProcessRendering` | development mode | Removed |
+| `MaxFileBytes`, `MaxConcurrentAnalyses`, `MaxQueuedAnalyses`, `RequestTimeoutSeconds` | API | Gateway, unchanged |
+| `MinCharsPerPage`, `PngDpi`, `MaxPages`, `MaxPdfPages`, `MaxImageFrames`, `MaxOfficeUncompressedBytes`, `MaxSpreadsheetRows`, `MaxAttachments`, `EnableOcr` and the rest of the classification limits | API | Document service, same names. The gateway no longer reads them |
+| `MaxDocumentBytes`, `MaxConcurrentJobs`, `MaxQueuedJobs`, `OcrModel`, `OcrMaxSide` | Renderer | Document service, unchanged. The limiter now counts classify and prepare calls |
+| `MaxPagesPerJob` | Renderer (`/render`) | Removed |
+
+Helm and compose pass `DocumentAnalysis__DocumentServiceUrl` to the API; the Dockerfile publishes the document service from
+`src/DocIntake.DocumentService` (the `renderer` target and Deployment keep their names until Phase 7).
+
+**Behaviour changes.**
+- **A document service outage now fails every upload**, text PDFs and Office files included. Before, only documents that
+  needed rendering failed, because classification ran in the API. Feedback analysis still works, and readiness reports
+  `document-service` as `Degraded` (200).
+- **You run two processes locally** (`dotnet run` for each). The README's quick start says so.
+- The two messages for an unavailable or crashed service now say "document processing is unavailable; retry later" and
+  "document could not be processed". They said "rendering" and "rendered", which is wrong for a text PDF.
+- Each upload crosses the network twice, so a 20 MB file is sent twice to the service. This is the cost of refusing a
+  document before it is prepared; it is within the cluster.
+- The health check is named `document-service` (it was `renderer`), and the gateway has no `ocr` check any more.
+- The library detail of why a file was refused (the inner exception) is now logged by the document service, not the gateway.
+  The gateway logs the kind, the reason and `intake.failure.cause` = `none`.
+- The service's spans are children of the gateway's request: `docintake-document` shows `POST /documents/classify` and
+  `/prepare` with the `renderer.*` spans beneath them, in the same trace as `docintake-gateway`.
+
+**Deviations from the plan.**
+- The plan had one `POST /documents/prepare` returning the findings. Classify and prepare are two calls, so a refused
+  document is never prepared (the plan's single call would have rendered it first).
+- `DocumentClassification.Risks` is deliberately not serialised (the public responses report findings in their own list),
+  so the service sends them next to it in a `ClassifyResponse`. A first version without that lost every structure finding
+  over the wire, and three `RiskTests` caught it.
+- The plan said the gateway image would lose its native libraries. It loses every document library (PDFium, ImageMagick,
+  Skia, OCR); **ONNX Runtime stays** until Phase 5, because the Laya feedback model runs on it.
+- The gateway has no in-process fallback. The plan said to retire it; the cost is the two terminals above.
+
+**Key files.**
+- `src/DocIntake.DocumentService/Program.cs` (endpoints), `Classification/`, `Preparation/`, `Pdf/`, `Inspection/`
+- `src/DocIntake.Api/Services/Documents/DocumentServiceClient.cs`, `DocumentGatewayOptions.cs`
+- `src/DocIntake.ServiceDefaults/ServiceProblems.cs`
+- `src/DocIntake.Contracts/DocumentServices.cs`, `RenderingFailures.cs`, `IntakeJson.cs`
+
+**How to try it.**
+
+    dotnet run --project src/DocIntake.DocumentService          # terminal 1, http://localhost:5092
+    dotnet run --project src/DocIntake.Api                      # terminal 2, http://localhost:5091
+    curl -s localhost:5091/health/ready
+    curl -F "file=@docs/samples/pdf/corpus/redwood-mechanical-ucc1-fax.pdf" "localhost:5091/api/documents/analyze?dispatch=false&includeData=false"
+    curl -i -F "file=@docs/samples/unsupported/legacy.doc" localhost:5091/api/documents/analyze
+
+Then stop the document service and repeat the second command: `503` with `Retry-After: 10`, readiness `Degraded`, and
+`curl -H 'Content-Type: application/json' -d '{"text":"The room was dirty"}' localhost:5091/api/feedback/analyze` still
+answers. Or run the two images (`docker build --target api` and `--target renderer`) on one network.
+
+**What it does not do.**
+- The gateway still hosts extraction, usage and Laya. They move in Phases 4 and 5.
+- The document service has no authentication: any pod that can reach it is trusted (threat model 4.2). It matters more now,
+  because the service sees every upload.
+- `RendererUnavailableException`, `RenderingFailedException` and `OcrUnavailableException` are not folded into
+  `FailureKind`, and their outcome strings (`renderer_unavailable`, `render_failed`) are unchanged.
+- Nothing was measured under load, so the cost of sending each file twice is not known beyond the single requests below.
+
+**Tests.** 414 tests, 408 passed and 6 skipped (the opt-in ones from Phase 1). The existing endpoint tests pass through an
+in-memory document service: a shared helper, `UseDocumentService`, attaches one to any gateway factory and takes the OCR
+fake as before, so the files that built a gateway needed one changed line each. New or rewritten:
+- `DocumentServiceTests` (replaces `RendererTests`): the service over HTTP through the gateway's client. Classify and
+  prepare for text, scan and fax documents; greyscale fax pages and OCR text; the findings arriving with the classification;
+  the contract surviving JSON; each failure kind surviving the boundary (unsupported, unreadable, over a limit); missing OCR
+  models; oversized and malformed requests; unreachable, dying and error-mapping cases for the client.
+- `GatewayDocumentServiceTests` (replaces `RemoteRenderingEndpointTests`): the gateway as deployed. An unreachable service
+  fails every upload with `Retry-After` and readiness `Degraded`; a crashing one is a 502; production without a
+  `DocumentServiceUrl` refuses to start.
+- `ArchitectureTests`: the gateway's dependency manifest has no document parser, no native imaging or OCR library and no
+  reference to `DocIntake.Rendering`; the document service's manifest has them; and no source file under the classification,
+  preparation, PDF or inspection folders mentions `StatusCodes`.
+
+### Verified (2026-10-12)
+
+- `dotnet build`, `dotnet test` (above), the licence check (no package was added), `helm lint` on the three CI values
+  files, `docker compose config`.
+- Both Docker targets build. The gateway image holds no PdfPig, ClosedXML, OpenXML, Magick.NET, PDFium, Skia or OCR file,
+  only ONNX Runtime; the document service image holds them.
+- **The two services as separate processes**, real OCR, 12 sample documents (text, scan and fax PDFs, a form, signed, XFA
+  and e-invoice PDFs, an Excel file, a Word file, a fax TIFF, and the two unsupported files): the kinds, strategies and
+  parts match Phase 1's, and the fax PDF with OCR took 0.68 s.
+- **The two images together** on a private network, the document service with a read-only filesystem, no capabilities and a
+  2 GB limit: the same results; with the service stopped, text and scan uploads answered 503 with `Retry-After: 10`,
+  feedback analysis still answered 200 and readiness was `Degraded`; after a restart uploads worked again.
+- **One trace across both services** in Honeycomb: the gateway request, `intake.classify`, the HTTP client span and the
+  document service's `POST /documents/classify` as a chain.
+
+### Not verified
+
+- A deploy to DOKS, and `docker compose up` of the pair with ClamAV (the images were run directly, without the scanner).
+- Extraction against the real model provider: it costs money, and the extract path was only exercised for files that fail
+  before the model.
+- Latency and memory under load. The document service now also loads Office files and every PDF's structure, in a pod
+  limited to 1 GiB in `deploy/values-prod.yaml`.
+- A rolling deploy with old and new pods side by side.
+
+### Before deploying (Phase 3)
+
+- [ ] **Rollout window.** `helm upgrade` replaces the API and the renderer Deployments separately, so for a moment an old
+      API may call a new document service (404 on `/render`) or the reverse. Expect a few 502/503s during the rollout.
+- [ ] **Memory.** Watch the renderer pod for `OOMKilled` after the deploy and raise `renderer.resources.limits.memory`
+      (1 GiB in `values-prod.yaml`) if big spreadsheets or scans restart it. The API pod should need less than before.
+- [ ] Honeycomb: the `docintake-document` dataset now has `POST /documents/classify` and `/prepare` request spans and
+      `intake.render`; anything built on the renderer's `POST /render` span will go quiet.
+- [ ] Anything that set `DocumentAnalysis__RendererUrl` on the API must set `DocumentAnalysis__DocumentServiceUrl` instead
+      (compose and Helm in this repository do).
+- [ ] Anything that matched `document rendering is unavailable` or `document could not be rendered` needs the new text.
+
 ## Phase 2: shared projects and one failure type (2026-10-12)
 
 **What it does.** Two new projects take the code every service will share, and one exception type replaces the two that
@@ -142,7 +287,9 @@ still assert the same statuses. New:
   Extraction was not called, because it costs money.
 - The native crash seen once in the first full test run of this phase (`libc++abi: terminating due to uncaught
   exception ... recursive_mutex lock failed`, reported after all tests had passed). Three further full runs were
-  clean. I don't know whether it also happens on `main`.
+  clean. **Update 2026-10-12:** it is not from these changes. `main` as of the Phase 1 merge, with a rebuild before each
+  run, crashed the same way in 2 of 8 runs. It is a flake in the test host's native teardown (it happens after every test
+  has passed), and its cause is unknown.
 
 ### Before deploying (Phase 2)
 

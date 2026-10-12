@@ -88,12 +88,16 @@ public sealed record DocumentClassification
     public IReadOnlyList<AttachmentInfo> Attachments { get; init; } = [];
 
     /// <summary>
-    /// Active content, macros, executable attachments and hidden text found in the file's structure. Not serialised: the
-    /// responses carry every finding in their own <c>risks</c> list.
+    /// Active content, macros, executable attachments and hidden text found in the file's structure. Not serialised with
+    /// the classification: the public responses carry every finding in their own <c>risks</c> list, and the document
+    /// service sends them next to it in a <see cref="ClassifyResponse"/>.
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public IReadOnlyList<RiskFinding> Risks { get; init; } = [];
 }
+
+/// <summary>What the document service answers to a classify request: the classification, and the findings that go with it.</summary>
+public sealed record ClassifyResponse(DocumentClassification Classification, IReadOnlyList<RiskFinding> Risks);
 
 public enum PartRole { PageImage, PageText, OcrText, StructuredData }
 

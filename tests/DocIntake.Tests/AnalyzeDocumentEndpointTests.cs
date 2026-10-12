@@ -27,8 +27,7 @@ public class AnalyzeDocumentEndpointTests : IClassFixture<AnalyzeDocumentEndpoin
             {
                 foreach (var d in s.Where(d => d.ServiceType == typeof(IHostedService)).ToList()) s.Remove(d);
                 s.RemoveAll<IDocumentAgent>();
-                s.RemoveAll<IOcrEngine>();
-                s.AddSingleton<IOcrEngine>(new FakeOcr());
+                s.UseDocumentService();
                 foreach (var route in DocumentRoutes.All) s.AddSingleton<IDocumentAgent>(new RecordingAgent(route));
             });
     }
@@ -166,8 +165,7 @@ public class AnalyzeDocumentEndpointTests : IClassFixture<AnalyzeDocumentEndpoin
     {
         using var factory = _factory.WithWebHostBuilder(b => b.ConfigureServices(s =>
         {
-            s.RemoveAll<IOcrEngine>();
-            s.AddSingleton<IOcrEngine>(new FakeOcr(fail: true));
+            s.UseDocumentService(new FakeOcr(fail: true));
         }));
         using var form = new MultipartFormDataContent { { new ByteArrayContent(DocumentFixtures.BlankPdf()), "file", "scan.pdf" } };
 
@@ -210,8 +208,7 @@ public class AnalyzeDocumentEndpointTests : IClassFixture<AnalyzeDocumentEndpoin
             foreach (var (key, value) in settings) b.UseSetting(key, value);
             b.ConfigureServices(s =>
             {
-                s.RemoveAll<IOcrEngine>();
-                s.AddSingleton<IOcrEngine>(ocr);
+                s.UseDocumentService(ocr);
             });
         });
 

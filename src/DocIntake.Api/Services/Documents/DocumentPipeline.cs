@@ -2,7 +2,6 @@ using DocIntake.ServiceDefaults;
 using System.Diagnostics;
 using DocIntake.Contracts;
 using DocIntake.Api.Services.Security;
-using DocIntake.Rendering;
 using Microsoft.Extensions.Options;
 
 namespace DocIntake.Api.Services.Documents;

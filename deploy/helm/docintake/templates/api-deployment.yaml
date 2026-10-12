@@ -53,8 +53,8 @@ spec:
             - name: http
               containerPort: 8080
           env:
-            # The API refuses to start without a renderer to talk to.
-            - name: DocumentAnalysis__RendererUrl
+            # The gateway refuses to start without the document service (the renderer Deployment) to talk to.
+            - name: DocumentAnalysis__DocumentServiceUrl
               value: {{ printf "http://%s-renderer:8080" (include "docintake.fullname" .) | quote }}
             - name: DocumentAnalysis__MaxConcurrentAnalyses
               value: {{ .Values.api.config.maxConcurrentAnalyses | int64 | quote }}

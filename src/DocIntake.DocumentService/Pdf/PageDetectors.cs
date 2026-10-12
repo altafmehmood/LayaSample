@@ -3,7 +3,7 @@ using UglyToad.PdfPig.Annotations;
 using UglyToad.PdfPig.Content;
 using UglyToad.PdfPig.Tokens;
 
-namespace DocIntake.Api.Services.Documents.Pdf;
+namespace DocIntake.DocumentService.Pdf;
 
 /// <summary>Measures the text layer and how much of it decodes to real characters.</summary>
 public sealed class TextLayerDetector : IPdfDetector

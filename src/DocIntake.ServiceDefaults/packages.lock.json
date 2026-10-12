@@ -67,6 +67,9 @@
         "dependencies": {
           "OpenTelemetry.Api": "1.19.1"
         }
+      },
+      "docintake.contracts": {
+        "type": "Project"
       }
     }
   }

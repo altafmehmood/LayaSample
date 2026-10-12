@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using DocIntake.Contracts;
-using DocIntake.Rendering;
 using DocIntake.ServiceDefaults;
 using DocIntake.Api.Services.Documents;
 using DocIntake.Api.Services.Security;
@@ -20,15 +19,7 @@ public sealed class ProblemMapping(ILogger<ProblemMapping> logger, DocumentMetri
 
     public static IResult Problem(int status, string detail) => Results.Problem(detail: detail, statusCode: status);
 
-    public static int StatusOf(FailureKind kind) => kind switch
-    {
-        FailureKind.Unsupported => StatusCodes.Status415UnsupportedMediaType,
-        FailureKind.Unreadable or FailureKind.OverLimit or FailureKind.Malicious or FailureKind.PolicyRejected
-            or FailureKind.Declined => StatusCodes.Status422UnprocessableEntity,
-        FailureKind.Busy or FailureKind.Misconfigured => StatusCodes.Status503ServiceUnavailable,
-        FailureKind.Timeout => StatusCodes.Status504GatewayTimeout,
-        _ => StatusCodes.Status502BadGateway
-    };
+    public static int StatusOf(FailureKind kind) => ServiceProblems.StatusOf(kind);
 
     /// <summary>What the request span's <c>intake.outcome</c> says. "rejected" means our own rules refused the upload.</summary>
     private static string OutcomeOf(FailureKind kind) => kind switch
@@ -68,9 +59,9 @@ public sealed class ProblemMapping(ILogger<ProblemMapping> logger, DocumentMetri
         MalwareScannerUnavailableException => new(StatusCodes.Status503ServiceUnavailable, "scanner_unavailable",
             "document scanning is unavailable; retry later", 10, LogLevel.Warning, ex),
         RendererUnavailableException => new(StatusCodes.Status503ServiceUnavailable, "renderer_unavailable",
-            "document rendering is unavailable; retry later", 10, LogLevel.Warning, ex),
+            "document processing is unavailable; retry later", 10, LogLevel.Warning, ex),
         // Most likely this document crashed the renderer; retrying it would crash it again.
-        _ => new(StatusCodes.Status502BadGateway, "render_failed", "document could not be rendered", null, LogLevel.Error, ex)
+        _ => new(StatusCodes.Status502BadGateway, "render_failed", "document could not be processed", null, LogLevel.Error, ex)
     };
 
     public IResult ToResult(Exception ex, long bytes, DocumentClassification? classification, HttpContext httpContext)

@@ -16,6 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\DocIntake.Contracts\DocIntake.Contracts.csproj" />
     <ProjectReference Include="..\DocIntake.ServiceDefaults\DocIntake.ServiceDefaults.csproj" />
   </ItemGroup>
 

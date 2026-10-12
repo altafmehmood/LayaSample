@@ -1,3 +1,4 @@
+using DocIntake.DocumentService;
 using DocIntake.Contracts;
 using DocIntake.Api.Services.Documents;
 using DocIntake.Api.Services.Security;

@@ -1,3 +1,4 @@
+using DocIntake.DocumentService;
 using System.Globalization;
 using System.Text.Json;
 using DocIntake.Contracts;
@@ -44,7 +45,7 @@ public class ExtractionEvaluationTests(ITestOutputHelper output)
         var threshold = double.Parse(Environment.GetEnvironmentVariable("EVAL_MIN_ACCURACY") ?? "0.9", CultureInfo.InvariantCulture);
         var ct = TestContext.Current.CancellationToken;
 
-        var docOptions = Options.Create(new DocumentAnalysisOptions { AllowInProcessRendering = true });
+        var docOptions = Options.Create(new DocumentAnalysisOptions());
         using var ocr = new RapidOcrEngine(Options.Create(new RenderingOptions()));
         var rasterizer = new LocalPageRasterizer(ocr, Options.Create(new RenderingOptions()));
         var classifier = new DocumentClassifier(docOptions, rasterizer);

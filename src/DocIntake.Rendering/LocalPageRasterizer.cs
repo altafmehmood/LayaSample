@@ -1,3 +1,4 @@
+using DocIntake.Contracts;
 using DocIntake.ServiceDefaults;
 using System.Diagnostics;
 using Microsoft.Extensions.Options;

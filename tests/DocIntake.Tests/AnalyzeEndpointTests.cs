@@ -19,6 +19,8 @@ public class AnalyzeEndpointTests : IClassFixture<AnalyzeEndpointTests.Factory>
             {
                 // Don't load the real model in unit tests.
                 foreach (var d in s.Where(d => d.ServiceType == typeof(IHostedService)).ToList()) s.Remove(d);
+                // No real port 5092: the document service is an in-memory one.
+                s.UseDocumentService();
             });
     }
 
@@ -65,7 +67,9 @@ public class AnalyzeEndpointTests : IClassFixture<AnalyzeEndpointTests.Factory>
         using var doc = System.Text.Json.JsonDocument.Parse(await res.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
         var checks = doc.RootElement.GetProperty("checks");
         Assert.Equal("loading", checks.GetProperty("laya").GetProperty("description").GetString());
-        Assert.Equal("loading", checks.GetProperty("ocr").GetProperty("description").GetString());
+        // The gateway has no OCR of its own: it reports on the document service, which is up here.
+        Assert.False(checks.TryGetProperty("ocr", out _));
+        Assert.True(checks.TryGetProperty("document-service", out _));
     }
 
     [Theory]

@@ -1,3 +1,4 @@
+using DocIntake.Contracts;
 using DocIntake.ServiceDefaults;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;

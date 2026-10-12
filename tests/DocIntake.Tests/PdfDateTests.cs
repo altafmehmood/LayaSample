@@ -1,4 +1,4 @@
-using DocIntake.Api.Services.Documents.Pdf;
+using DocIntake.DocumentService.Pdf;
 
 namespace DocIntake.Tests;
 

@@ -2,7 +2,7 @@ using DocIntake.Contracts;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Content;
 
-namespace DocIntake.Api.Services.Documents.Pdf;
+namespace DocIntake.DocumentService.Pdf;
 
 /// <summary>Raw per-page measurements gathered by <see cref="IPdfDetector"/>s; turned into decisions by <see cref="PdfClassificationRules"/>.</summary>
 public sealed class PageSignals(int number)

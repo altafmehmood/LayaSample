@@ -1,17 +1,15 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace DocIntake.Api.Services.Documents;
+namespace DocIntake.DocumentService;
 
 /// <summary>
-/// Settings for classification and preparation. Rendering and OCR settings (OcrModel, OcrMaxSide) are in
-/// <see cref="DocIntake.Rendering.RenderingOptions"/>, bound from the same section.
+/// Settings for classification and preparation, which run in the document service. Rendering and OCR settings (OcrModel,
+/// OcrMaxSide) are in <see cref="DocIntake.Rendering.RenderingOptions"/>, bound from the same section. The gateway's own
+/// settings (file size, timeouts, concurrency, where this service is) are in <c>DocumentGatewayOptions</c>.
 /// </summary>
-public sealed class DocumentAnalysisOptions : IValidatableObject
+public sealed class DocumentAnalysisOptions
 {
     public const string Section = "DocumentAnalysis";
-
-    [Range(1, 1L << 30)]
-    public long MaxFileBytes { get; set; } = 20 * 1024 * 1024;
 
     /// <summary>A PDF page with fewer extractable characters than this is treated as image-only.</summary>
     [Range(0, int.MaxValue)]
@@ -67,45 +65,6 @@ public sealed class DocumentAnalysisOptions : IValidatableObject
     [Range(0, 1000)]
     public int MaxAttachments { get; set; } = 10;
 
-    /// <summary>Ask for OCR of pages without a usable text layer. The renderer can also have OCR switched off.</summary>
+    /// <summary>Ask for OCR of pages without a usable text layer. OCR can also be switched off for the whole service.</summary>
     public bool EnableOcr { get; set; } = true;
-
-    /// <summary>
-    /// Base URL of the renderer service (DocIntake.Renderer), which renders, decodes and OCRs pages in an isolated
-    /// process. Required unless <see cref="AllowInProcessRendering"/> is set.
-    /// </summary>
-    [Url]
-    public string? RendererUrl { get; set; }
-
-    /// <summary>
-    /// Render inside the API process when no <see cref="RendererUrl"/> is set. For development and tests only: it puts
-    /// untrusted documents in front of native parsers (PDFium, ImageMagick) in the API process.
-    /// </summary>
-    public bool AllowInProcessRendering { get; set; }
-
-    /// <summary>
-    /// Documents analysed at the same time. Analysis is CPU-bound (rendering, decoding, OCR), so more than the core
-    /// count only adds contention. 0 means half the processor count (at least 1).
-    /// </summary>
-    [Range(0, 1024)]
-    public int MaxConcurrentAnalyses { get; set; }
-
-    /// <summary>Requests waiting for an analysis slot; further requests get 503 with Retry-After.</summary>
-    [Range(0, 10_000)]
-    public int MaxQueuedAnalyses { get; set; } = 20;
-
-    /// <summary>A request (waiting time included) is cancelled with 504 after this long.</summary>
-    [Range(1, 3600)]
-    public int RequestTimeoutSeconds { get; set; } = 120;
-
-    public int EffectiveMaxConcurrentAnalyses =>
-        MaxConcurrentAnalyses > 0 ? MaxConcurrentAnalyses : Math.Max(1, Environment.ProcessorCount / 2);
-
-    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
-    {
-        if (string.IsNullOrWhiteSpace(RendererUrl) && !AllowInProcessRendering)
-            yield return new ValidationResult(
-                $"Set {Section}:RendererUrl to the renderer service, or {Section}:AllowInProcessRendering=true for development.",
-                [nameof(RendererUrl), nameof(AllowInProcessRendering)]);
-    }
 }
