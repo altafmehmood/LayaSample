@@ -7,13 +7,13 @@
   "quality": "showcase",
   "specification": {
     "path": "/Users/altafmehmood/Repos/LayaSample/.archify/current/candidate.json",
-    "sha256": "a68a3182f5e925610e868e05cf8d5f9d05e1b8adabfe9d7de9b36f5141344f2c",
-    "bytes": 8265
+    "sha256": "bcb699db3e0a7d05e43b9bf12a27d73d2239dea331ad62eb2cdd79fae841b85a",
+    "bytes": 7832
   },
   "artifact": {
     "path": "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.html",
-    "sha256": "7d0717524896f0d736b9152cca05ed736df610da8050a332e087149eb9bad101",
-    "bytes": 768858
+    "sha256": "68da38cae86a540f4355805c11f76104c4da65f9040cc070846b02190f398ffb",
+    "bytes": 775798
   },
   "gates": {
     "validate": "pass",
@@ -43,5 +43,45 @@
     "noticeText": null
   },
   "visualReview": "not-requested",
-  "durationMs": 1570
+  "durationMs": 1634,
+  "visualReviewRecommendation": {
+    "action": "inspect-route-readability",
+    "signals": {
+      "routesOverSuggestedBends": 2
+    },
+    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
+    "affectedRoutes": {
+      "crossings": [],
+      "detours": [
+        {
+          "relationship": {
+            "from": "api",
+            "to": "parsers",
+            "label": "then parse",
+            "collectionIndex": 3,
+            "artifactIndex": 4
+          },
+          "bends": 3,
+          "stretch": 1
+        },
+        {
+          "relationship": {
+            "from": "api",
+            "to": "collector",
+            "label": "OTLP/HTTP",
+            "collectionIndex": 8,
+            "artifactIndex": 9
+          },
+          "bends": 5,
+          "stretch": 1.349
+        }
+      ],
+      "truncated": false
+    },
+    "hints": [
+      "api → parsers needs 3 bends: move node api or parsers so they share a row or column with matching centers, or sit diagonally with a clear corner.",
+      "api → collector needs 5 bends: move node api or collector so they share a row or column with matching centers, or sit diagonally with a clear corner."
+    ],
+    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
+  }
 }

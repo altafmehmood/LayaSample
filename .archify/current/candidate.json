@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "LayaSample Document Extraction",
-    "subtitle": "Request path, trust boundaries and telemetry at b3a1751",
+    "subtitle": "Request path, upload scanning, trust boundaries, usage and telemetry at 6fe4128",
     "output": ".archify/current/laya-architecture.html",
     "visual_preset": "blueprint",
     "quality_profile": "showcase",
@@ -11,363 +11,85 @@
       "url": "https://github.com/altafmehmood/LayaSample.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "b3a17510a802c6247d36cfe53aac2ff624c87909"
+      "revision": "6fe4128f79ee86a886a5a6414400c079018892d4"
     }
   },
   "components": [
-    {
-      "id": "caller",
-      "type": "external",
-      "label": "API caller",
-      "sublabel": "X-Api-Key + file",
-      "pos": [
-        38,
-        300
-      ],
-      "size": [
-        126,
-        60
-      ]
-    },
-    {
-      "id": "gateway",
-      "type": "cloud",
-      "label": "Cilium Gateway",
-      "sublabel": "HTTPS, /laya prefix",
-      "pos": [
-        230,
-        300
-      ],
-      "size": [
-        128,
-        60
-      ],
+    { "id": "caller", "type": "external", "label": "API caller", "sublabel": "X-Api-Key + file", "pos": [38, 300], "size": [126, 60] },
+    { "id": "gateway", "type": "cloud", "label": "Cilium Gateway", "sublabel": "HTTPS, /laya prefix", "pos": [230, 300], "size": [128, 60],
+      "sources": [{ "path": "deploy/helm/laya-sample/templates/gateway.yaml", "line": 11, "end_line": 11, "label": "Gateway" }] },
+    { "id": "api", "type": "backend", "label": "Laya API", "sublabel": "scan, classify, extract", "pos": [430, 290], "size": [136, 84],
       "sources": [
-        {
-          "path": "deploy/helm/laya-sample/templates/gateway.yaml",
-          "line": 11,
-          "end_line": 11,
-          "label": "Gateway"
-        }
-      ]
-    },
-    {
-      "id": "api",
-      "type": "backend",
-      "label": "Laya API",
-      "sublabel": "classify, prepare, extract",
-      "pos": [
-        430,
-        300
-      ],
-      "size": [
-        136,
-        62
-      ],
+        { "path": "src/LayaSample.Api/Program.cs", "line": 281, "end_line": 340, "label": "extract endpoint" },
+        { "path": "src/LayaSample.Api/Services/ApiKeyAuthentication.cs", "line": 70, "end_line": 70, "label": "API key middleware" },
+        { "path": "src/LayaSample.Api/Services/Documents/DocumentPipeline.cs", "line": 50, "end_line": 56, "label": "scan before parse" }
+      ] },
+    { "id": "clamav", "type": "security", "label": "ClamAV", "sublabel": "clamd, infected = 422", "pos": [430, 100], "size": [136, 62],
       "sources": [
-        {
-          "path": "src/LayaSample.Api/Program.cs",
-          "line": 277,
-          "end_line": 349,
-          "label": "extract endpoint"
-        },
-        {
-          "path": "src/LayaSample.Api/Services/ApiKeyAuthentication.cs",
-          "line": 53,
-          "end_line": 58,
-          "label": "API key middleware"
-        }
-      ]
-    },
-    {
-      "id": "parsers",
-      "type": "backend",
-      "label": "In-process parsers",
-      "sublabel": "PdfPig, ClosedXML, OpenXML",
-      "pos": [
-        430,
-        110
-      ],
-      "size": [
-        136,
-        62
-      ],
+        { "path": "src/LayaSample.Api/Services/Security/MalwareScanner.cs", "line": 54, "end_line": 58, "label": "INSTREAM scanner" },
+        { "path": "deploy/helm/laya-sample/templates/clamav.yaml", "line": 6, "end_line": 6, "label": "clamav Deployment" }
+      ] },
+    { "id": "parsers", "type": "backend", "label": "In-process parsers", "sublabel": "PdfPig, ClosedXML, OpenXML", "pos": [680, 100], "size": [136, 62],
       "sources": [
-        {
-          "path": "src/LayaSample.Api/Services/Documents/DocumentClassifier.cs",
-          "line": 65,
-          "end_line": 69,
-          "label": "PDF classify"
-        },
-        {
-          "path": "src/LayaSample.Api/Services/Documents/DocumentPreparer.cs",
-          "line": 261,
-          "end_line": 282,
-          "label": "Office parse"
-        }
-      ]
-    },
-    {
-      "id": "renderer",
-      "type": "backend",
-      "label": "Renderer",
-      "sublabel": "PDFium + ImageMagick",
-      "pos": [
-        430,
-        470
-      ],
-      "size": [
-        136,
-        62
-      ],
+        { "path": "src/LayaSample.Api/Services/Documents/DocumentClassifier.cs", "line": 69, "end_line": 69, "label": "PDF classify" },
+        { "path": "src/LayaSample.Api/Services/Documents/DocumentPreparer.cs", "line": 276, "end_line": 283, "label": "Office parse" }
+      ] },
+    { "id": "renderer", "type": "backend", "label": "Renderer", "sublabel": "PDFium + ImageMagick", "pos": [430, 480], "size": [136, 62],
       "sources": [
-        {
-          "path": "src/LayaSample.Renderer/Program.cs",
-          "line": 105,
-          "end_line": 105,
-          "label": "POST /render"
-        },
-        {
-          "path": "src/LayaSample.Rendering/LocalPageRasterizer.cs",
-          "line": 131,
-          "end_line": 140,
-          "label": "PDF page to image"
-        }
-      ]
-    },
-    {
-      "id": "ocr",
-      "type": "backend",
-      "label": "RapidOCR",
-      "sublabel": "PaddleOCR models, ONNX",
-      "pos": [
-        430,
-        640
-      ],
-      "size": [
-        136,
-        62
-      ],
+        { "path": "src/LayaSample.Renderer/Program.cs", "line": 106, "end_line": 106, "label": "POST /render" },
+        { "path": "src/LayaSample.Rendering/LocalPageRasterizer.cs", "line": 135, "end_line": 141, "label": "PDF page to image" }
+      ] },
+    { "id": "ocr", "type": "backend", "label": "RapidOCR", "sublabel": "PaddleOCR models, ONNX", "pos": [430, 650], "size": [136, 62],
+      "sources": [{ "path": "src/LayaSample.Rendering/OcrEngine.cs", "line": 34, "end_line": 40, "label": "RapidOcrEngine" }] },
+    { "id": "openai", "type": "external", "label": "OpenAI", "sublabel": "vision + text chat models", "pos": [1170, 300], "size": [136, 62],
+      "sources": [{ "path": "src/LayaSample.Api/Services/Documents/Extraction/ExtractionClients.cs", "line": 91, "end_line": 95, "label": "chat clients" }] },
+    { "id": "usage", "type": "database", "label": "Usage history", "sublabel": "SQLite on a PVC", "pos": [940, 480], "size": [136, 62],
       "sources": [
-        {
-          "path": "src/LayaSample.Rendering/OcrEngine.cs",
-          "line": 35,
-          "end_line": 40,
-          "label": "RapidOcrEngine"
-        }
-      ]
-    },
-    {
-      "id": "openai",
-      "type": "external",
-      "label": "OpenAI",
-      "sublabel": "vision + text chat models",
-      "pos": [
-        660,
-        190
-      ],
-      "size": [
-        136,
-        62
-      ],
-      "sources": [
-        {
-          "path": "src/LayaSample.Api/Services/Documents/Extraction/ExtractionClients.cs",
-          "line": 87,
-          "end_line": 91,
-          "label": "chat clients"
-        }
-      ]
-    },
-    {
-      "id": "collector",
-      "type": "backend",
-      "label": "OTel collector",
-      "sublabel": "in cluster, holds ingest key",
-      "pos": [
-        660,
-        470
-      ],
-      "size": [
-        136,
-        62
-      ],
-      "sources": [
-        {
-          "path": "deploy/helm/laya-sample/templates/collector.yaml",
-          "line": 6,
-          "end_line": 6,
-          "label": "collector Deployment"
-        }
-      ]
-    },
-    {
-      "id": "honeycomb",
-      "type": "external",
-      "label": "Honeycomb",
-      "sublabel": "OTLP/HTTP",
-      "pos": [
-        960,
-        470
-      ],
-      "size": [
-        126,
-        60
-      ],
-      "sources": [
-        {
-          "path": "deploy/helm/laya-sample/templates/collector-config.yaml",
-          "line": 24,
-          "end_line": 24,
-          "label": "exporter endpoint"
-        }
-      ]
-    },
-    {
-      "id": "ci",
-      "type": "external",
-      "label": "GitHub Actions",
-      "sublabel": "deploy on main",
-      "pos": [
-        38,
-        480
-      ],
-      "size": [
-        126,
-        60
-      ],
-      "sources": [
-        {
-          "path": ".github/workflows/ci.yml",
-          "line": 119,
-          "end_line": 119,
-          "label": "deploy job"
-        }
-      ]
-    }
+        { "path": "src/LayaSample.Api/Services/Usage/UsageStore.cs", "line": 19, "end_line": 19, "label": "UsageStore" },
+        { "path": "deploy/helm/laya-sample/templates/api-pvc.yaml", "line": 5, "end_line": 5, "label": "PersistentVolumeClaim" }
+      ] },
+    { "id": "collector", "type": "backend", "label": "OTel collector", "sublabel": "in cluster, holds ingest key", "pos": [680, 650], "size": [136, 62],
+      "sources": [{ "path": "deploy/helm/laya-sample/templates/collector.yaml", "line": 6, "end_line": 6, "label": "collector Deployment" }] },
+    { "id": "honeycomb", "type": "external", "label": "Honeycomb", "sublabel": "OTLP/HTTP", "pos": [1170, 650], "size": [126, 60],
+      "sources": [{ "path": "deploy/helm/laya-sample/templates/collector-config.yaml", "line": 24, "end_line": 24, "label": "exporter endpoint" }] },
+    { "id": "ci", "type": "external", "label": "GitHub Actions", "sublabel": "deploy on main", "pos": [38, 110], "size": [126, 60],
+      "sources": [{ "path": ".github/workflows/ci.yml", "line": 127, "end_line": 127, "label": "deploy job" }] }
   ],
   "boundaries": [
-    {
-      "kind": "region",
-      "label": "DigitalOcean DOKS / namespace laya",
-      "wraps": [
-        "gateway",
-        "api",
-        "parsers",
-        "renderer",
-        "ocr",
-        "collector"
-      ],
-      "pad": 20
-    },
-    {
-      "kind": "security-group",
-      "label": "renderer NetworkPolicy: API in, collector out",
-      "wraps": [
-        "renderer",
-        "ocr"
-      ],
-      "pad": 14
-    }
+    { "kind": "region", "label": "DigitalOcean DOKS / namespace laya", "wraps": ["gateway", "api", "clamav", "parsers", "renderer", "ocr", "usage", "collector"], "pad": 20 },
+    { "kind": "security-group", "label": "renderer NetworkPolicy: API in, collector out", "wraps": ["renderer", "ocr"], "pad": 14 }
   ],
   "connections": [
-    {
-      "from": "caller",
-      "to": "gateway",
-      "label": "HTTPS POST",
-      "variant": "emphasis"
-    },
-    {
-      "from": "gateway",
-      "to": "api",
-      "label": "HTTP :8080",
-      "variant": "emphasis"
-    },
-    {
-      "from": "api",
-      "to": "openai",
-      "label": "pages + OCR text",
-      "variant": "security"
-    },
-    {
-      "from": "api",
-      "to": "renderer",
-      "label": "POST /render",
-      "variant": "security"
-    },
-    {
-      "from": "renderer",
-      "to": "ocr",
-      "label": "OCR per page"
-    },
-    {
-      "from": "api",
-      "to": "parsers",
-      "label": "parse in-process",
-      "variant": "dashed"
-    },
-    {
-      "from": "api",
-      "to": "collector",
-      "label": "OTLP/HTTP",
-      "variant": "dashed",
-      "fromSide": "right",
-      "toSide": "top"
-    },
-    {
-      "from": "renderer",
-      "to": "collector",
-      "label": "OTLP/HTTP :4318",
-      "variant": "dashed"
-    },
-    {
-      "from": "collector",
-      "to": "honeycomb",
-      "label": "x-honeycomb-team",
-      "variant": "security"
-    },
-    {
-      "from": "ci",
-      "to": "api",
-      "label": "helm upgrade",
-      "variant": "dashed"
-    }
+    { "from": "caller", "to": "gateway", "label": "HTTPS POST", "variant": "emphasis" },
+    { "from": "gateway", "to": "api", "label": "HTTP :8080", "variant": "emphasis" },
+    { "from": "api", "to": "clamav", "label": "INSTREAM scan first", "variant": "security" },
+    { "from": "api", "to": "parsers", "label": "then parse", "variant": "dashed", "fromSide": "right", "toSide": "bottom" },
+    { "from": "api", "to": "openai", "label": "pages + OCR text", "variant": "security" },
+    { "from": "api", "to": "usage", "label": "tokens + cost", "variant": "dashed", "fromSide": "right", "toSide": "left", "route": "orthogonal-h" },
+    { "from": "api", "to": "renderer", "label": "POST /render", "variant": "security" },
+    { "from": "renderer", "to": "ocr", "label": "OCR per page" },
+    { "from": "api", "to": "collector", "label": "OTLP/HTTP", "variant": "dashed", "fromSide": "bottom", "toSide": "left" },
+    { "from": "renderer", "to": "collector", "label": "OTLP/HTTP :4318", "variant": "dashed", "fromSide": "right", "toSide": "top" },
+    { "from": "collector", "to": "honeycomb", "label": "x-honeycomb-team", "variant": "security" },
+    { "from": "ci", "to": "api", "label": "helm upgrade", "variant": "dashed" }
   ],
   "cards": [
-    {
-      "dot": "cyan",
-      "title": "Request Path",
-      "items": [
-        "Gateway terminates HTTPS and forwards /laya to the API (httproute.yaml:26)",
-        "API key is checked before the extract handler runs (Program.cs:163, 331)",
-        "Model receives page images with each page's OCR text (ExtractionMessageBuilder.cs:42-51)"
-      ]
-    },
-    {
-      "dot": "rose",
-      "title": "Trust Boundaries",
-      "items": [
-        "PDFium and ImageMagick run only in the renderer (LocalPageRasterizer.cs:131-140)",
-        "PdfPig, ClosedXML and OpenXML parse untrusted files inside the API process (DocumentClassifier.cs:69, DocumentPreparer.cs:261-282)",
-        "Renderer egress is limited to the collector and DNS (networkpolicy.yaml:24-47)"
-      ]
-    },
-    {
-      "dot": "emerald",
-      "title": "Telemetry",
-      "items": [
-        "The collector alone holds the Honeycomb ingest key (collector-config.yaml:24)",
-        "API and renderer send OTLP to the in-cluster collector (values-prod.yaml)",
-        "Production is not yet verified: the collector image and Honeycomb ingestion are untested"
-      ]
-    },
-    {
-      "dot": "amber",
-      "title": "Not Shown",
-      "items": [
-        "The analyze route dispatches to stub agents, not real downstream agents (Program.cs:78)",
-        "Honeycomb dashboards and alerts are not configured by this repository"
-      ]
-    }
+    { "dot": "cyan", "title": "Request Path", "items": [
+      "Gateway terminates HTTPS and forwards /laya to the API (httproute.yaml:26)",
+      "The API key is checked before the extract handler runs (Program.cs:340)",
+      "The model receives page images with each page's OCR text (ExtractionMessageBuilder.cs:43-54)" ] },
+    { "dot": "rose", "title": "Trust Boundaries", "items": [
+      "Every upload is streamed to ClamAV before any parser reads it; an infection is refused with 422 (DocumentPipeline.cs:50-56)",
+      "PDFium and ImageMagick run only in the renderer (LocalPageRasterizer.cs:135-141)",
+      "PdfPig, ClosedXML and OpenXML parse untrusted files inside the API process (DocumentClassifier.cs:69, DocumentPreparer.cs:276-283)",
+      "Renderer egress is limited to the collector and DNS (networkpolicy.yaml:24-47)" ] },
+    { "dot": "emerald", "title": "Usage and Telemetry", "items": [
+      "Each model call is queued and written to a SQLite file; GET /api/usage serves it as JSON or CSV (UsageStore.cs:19, UsageEndpoints.cs:75)",
+      "The collector alone holds the Honeycomb ingest key (collector-config.yaml:24)",
+      "Production is not yet verified: the collector image and Honeycomb ingestion are untested" ] },
+    { "dot": "amber", "title": "Not Shown", "items": [
+      "Local dotnet run turns scanning off in appsettings.Development.json; Compose and Helm turn it on",
+      "The analyze route dispatches to stub agents, not real downstream agents (Program.cs:215)",
+      "The manual garak red-team harness and its CI job are not part of the runtime (redteam/)" ] }
   ]
 }

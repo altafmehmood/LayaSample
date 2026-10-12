@@ -6,11 +6,11 @@
   "status": "pass",
   "visualReview": "pending",
   "provenance": "current",
-  "deliveryReceiptId": "a1594675-6658-431c-a700-f52c8c1efc47",
+  "deliveryReceiptId": "a42f7bce-390d-4b54-a6a1-a832f1b6025e",
   "artifact": {
     "path": "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.html",
-    "sha256": "7d0717524896f0d736b9152cca05ed736df610da8050a332e087149eb9bad101",
-    "bytes": 768858
+    "sha256": "68da38cae86a540f4355805c11f76104c4da65f9040cc070846b02190f398ffb",
+    "bytes": 775798
   },
   "state": {
     "detail": "read",
@@ -41,25 +41,25 @@
         "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1156,
-        "diagramWidth": 1126,
+        "readerWidth": 1359,
+        "diagramWidth": 1329,
         "pageComposition": {
           "bodyPaddingPx": 12,
           "headerPx": 78,
           "diagramChromePx": 78,
           "svgPx": 790,
           "cardsPx": 0,
-          "viewBoxHeight": 790
+          "viewBoxHeight": 800
         },
-        "viewBoxWidth": 1126,
-        "minimumProjectedNodeTextPx": 7.264517129032257,
-        "minimumProjectedNonEdgeTextPx": 7.264517129032257,
-        "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "renderer NetworkPolicy: API in, collector out",
-        "minimumProjectedNodeTextDetail": "boundary",
+        "viewBoxWidth": 1346,
+        "minimumProjectedNodeTextPx": 7.504011887072808,
+        "minimumProjectedNonEdgeTextPx": 7.504011887072808,
+        "minimumProjectedEdgeTextPx": 7.898959881129272,
+        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
-          "kind": "boundary",
-          "id": null
+          "kind": "node",
+          "id": "collector"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -91,25 +91,25 @@
         "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1156,
-        "diagramWidth": 1126,
+        "readerWidth": 1359,
+        "diagramWidth": 1329,
         "pageComposition": {
           "bodyPaddingPx": 64,
           "headerPx": 86,
           "diagramChromePx": 84,
           "svgPx": 790,
           "cardsPx": 0,
-          "viewBoxHeight": 790
+          "viewBoxHeight": 800
         },
-        "viewBoxWidth": 1126,
-        "minimumProjectedNodeTextPx": 7.264517129032257,
-        "minimumProjectedNonEdgeTextPx": 7.264517129032257,
-        "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "renderer NetworkPolicy: API in, collector out",
-        "minimumProjectedNodeTextDetail": "boundary",
+        "viewBoxWidth": 1346,
+        "minimumProjectedNodeTextPx": 7.504011887072808,
+        "minimumProjectedNonEdgeTextPx": 7.504011887072808,
+        "minimumProjectedEdgeTextPx": 7.898959881129272,
+        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
-          "kind": "boundary",
-          "id": null
+          "kind": "node",
+          "id": "collector"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -141,25 +141,25 @@
         "readerOverflow": null,
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1219,
-        "diagramWidth": 1189,
+        "readerWidth": 1434,
+        "diagramWidth": 1404,
         "pageComposition": {
           "bodyPaddingPx": 64,
           "headerPx": 86,
           "diagramChromePx": 84,
           "svgPx": 834,
           "cardsPx": 0,
-          "viewBoxHeight": 790
+          "viewBoxHeight": 800
         },
-        "viewBoxWidth": 1126,
-        "minimumProjectedNodeTextPx": 7.264517129032257,
-        "minimumProjectedNonEdgeTextPx": 7.264517129032257,
+        "viewBoxWidth": 1346,
+        "minimumProjectedNodeTextPx": 7.6,
+        "minimumProjectedNonEdgeTextPx": 7.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "renderer NetworkPolicy: API in, collector out",
-        "minimumProjectedNodeTextDetail": "boundary",
+        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
-          "kind": "boundary",
-          "id": null
+          "kind": "node",
+          "id": "collector"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -191,25 +191,25 @@
         "readerOverflow": null,
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1556,
-        "diagramWidth": 1506,
+        "readerWidth": 1827,
+        "diagramWidth": 1777,
         "pageComposition": {
           "bodyPaddingPx": 64,
           "headerPx": 94,
           "diagramChromePx": 94,
-          "svgPx": 1057,
+          "svgPx": 1056,
           "cardsPx": 0,
-          "viewBoxHeight": 790
+          "viewBoxHeight": 800
         },
-        "viewBoxWidth": 1126,
-        "minimumProjectedNodeTextPx": 7.264517129032257,
-        "minimumProjectedNonEdgeTextPx": 7.264517129032257,
+        "viewBoxWidth": 1346,
+        "minimumProjectedNodeTextPx": 7.6,
+        "minimumProjectedNonEdgeTextPx": 7.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "renderer NetworkPolicy: API in, collector out",
-        "minimumProjectedNodeTextDetail": "boundary",
+        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
-          "kind": "boundary",
-          "id": null
+          "kind": "node",
+          "id": "collector"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -294,25 +294,25 @@
         "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1156,
-        "diagramWidth": 1126,
+        "readerWidth": 1359,
+        "diagramWidth": 1329,
         "pageComposition": {
           "bodyPaddingPx": 12,
           "headerPx": 78,
           "diagramChromePx": 78,
           "svgPx": 790,
           "cardsPx": 0,
-          "viewBoxHeight": 790
+          "viewBoxHeight": 800
         },
-        "viewBoxWidth": 1126,
-        "minimumProjectedNodeTextPx": 7.264517129032257,
-        "minimumProjectedNonEdgeTextPx": 7.264517129032257,
-        "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "renderer NetworkPolicy: API in, collector out",
-        "minimumProjectedNodeTextDetail": "boundary",
+        "viewBoxWidth": 1346,
+        "minimumProjectedNodeTextPx": 7.504011887072808,
+        "minimumProjectedNonEdgeTextPx": 7.504011887072808,
+        "minimumProjectedEdgeTextPx": 7.898959881129272,
+        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
-          "kind": "boundary",
-          "id": null
+          "kind": "node",
+          "id": "collector"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -344,25 +344,25 @@
         "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1156,
-        "diagramWidth": 1126,
+        "readerWidth": 1359,
+        "diagramWidth": 1329,
         "pageComposition": {
           "bodyPaddingPx": 64,
           "headerPx": 86,
           "diagramChromePx": 84,
           "svgPx": 790,
           "cardsPx": 0,
-          "viewBoxHeight": 790
+          "viewBoxHeight": 800
         },
-        "viewBoxWidth": 1126,
-        "minimumProjectedNodeTextPx": 7.264517129032257,
-        "minimumProjectedNonEdgeTextPx": 7.264517129032257,
-        "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "renderer NetworkPolicy: API in, collector out",
-        "minimumProjectedNodeTextDetail": "boundary",
+        "viewBoxWidth": 1346,
+        "minimumProjectedNodeTextPx": 7.504011887072808,
+        "minimumProjectedNonEdgeTextPx": 7.504011887072808,
+        "minimumProjectedEdgeTextPx": 7.898959881129272,
+        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
-          "kind": "boundary",
-          "id": null
+          "kind": "node",
+          "id": "collector"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -394,25 +394,25 @@
         "readerOverflow": null,
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1219,
-        "diagramWidth": 1189,
+        "readerWidth": 1434,
+        "diagramWidth": 1404,
         "pageComposition": {
           "bodyPaddingPx": 64,
           "headerPx": 86,
           "diagramChromePx": 84,
           "svgPx": 834,
           "cardsPx": 0,
-          "viewBoxHeight": 790
+          "viewBoxHeight": 800
         },
-        "viewBoxWidth": 1126,
-        "minimumProjectedNodeTextPx": 7.264517129032257,
-        "minimumProjectedNonEdgeTextPx": 7.264517129032257,
+        "viewBoxWidth": 1346,
+        "minimumProjectedNodeTextPx": 7.6,
+        "minimumProjectedNonEdgeTextPx": 7.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "renderer NetworkPolicy: API in, collector out",
-        "minimumProjectedNodeTextDetail": "boundary",
+        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
-          "kind": "boundary",
-          "id": null
+          "kind": "node",
+          "id": "collector"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -444,25 +444,25 @@
         "readerOverflow": null,
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1556,
-        "diagramWidth": 1506,
+        "readerWidth": 1827,
+        "diagramWidth": 1777,
         "pageComposition": {
           "bodyPaddingPx": 64,
           "headerPx": 94,
           "diagramChromePx": 94,
-          "svgPx": 1057,
+          "svgPx": 1056,
           "cardsPx": 0,
-          "viewBoxHeight": 790
+          "viewBoxHeight": 800
         },
-        "viewBoxWidth": 1126,
-        "minimumProjectedNodeTextPx": 7.264517129032257,
-        "minimumProjectedNonEdgeTextPx": 7.264517129032257,
+        "viewBoxWidth": 1346,
+        "minimumProjectedNodeTextPx": 7.6,
+        "minimumProjectedNonEdgeTextPx": 7.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "renderer NetworkPolicy: API in, collector out",
-        "minimumProjectedNodeTextDetail": "boundary",
+        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
-          "kind": "boundary",
-          "id": null
+          "kind": "node",
+          "id": "collector"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -499,25 +499,25 @@
         "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1156,
-        "diagramWidth": 1126,
+        "readerWidth": 1359,
+        "diagramWidth": 1329,
         "pageComposition": {
           "bodyPaddingPx": 12,
           "headerPx": 78,
           "diagramChromePx": 78,
           "svgPx": 790,
           "cardsPx": 0,
-          "viewBoxHeight": 790
+          "viewBoxHeight": 800
         },
-        "viewBoxWidth": 1126,
-        "minimumProjectedNodeTextPx": 7.264517129032257,
-        "minimumProjectedNonEdgeTextPx": 7.264517129032257,
-        "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "renderer NetworkPolicy: API in, collector out",
-        "minimumProjectedNodeTextDetail": "boundary",
+        "viewBoxWidth": 1346,
+        "minimumProjectedNodeTextPx": 7.504011887072808,
+        "minimumProjectedNonEdgeTextPx": 7.504011887072808,
+        "minimumProjectedEdgeTextPx": 7.898959881129272,
+        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
-          "kind": "boundary",
-          "id": null
+          "kind": "node",
+          "id": "collector"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -549,25 +549,25 @@
         "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1156,
-        "diagramWidth": 1126,
+        "readerWidth": 1359,
+        "diagramWidth": 1329,
         "pageComposition": {
           "bodyPaddingPx": 64,
           "headerPx": 86,
           "diagramChromePx": 84,
           "svgPx": 790,
           "cardsPx": 0,
-          "viewBoxHeight": 790
+          "viewBoxHeight": 800
         },
-        "viewBoxWidth": 1126,
-        "minimumProjectedNodeTextPx": 7.264517129032257,
-        "minimumProjectedNonEdgeTextPx": 7.264517129032257,
-        "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "renderer NetworkPolicy: API in, collector out",
-        "minimumProjectedNodeTextDetail": "boundary",
+        "viewBoxWidth": 1346,
+        "minimumProjectedNodeTextPx": 7.504011887072808,
+        "minimumProjectedNonEdgeTextPx": 7.504011887072808,
+        "minimumProjectedEdgeTextPx": 7.898959881129272,
+        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
-          "kind": "boundary",
-          "id": null
+          "kind": "node",
+          "id": "collector"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -599,25 +599,25 @@
         "readerOverflow": null,
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1219,
-        "diagramWidth": 1189,
+        "readerWidth": 1434,
+        "diagramWidth": 1404,
         "pageComposition": {
           "bodyPaddingPx": 64,
           "headerPx": 86,
           "diagramChromePx": 84,
           "svgPx": 834,
           "cardsPx": 0,
-          "viewBoxHeight": 790
+          "viewBoxHeight": 800
         },
-        "viewBoxWidth": 1126,
-        "minimumProjectedNodeTextPx": 7.264517129032257,
-        "minimumProjectedNonEdgeTextPx": 7.264517129032257,
+        "viewBoxWidth": 1346,
+        "minimumProjectedNodeTextPx": 7.6,
+        "minimumProjectedNonEdgeTextPx": 7.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "renderer NetworkPolicy: API in, collector out",
-        "minimumProjectedNodeTextDetail": "boundary",
+        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
-          "kind": "boundary",
-          "id": null
+          "kind": "node",
+          "id": "collector"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -649,25 +649,25 @@
         "readerOverflow": null,
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1556,
-        "diagramWidth": 1506,
+        "readerWidth": 1827,
+        "diagramWidth": 1777,
         "pageComposition": {
           "bodyPaddingPx": 64,
           "headerPx": 94,
           "diagramChromePx": 94,
-          "svgPx": 1057,
+          "svgPx": 1056,
           "cardsPx": 0,
-          "viewBoxHeight": 790
+          "viewBoxHeight": 800
         },
-        "viewBoxWidth": 1126,
-        "minimumProjectedNodeTextPx": 7.264517129032257,
-        "minimumProjectedNonEdgeTextPx": 7.264517129032257,
+        "viewBoxWidth": 1346,
+        "minimumProjectedNodeTextPx": 7.6,
+        "minimumProjectedNonEdgeTextPx": 7.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "renderer NetworkPolicy: API in, collector out",
-        "minimumProjectedNodeTextDetail": "boundary",
+        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
-          "kind": "boundary",
-          "id": null
+          "kind": "node",
+          "id": "collector"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -704,25 +704,25 @@
         "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1156,
-        "diagramWidth": 1126,
+        "readerWidth": 1359,
+        "diagramWidth": 1329,
         "pageComposition": {
           "bodyPaddingPx": 12,
           "headerPx": 78,
           "diagramChromePx": 78,
           "svgPx": 790,
           "cardsPx": 0,
-          "viewBoxHeight": 790
+          "viewBoxHeight": 800
         },
-        "viewBoxWidth": 1126,
-        "minimumProjectedNodeTextPx": 7.264517129032257,
-        "minimumProjectedNonEdgeTextPx": 7.264517129032257,
-        "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "renderer NetworkPolicy: API in, collector out",
-        "minimumProjectedNodeTextDetail": "boundary",
+        "viewBoxWidth": 1346,
+        "minimumProjectedNodeTextPx": 7.504011887072808,
+        "minimumProjectedNonEdgeTextPx": 7.504011887072808,
+        "minimumProjectedEdgeTextPx": 7.898959881129272,
+        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
-          "kind": "boundary",
-          "id": null
+          "kind": "node",
+          "id": "collector"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -755,25 +755,25 @@
         "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1156,
-        "diagramWidth": 1126,
+        "readerWidth": 1359,
+        "diagramWidth": 1329,
         "pageComposition": {
           "bodyPaddingPx": 12,
           "headerPx": 78,
           "diagramChromePx": 78,
           "svgPx": 790,
           "cardsPx": 0,
-          "viewBoxHeight": 790
+          "viewBoxHeight": 800
         },
-        "viewBoxWidth": 1126,
-        "minimumProjectedNodeTextPx": 7.264517129032257,
-        "minimumProjectedNonEdgeTextPx": 7.264517129032257,
-        "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "renderer NetworkPolicy: API in, collector out",
-        "minimumProjectedNodeTextDetail": "boundary",
+        "viewBoxWidth": 1346,
+        "minimumProjectedNodeTextPx": 7.504011887072808,
+        "minimumProjectedNonEdgeTextPx": 7.504011887072808,
+        "minimumProjectedEdgeTextPx": 7.898959881129272,
+        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
-          "kind": "boundary",
-          "id": null
+          "kind": "node",
+          "id": "collector"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -806,25 +806,25 @@
         "readerOverflow": null,
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1556,
-        "diagramWidth": 1506,
+        "readerWidth": 1827,
+        "diagramWidth": 1777,
         "pageComposition": {
           "bodyPaddingPx": 64,
           "headerPx": 94,
           "diagramChromePx": 94,
-          "svgPx": 1057,
+          "svgPx": 1056,
           "cardsPx": 0,
-          "viewBoxHeight": 790
+          "viewBoxHeight": 800
         },
-        "viewBoxWidth": 1126,
-        "minimumProjectedNodeTextPx": 7.264517129032257,
-        "minimumProjectedNonEdgeTextPx": 7.264517129032257,
+        "viewBoxWidth": 1346,
+        "minimumProjectedNodeTextPx": 7.6,
+        "minimumProjectedNonEdgeTextPx": 7.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "renderer NetworkPolicy: API in, collector out",
-        "minimumProjectedNodeTextDetail": "boundary",
+        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
-          "kind": "boundary",
-          "id": null
+          "kind": "node",
+          "id": "collector"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -857,25 +857,25 @@
         "readerOverflow": null,
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1556,
-        "diagramWidth": 1506,
+        "readerWidth": 1827,
+        "diagramWidth": 1777,
         "pageComposition": {
           "bodyPaddingPx": 64,
           "headerPx": 94,
           "diagramChromePx": 94,
-          "svgPx": 1057,
+          "svgPx": 1056,
           "cardsPx": 0,
-          "viewBoxHeight": 790
+          "viewBoxHeight": 800
         },
-        "viewBoxWidth": 1126,
-        "minimumProjectedNodeTextPx": 7.264517129032257,
-        "minimumProjectedNonEdgeTextPx": 7.264517129032257,
+        "viewBoxWidth": 1346,
+        "minimumProjectedNodeTextPx": 7.6,
+        "minimumProjectedNonEdgeTextPx": 7.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "renderer NetworkPolicy: API in, collector out",
-        "minimumProjectedNodeTextDetail": "boundary",
+        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
-          "kind": "boundary",
-          "id": null
+          "kind": "node",
+          "id": "collector"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -906,23 +906,23 @@
         "file": "laya-architecture.visual-check.html"
       },
       {
-        "sha256": "3f2e20ae45efae5d538ab4fe0ea78c43e5b6e538dbf695e773e464f54d70cb64",
-        "bytes": 121030,
+        "sha256": "23ca461ac8b428a080e73a4dac440f2de4eee1946080ba616c5c99674111f0bc",
+        "bytes": 190012,
         "file": "laya-architecture.visual-check.1440x900.light.png"
       },
       {
-        "sha256": "77a271b3fd86277eacedfbd5dc7bb073c8ab04c67c00a58f3499b203c7588a68",
-        "bytes": 117167,
+        "sha256": "6b3df503a18b427130f309c4226f1ba67e2fdb3a2525137b07720781a06c91da",
+        "bytes": 197705,
         "file": "laya-architecture.visual-check.1440x900.dark.png"
       },
       {
-        "sha256": "16cc2113461beee1f7304f45f977c37aee31a7f2bad2e87fb0e5fe5bc22d5c7a",
-        "bytes": 219161,
+        "sha256": "5044cff369504255697bf3ed73219da6df33a3c1a63c1fae3aeff2c4a4ab4773",
+        "bytes": 311492,
         "file": "laya-architecture.visual-check.2048x1320.light.png"
       },
       {
-        "sha256": "e7e1d1f3510fd0397e3da19cc0497bec95bd4a54fa61b7641c7e8c40a87494dd",
-        "bytes": 220878,
+        "sha256": "feb032304c34e53572acb03eddbe7b02e3aa543d333db8aa43cba906d4c2188e",
+        "bytes": 312907,
         "file": "laya-architecture.visual-check.2048x1320.dark.png"
       }
     ]

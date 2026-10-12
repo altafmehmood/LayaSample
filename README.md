@@ -22,7 +22,8 @@ OpenAI vision and text models.
 | [Feedback sentiment](#feedback-sentiment) | The original sample: hotel feedback sentiment with the Laya decision model | `curl -H 'Content-Type: application/json' -d '{"text":"The room was dirty"}' localhost:5091/api/feedback/analyze` |
 
 Longer notes on how each feature set works, its settings, limits and what was verified:
-[docs/security-cost-hardening.md](docs/security-cost-hardening.md) (usage tracking, ClamAV, content checks, streaming, red team).
+[docs/security-cost-hardening.md](docs/security-cost-hardening.md) (usage tracking, ClamAV, content checks, streaming, red team) and
+[docs/threat-model.md](docs/threat-model.md) (what could go wrong at each trust boundary, and what is still open).
 
 The README is kept in step with the code: a new feature gets a row here, a section below, and a line in the quick start
 or its own section if it needs setup.
@@ -82,6 +83,10 @@ One entry per day's work, newest first: what was added, the commands to try it a
 Compose on 8080.
 
 ### 2026-10-11
+
+**Threat model.** A STRIDE review of each trust boundary: what already stops each threat, what does not, and the order
+to fix the open ones. A desk review of commit `6fe4128`; nothing was attacked or tested. See
+[docs/threat-model.md](docs/threat-model.md). Nothing to run and nothing paid.
 
 **Red-team probe list fixed.** `redteam/run.sh` named `probes.xss`, which garak 0.17.0 no longer has; it now runs
 `probes.web_injection`. A full run is about 7,470 prompts, more than the default 5000-upload cap. See
