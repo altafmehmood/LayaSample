@@ -129,7 +129,21 @@ public sealed record ExtractionResult(
     LoanApplicationSection? LoanApplication, Ucc1Section? Ucc1, Ucc3Section? Ucc3, SecurityAgreementSection? SecurityAgreement,
     IReadOnlyList<NameValue> OtherFields);
 
-public sealed record ExtractionUsage(long InputTokens, long OutputTokens);
+/// <summary>
+/// Model tokens for one extraction (all of its model calls). <see cref="InputTokens"/> includes the cached ones and
+/// <see cref="OutputTokens"/> includes the reasoning ones, as the provider counts them. <see cref="CostUsd"/> is the
+/// list price (null when a model has no configured price).
+/// </summary>
+public sealed record ExtractionUsage(long InputTokens, long OutputTokens, long CachedInputTokens = 0, long? ReasoningTokens = null, decimal? CostUsd = null)
+{
+    /// <summary>The sum of two calls. A cost is only known when both are.</summary>
+    public ExtractionUsage Plus(ExtractionUsage other) => new(
+        InputTokens + other.InputTokens,
+        OutputTokens + other.OutputTokens,
+        CachedInputTokens + other.CachedInputTokens,
+        ReasoningTokens is null && other.ReasoningTokens is null ? null : (ReasoningTokens ?? 0) + (other.ReasoningTokens ?? 0),
+        CostUsd is { } a && other.CostUsd is { } b ? a + b : null);
+}
 
 public sealed record ExtractDocumentResponse(
     string FileName,
@@ -139,4 +153,6 @@ public sealed record ExtractDocumentResponse(
     string Model,
     ExtractionResult Extraction,
     ExtractionUsage Usage,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    [property: Description("Findings about the upload and the answer: active content, macros, executable attachments, hidden text, instruction-like text. Blocking ones refuse the request unless Security:OnFinding is flag.")]
+    IReadOnlyList<RiskFinding>? Risks = null);

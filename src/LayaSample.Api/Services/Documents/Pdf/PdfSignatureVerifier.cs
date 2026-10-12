@@ -16,7 +16,7 @@ namespace LayaSample.Api.Services.Documents.Pdf;
 public static class PdfSignatureVerifier
 {
     /// <returns>Null when the signature field has not been signed.</returns>
-    public static SignatureInfo? Verify(PdfDocument pdf, AcroSignatureField field, ReadOnlyMemory<byte> file)
+    public static SignatureInfo? Verify(PdfDocument pdf, AcroSignatureField field, Stream file)
     {
         var sig = PdfTokens.Get<DictionaryToken>(pdf, field.Dictionary, "V");
         if (sig is null) return null;
@@ -46,9 +46,10 @@ public static class PdfSignatureVerifier
         };
         if (contents is null) return Fail("missing signature contents", covers);
 
+        // Only the signed ranges are read into memory (the CMS check needs them as one buffer), not the whole file.
         var signed = new byte[range[1] + range[3]];
-        file.Span.Slice((int)range[0], (int)range[1]).CopyTo(signed);
-        file.Span.Slice((int)range[2], (int)range[3]).CopyTo(signed.AsSpan((int)range[1]));
+        ReadRange(file, range[0], signed.AsSpan(0, (int)range[1]));
+        ReadRange(file, range[2], signed.AsSpan((int)range[1], (int)range[3]));
 
         try
         {
@@ -70,6 +71,21 @@ public static class PdfSignatureVerifier
         catch (CryptographicException ex)
         {
             return Fail(ex.Message, covers);
+        }
+    }
+
+    /// <summary>PdfPig is still reading this stream, so it is left where it was.</summary>
+    private static void ReadRange(Stream file, long offset, Span<byte> destination)
+    {
+        var position = file.Position;
+        try
+        {
+            file.Position = offset;
+            file.ReadExactly(destination);
+        }
+        finally
+        {
+            file.Position = position;
         }
     }
 

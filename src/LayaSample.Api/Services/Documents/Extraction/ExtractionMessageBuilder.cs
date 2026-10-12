@@ -1,4 +1,5 @@
 using LayaSample.Api.Models;
+using LayaSample.Api.Services.Security;
 using Microsoft.Extensions.AI;
 
 namespace LayaSample.Api.Services.Documents.Extraction;
@@ -24,6 +25,8 @@ public static class ExtractionMessageBuilder
         {
             if (string.IsNullOrWhiteSpace(text))
                 return;
+            // The document sits between <document> tags; text that contains a tag cannot be allowed to close the block early.
+            text = InjectionPatterns.Neutralise(text);
             if (text.Length > charsLeft)
             {
                 warnings.Add($"{label} was cut to fit the {options.MaxTextChars}-character text limit");

@@ -7,6 +7,7 @@ using LayaSample.Api.Services.Documents.Extraction;
 using LayaSample.Rendering;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -28,6 +29,10 @@ public class ApiKeyTests
                 builder.UseSetting($"Auth:ApiKeys:{i}", keys[i]);
             // Production refuses to start without a renderer unless in-process rendering is allowed.
             builder.UseSetting("DocumentAnalysis:AllowInProcessRendering", "true");
+            // Production defaults to scanning uploads with a ClamAV daemon, which these tests do not run. Set after
+            // appsettings.json, which names the default, so it wins.
+            builder.ConfigureAppConfiguration((_, config) =>
+                config.AddInMemoryCollection(new Dictionary<string, string?> { ["Security:Malware:Provider"] = "none" }));
             builder.ConfigureServices(s =>
             {
                 foreach (var d in s.Where(d => d.ServiceType == typeof(IHostedService)).ToList()) s.Remove(d);

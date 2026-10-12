@@ -10,6 +10,14 @@ on:
         description: Run the AI extraction evaluation over the lending corpus (calls the paid OpenAI API)
         type: boolean
         default: false
+      redteam:
+        description: Red-team the extraction API with garak, once with the defences on and once with them in flag mode (every prompt is a paid OpenAI call)
+        type: boolean
+        default: false
+      redteam_probes:
+        description: garak probes to run (a few prompts each by default; see redteam/README.md)
+        type: string
+        default: probes.promptinject.HijackHateHumans,probes.latentinjection.LatentInjectionResume,probes.encoding.InjectBase64
 
 permissions:
   contents: read
@@ -217,4 +225,60 @@ jobs:
       - name: Evaluate extraction accuracy
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          RUN_EXTRACTION_EVAL: "1"
         run: dotnet run --project tests/LayaSample.Tests -c Release -- -trait "Category=Evaluation" -showLiveOutput
+
+  # Manual only: starts the stack on the runner and attacks it with garak (see redteam/README.md). Needs the OPENAI_API_KEY
+  # secret, and spends it: every prompt is a model call. Never runs on push and never targets production.
+  redteam:
+    if: github.event_name == 'workflow_dispatch' && inputs.redteam
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Start the stack with a throwaway access key
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::OPENAI_API_KEY is not set; the extraction API cannot call the model"
+            exit 1
+          fi
+          echo "LAYA_API_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+          # The key is read from the environment of the next steps, which is set from the line above.
+
+      - name: Attack with the defences on
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          docker compose up -d --build --wait
+          redteam/run.sh --target http://localhost:8080 --label reject --probes "${{ inputs.redteam_probes }}" --max-requests 2000
+
+      - name: Attack the model itself (findings flagged, not refused)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LAYA_ON_FINDING: flag
+        run: |
+          docker compose up -d --force-recreate --wait api
+          redteam/run.sh --target http://localhost:8080 --label flag --probes "${{ inputs.redteam_probes }}" --max-requests 2000
+
+      - name: Keep the reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: garak-reports
+          path: redteam/reports/
+          if-no-files-found: warn
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v

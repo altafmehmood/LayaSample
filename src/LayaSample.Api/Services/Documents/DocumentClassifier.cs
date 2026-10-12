@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using LayaSample.Api.Models;
 using LayaSample.Api.Services.Documents.Pdf;
+using LayaSample.Api.Services.Security;
 using LayaSample.Rendering;
 using Microsoft.Extensions.Options;
 using UglyToad.PdfPig;
@@ -39,7 +40,10 @@ public sealed class DocumentClassifier(IOptions<DocumentAnalysisOptions> options
         new TextLayerDetector(),
         new ImageDetector(),
         new LayoutDetector(),
-        new AnnotationDetector()
+        new AnnotationDetector(),
+        // After ImageDetector: a scan's invisible text layer is not hidden text.
+        new ActiveContentDetector(),
+        new HiddenTextDetector()
     ];
 
     private readonly DocumentAnalysisOptions _options = options.Value;
@@ -51,10 +55,10 @@ public sealed class DocumentClassifier(IOptions<DocumentAnalysisOptions> options
         var mediaType = DocumentSniffer.Sniff(stream);
         return mediaType switch
         {
-            DocumentSniffer.Pdf => ClassifyPdf(StreamBytes.Read(stream), ct),
+            DocumentSniffer.Pdf => ClassifyPdf(stream, ct),
             DocumentSniffer.Xlsx => Office(stream, DocumentKind.Spreadsheet, mediaType, DocumentRoutes.Spreadsheet, "Excel workbook; convert sheets to markdown tables"),
             DocumentSniffer.Docx => Office(stream, DocumentKind.WordDocument, mediaType, DocumentRoutes.Text, "Word document; convert to markdown"),
-            _ when DocumentSniffer.IsImage(mediaType) => await ClassifyImageAsync(StreamBytes.Read(stream), mediaType, ct),
+            _ when DocumentSniffer.IsImage(mediaType) => await ClassifyImageAsync(stream, mediaType, ct),
             DocumentSniffer.Ole => throw new DocumentException(
                 "legacy (.xls/.doc) or password-protected Office files are not supported; save as unprotected .xlsx/.docx",
                 StatusCodes.Status415UnsupportedMediaType),
@@ -62,15 +66,17 @@ public sealed class DocumentClassifier(IOptions<DocumentAnalysisOptions> options
         };
     }
 
-    private DocumentClassification ClassifyPdf(byte[] bytes, CancellationToken ct)
+    private DocumentClassification ClassifyPdf(Stream file, CancellationToken ct)
     {
         try
         {
-            using var pdf = PdfDocument.Open(bytes);
+            // Read in place: PdfPig takes a seekable stream as is and leaves it open for the next stage.
+            file.Position = 0;
+            using var pdf = PdfDocument.Open(file);
             if (pdf.NumberOfPages > _options.MaxPdfPages)
                 throw new DocumentException($"PDF has {pdf.NumberOfPages} pages; at most {_options.MaxPdfPages} are supported",
                     StatusCodes.Status422UnprocessableEntity);
-            var inspection = new PdfInspection(pdf, bytes, _options);
+            var inspection = new PdfInspection(pdf, file, _options);
 
             foreach (var detector in PdfDetectors) detector.InspectDocument(inspection);
             // One pass over the pages so each is parsed once, however many detectors look at it.
@@ -95,13 +101,13 @@ public sealed class DocumentClassifier(IOptions<DocumentAnalysisOptions> options
         }
     }
 
-    private async Task<DocumentClassification> ClassifyImageAsync(byte[] bytes, string mediaType, CancellationToken ct)
+    private async Task<DocumentClassification> ClassifyImageAsync(Stream image, string mediaType, CancellationToken ct)
     {
         IReadOnlyList<RasterPage> pages;
         try
         {
             // Image headers are parsed by native code, so the renderer reads them.
-            pages = await rasterizer.InspectImageAsync(bytes, mediaType, _options.MaxImageFrames + 1, ct);
+            pages = await rasterizer.InspectImageAsync(image, mediaType, _options.MaxImageFrames + 1, ct);
         }
         catch (InvalidDataException ex)
         {
@@ -140,7 +146,8 @@ public sealed class DocumentClassifier(IOptions<DocumentAnalysisOptions> options
             Strategy = PreparationStrategy.Markdown,
             Route = route,
             Reason = reason,
-            MediaType = mediaType
+            MediaType = mediaType,
+            Risks = OfficeInspector.Inspect(stream)
         };
     }
 

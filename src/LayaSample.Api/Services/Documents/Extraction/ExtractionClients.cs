@@ -3,6 +3,7 @@ using System.ClientModel.Primitives;
 using System.Diagnostics;
 using System.Net;
 using Microsoft.Extensions.AI;
+using LayaSample.Api.Models;
 using LayaSample.Rendering;
 using OpenAI;
 
@@ -15,6 +16,9 @@ public sealed class ExtractionException(int statusCode, string message, int? ret
     public int StatusCode { get; } = statusCode;
     public int? RetryAfterSeconds { get; } = retryAfterSeconds;
     public bool IsMisconfiguration { get; } = isMisconfiguration;
+
+    /// <summary>Tokens the provider billed for the call that failed, when it answered (a cut-off or refused answer still costs).</summary>
+    public ExtractionUsage? Usage { get; init; }
 }
 
 /// <summary>The chat clients the agents call; both null while no API key is configured.</summary>

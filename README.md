@@ -5,14 +5,27 @@ PDF, image or Office file. The service works out how to read it (text layer, ren
 faxes), prepares it for an AI agent, and extracts the borrower, lender, collateral and every box on the UCC forms with
 OpenAI vision and text models.
 
-- **`POST /api/documents/analyze`** classifies a document and prepares it for an agent: page images, markdown, OCR text,
-  form values. No AI model, no cost.
-- **`POST /api/documents/extract`** reads the document with an OpenAI model and returns structured data with page
-  citations. Needs an API key.
-- **A 39-PDF lending corpus** with ground truth, in every rendering a bank sees: digital, fillable form, scan, fax and
-  mixed.
-- **Helm chart and CI** that deploy the API and an isolated renderer to Kubernetes behind the Gateway API.
-- `POST /api/feedback/analyze` is the original sample: hotel feedback sentiment with the Laya decision model.
+## Features
+
+| Feature | What it gives you | Run it |
+|---|---|---|
+| [Document analysis](#document-analysis) | Classifies a PDF, image or Office file and prepares it for an agent: page images, markdown, OCR text, form values. No model, no cost | `curl -F file=@docs/samples/pdf/corpus/redwood-mechanical-ucc1-fax.pdf localhost:5091/api/documents/analyze` |
+| [AI extraction](#ai-extraction) | Borrower, lender, collateral and every UCC box as structured data with page citations (OpenAI vision and text) | `dotnet user-secrets set "Extraction:ApiKey" "sk-..." --project src/LayaSample.Api`, then `POST /api/documents/extract` |
+| [Usage and cost](#ai-extraction) | Every model call recorded (API key fingerprint, file name, input, cached, reasoning, output tokens, list-price cost) and served as JSON or CSV | `curl -H "X-Api-Key: $KEY" "localhost:5091/api/usage?format=csv"` |
+| [Security layers](#security) | Malware scan (ClamAV), active-content, hidden-text and prompt-injection checks, all reported in `risks` and refused with 422 by default | `docker compose up -d clamav`, then upload the EICAR test file |
+| [Authentication](#authentication) | `X-Api-Key` on the endpoints that spend money; key fingerprints in the usage history; optional admin keys | `dotnet user-secrets set "Auth:ApiKeys:0" "$(openssl rand -base64 32)" --project src/LayaSample.Api` |
+| [Isolated renderer](#architecture) | PDFium, ImageMagick and OCR in a separate container: no network, read-only file system | `docker compose up --build` |
+| [Telemetry](#telemetry-honeycomb) | Traces, metrics and logs to Honeycomb, including prompts, answers, tokens and cost | set the `OTEL_EXPORTER_OTLP_*` user secrets, see [Telemetry](#telemetry-honeycomb) |
+| [Lending corpus and evaluation](#lending-corpus) | 39 synthetic lending PDFs with ground truth, and an opt-in accuracy score for the model | `RUN_EXTRACTION_EVAL=1 dotnet run --project tests/LayaSample.Tests -c Release -- -trait "Category=Evaluation"` (paid) |
+| [Red team](redteam/README.md) | garak attacks the extraction API through a shim, with the defences on and in `flag` mode | `redteam/run.sh --smoke` (paid) |
+| [Kubernetes deploy](#kubernetes) | Helm chart and CI deploy to DOKS: Gateway API, TLS, ClamAV, usage PVC, collector | see [deploy/README.md](deploy/README.md) |
+| [Feedback sentiment](#feedback-sentiment) | The original sample: hotel feedback sentiment with the Laya decision model | `curl -H 'Content-Type: application/json' -d '{"text":"The room was dirty"}' localhost:5091/api/feedback/analyze` |
+
+Longer notes on how each feature set works, its settings, limits and what was verified:
+[docs/security-cost-hardening.md](docs/security-cost-hardening.md) (usage tracking, ClamAV, content checks, streaming, red team).
+
+The README is kept in step with the code: a new feature gets a row here, a section below, and a line in the quick start
+or its own section if it needs setup.
 
 ## Quick start
 
@@ -50,14 +63,95 @@ You need the .NET 10 SDK. Steps 1 to 3 need no Docker, API key or cluster.
    nothing else changes. The models are `Extraction:VisionModel` and `Extraction:TextModel` in `appsettings.json`;
    override them with the `Extraction__VisionModel` and `Extraction__TextModel` environment variables.
 
-5. **Run the tests.** They are offline: OCR and the model provider are faked.
+5. **Run the tests.** They are offline: OCR, the model provider and the malware scanner are faked.
 
        dotnet run --project tests/LayaSample.Tests -c Release
 
-   CI runs them with `dotnet test`. The AI accuracy evaluation is separate and opt-in; see [AI extraction](#ai-extraction).
+   CI runs them with `dotnet test`. Three kinds of test never run unless you ask: the AI accuracy evaluation (it calls the
+   paid OpenAI API; it needs `RUN_EXTRACTION_EVAL=1`, even when a key is set, see [AI extraction](#ai-extraction)), the
+   ClamAV tests (`CLAMD_HOST`) and the real-OCR check (`REAL_OCR=1`), both described under [Security](#security).
 
-To run the API with the isolated renderer, as in production, use `docker compose up --build` (http://localhost:8080);
-see [Docker](#docker).
+`dotnet run` does not scan uploads for malware (Development sets `Security:Malware:Provider` to `none`, because there is no
+ClamAV daemon). To run with the isolated renderer and the scanner, as in production, use `docker compose up --build`
+(http://localhost:8080); see [Docker](#docker).
+
+## Quickstarts by date
+
+One entry per day's work, newest first: what was added, the commands to try it and what you should see. Steps marked
+**(paid)** call the OpenAI API; **(opt-in)** tests do not run unless you ask. Ports: `dotnet run` listens on 5091, Docker
+Compose on 8080.
+
+### 2026-10-11
+
+**Red-team probe list fixed.** `redteam/run.sh` named `probes.xss`, which garak 0.17.0 no longer has; it now runs
+`probes.web_injection`. A full run is about 7,470 prompts, more than the default 5000-upload cap. See
+[docs/security-cost-hardening.md](docs/security-cost-hardening.md) and `redteam/README.md`.
+
+    redteam/run.sh --smoke                          # (paid) a few prompts per probe
+    redteam/run.sh --max-requests 8000              # (paid) the complete run, about $4 to $8 at list price (estimate)
+
+Counting the prompts, which is free, was run; the paid runs were not.
+
+**Usage and cost tracking.** Every model call is recorded and served as JSON or CSV. See [AI extraction](#ai-extraction).
+
+    dotnet user-secrets set "Extraction:ApiKey" "sk-..." --project src/LayaSample.Api       # (paid)
+    dotnet run --project src/LayaSample.Api
+    curl -F "file=@docs/samples/pdf/corpus/redwood-mechanical-ucc1-fax.pdf" localhost:5091/api/documents/extract
+    curl "localhost:5091/api/usage"                                   # one row per model call, newest first
+    curl "localhost:5091/api/usage?format=csv" -o usage.csv           # the same as a CSV download
+    curl "localhost:5091/api/usage/summary?groupBy=model"             # tokens and cost per model (or day, key)
+
+You should see `usage` in the extract response with `cachedInputTokens`, `reasoningTokens` and `costUsd`, and a row per call
+in the history (`src/LayaSample.Api/data/usage.db`, ignored by git). With a key configured (anywhere but Development) send
+`-H "X-Api-Key: $KEY"`; a key sees its own rows. On Kubernetes the history is on a PVC (`api.usage.persistence`).
+
+**Malware scanning with ClamAV.** Every upload is scanned before anything parses it. See [Security](#security).
+
+    docker compose up -d clamav                                       # healthy in about 25 s
+    printf 'X5O!P%%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > eicar.txt
+    Security__Malware__Provider=clamd Security__Malware__Host=localhost dotnet run --project src/LayaSample.Api
+    curl -F "file=@eicar.txt" localhost:5091/api/documents/analyze    # 422 "document rejected: malware detected"
+    docker compose stop clamav                                        # now any upload answers 503 with Retry-After
+    CLAMD_HOST=localhost dotnet run --project tests/LayaSample.Tests -c Release -- -trait "Category=Integration"   # (opt-in)
+
+`dotnet run` alone does not scan (Development sets the provider to `none`). On Kubernetes the node needs the memory for
+ClamAV: [deploy/README.md](deploy/README.md#malware-scanning-clamav).
+
+**Active content, hidden text and prompt-injection checks.** Findings are refused with 422, or reported in `risks` with
+`flag`. See [Security](#security).
+
+    dotnet run --project tests/LayaSample.Tests -c Release -- -class LayaSample.Tests.RiskTests
+    Security__OnFinding=flag dotnet run --project src/LayaSample.Api      # report findings in `risks` instead of refusing
+
+There are no hostile sample files in the repository: the tests generate them (`DocumentFixtures.PdfWithHiddenText`,
+`PdfWithLinkAction`, `PdfWithAttachment`). The sample corpus has no blocking findings; check the real-OCR scans and faxes with
+`REAL_OCR=1 dotnet run --project tests/LayaSample.Tests -c Release -- -class LayaSample.Tests.RealOcrRiskTests` **(opt-in)**.
+
+**Streaming uploads.** Nothing to switch on: the document is read in place from the upload's own stream, never copied into
+memory. See [Security](#security) (Memory).
+
+    dotnet run --project tests/LayaSample.Tests -c Release -- -class LayaSample.Tests.StreamingTests
+
+**Red-teaming with garak.** See [redteam/README.md](redteam/README.md).
+
+    OPENAI_API_KEY=sk-... LAYA_API_KEY=$(openssl rand -base64 32) docker compose up -d --build      # (paid)
+    export LAYA_API_KEY=<the same key>
+    redteam/run.sh --smoke                                            # a few prompts per probe; reports in redteam/reports/
+    LAYA_ON_FINDING=flag docker compose up -d --force-recreate api    # then rerun to test the model without the filters
+
+Or run the manual `redteam` job from the Actions tab. It spends the `OPENAI_API_KEY` secret.
+
+**The paid evaluation is opt-in.** A plain test run never calls OpenAI, even with a key on the machine.
+
+    RUN_EXTRACTION_EVAL=1 dotnet run --project tests/LayaSample.Tests -c Release -- -trait "Category=Evaluation"   # (paid)
+
+**Telemetry in production (Honeycomb through the in-cluster collector).** Add the `HONEYCOMB_API_KEY` GitHub secret, then
+merge to `main`; the deploy job creates the `laya-otel` Secret and the collector.
+
+    kubectl -n laya get pods                       # laya-otel-collector next to the API and the renderer
+    # Honeycomb: datasets laya-sample-api and laya-sample-renderer
+
+See [Telemetry](#telemetry-honeycomb) and [deploy/README.md](deploy/README.md).
 
 ## API
 
@@ -65,11 +159,14 @@ see [Docker](#docker).
 |---|---|
 | `POST /api/documents/analyze` | Multipart `file`. Classify and prepare a document for an agent. Query: `dispatch` (default true), `includeData` (default true). |
 | `POST /api/documents/extract` | Multipart `file`. Extract structured data with OpenAI. **Needs the `X-Api-Key` header** (see [Authentication](#authentication)); 503 until a model key is configured. |
+| `GET /api/usage` | Model calls with tokens and list-price cost, newest first; filters, paging, `format=csv`. **Needs `X-Api-Key`**; a key sees its own rows (see [AI extraction](#ai-extraction)). |
+| `GET /api/usage/summary` | The same, totalled per day, model or key. **Needs `X-Api-Key`.** |
 | `POST /api/feedback/analyze` | JSON `{ "text": "..." }`. Hotel feedback sentiment (the original sample). |
 | `GET /health/live`, `/health/ready` (also `/health`) | Liveness; readiness (503 while models load, 200 `Degraded` if one failed for good or the renderer is unreachable). |
 | `GET /scalar/v1`, `/openapi/v1.json` | Interactive API docs and the OpenAPI document. |
 
-Errors are problem details (`application/problem+json`).
+Errors are problem details (`application/problem+json`). The analyze and extract responses carry a `risks` list of
+findings about the upload (see [Security](#security)).
 
 ### Authentication
 
@@ -181,11 +278,44 @@ for training and requests are not stored (`store` is false), but abuse monitorin
 unless the organisation has Zero Data Retention. Use a dedicated OpenAI project for this service with a monthly budget
 (the hard stop on spend; the API key above only decides who may call), and get sign-off before sending borrower data.
 
+**Usage and cost.** Every model call is recorded, one row each: the calling API key (a short hash fingerprint, never the
+key), the file name, input, cached, reasoning and output tokens, and the cost at OpenAI's list price. Because a row is a
+call, the generic-agent retry and an answer that was cut off or refused (still billed) show up on their own, and a call
+that failed before OpenAI answered has no tokens. The extract response also returns the totals in `usage`
+(`cachedInputTokens`, `reasoningTokens`, `costUsd`).
+
+    curl -H "X-Api-Key: $LAYA_API_KEY" "http://localhost:8080/api/usage?from=2026-10-01&format=csv" -o usage.csv
+    curl -H "X-Api-Key: $LAYA_API_KEY" "http://localhost:8080/api/usage/summary?groupBy=model"
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/usage` | Rows, newest first. Filters `from`, `to` (UTC, `to` exclusive), `file` (contains, any case), `model`, `apiKey` (admin keys only); `limit` (default 1000, at most 10000) and `before` (a row id) to page. JSON carries `nextBefore` when more rows exist; CSV carries it in the `X-Next-Before` header. |
+| `GET /api/usage/summary` | Calls, tokens and cost per `groupBy=day` (default), `model` or `key`, with a total; same filters. `unpriced` counts calls whose model has no price, which are missing from the cost. |
+
+`format=csv` (or `Accept: text/csv`) downloads a CSV with a byte order mark so Excel reads it as UTF-8. File names come
+from the caller, so a CSV cell that starts with `=`, `+`, `-` or `@` gets a leading apostrophe and cannot run as a
+formula. Both endpoints need an `X-Api-Key`, and a key sees only its own rows; keys listed under `Auth:AdminKeys`
+(none by default) see everyone's and are also accepted for extraction.
+
+The history is a SQLite file at `Usage:DatabasePath` (`src/LayaSample.Api/data/usage.db` for `dotnet run`, `/data/usage.db`
+in the container, on the `usage-data` volume in compose and a PersistentVolumeClaim in Kubernetes). An empty path
+switches tracking off and the endpoints answer 503. Writing happens in the background, so a storage failure is logged and
+counted (`laya.usage.write_failures`) but never fails an extraction. Spend also goes to the `laya.llm.cost` and
+`laya.extraction.tokens` metrics.
+
+**The cost is a list-price estimate, not the invoice.** `Extraction:Pricing` holds the per-model prices (per million
+tokens, with a higher tier above 272,000 input tokens) and the date they were read; update it when OpenAI changes them.
+It assumes the input count includes the cached tokens and the output count includes the reasoning tokens, which is how
+OpenAI reports them; check one call against the OpenAI dashboard. Batch, flex and discounts are not modelled, and the
+OpenAI SDK's own retries of a failed request are invisible here. Use a dedicated OpenAI project for this service so the
+dashboard total is comparable with the history.
+
 **Accuracy evaluation.** This scores the model against the corpus manifest and prints accuracy by field and by
 rendering, the keyword detector's hit rate, and every miss. It calls the paid API for 39 documents and skips itself
-without a key (`OPENAI_API_KEY` or the `Extraction:ApiKey` user secret):
+unless you set `RUN_EXTRACTION_EVAL=1` (and a key: `OPENAI_API_KEY` or the `Extraction:ApiKey` user secret). A key alone does
+not run it, so a plain `dotnet test` never spends money:
 
-    dotnet run --project tests/LayaSample.Tests -c Release -- -trait "Category=Evaluation" -showLiveOutput
+    RUN_EXTRACTION_EVAL=1 dotnet run --project tests/LayaSample.Tests -c Release -- -trait "Category=Evaluation" -showLiveOutput
 
 Optional environment variables: `EVAL_VISION_MODEL`, `EVAL_TEXT_MODEL` (to compare models), `EVAL_FILTER` (a substring
 of the file name, e.g. `-fax`), `EVAL_MIN_ACCURACY` (default 0.9). In CI it is the manual `extraction-eval` job.
@@ -304,6 +434,53 @@ Invalid settings stop the app at startup. `?includeData=false` leaves base64 pag
 Durations per stage and documents by kind and outcome are published on the `LayaSample.Documents` meter
 (`dotnet-counters monitor -n LayaSample.Api --counters LayaSample.Documents`).
 
+## Security
+
+An upload goes through these layers. The first four run in the API; the native-code parsers run only in the renderer.
+
+| Layer | What it does | Refuses with |
+|---|---|---|
+| **Malware scan** | Before anything parses the file, it is streamed to ClamAV (its own container, clamd's `INSTREAM`), 64 KB at a time. | 422 `malware detected`. While the scanner gives no verdict: 503 with `Retry-After` (`Security:Malware:FailMode`, `closed` by default) |
+| **File structure** | PDF: Launch actions and RichMedia/3D (block), JavaScript and form scripts (reported), embedded programs (block), hidden text: tiny, near-white or off-page (block). Office: macros, ActiveX, embedded programs and linked templates or objects (block), embedded objects and external workbook links (reported). | 422 for the blocking ones |
+| **Text** | The text the model will read (text layer, OCR, form values, attachments) is checked for phrases aimed at the model: "ignore the previous instructions", "you are now an AI", a system-prompt request, chat-template tokens. | 422 `instructions addressed to an AI model` |
+| **Prompt** | The document sits in a `<document>` block that the system prompt declares to be data. A `<document>` tag inside the text is made inert, so it cannot close the block. The model has no tools and answers in a fixed JSON schema. | |
+| **Answer** | The answer is checked for the same phrases, which an injection that got through can echo into a field or its quote. | 422 `extraction rejected` |
+| **Isolation** | PDFium, ImageMagick and OCR run only in the renderer: no network, read-only file system, no capabilities. | |
+
+Every finding is in the `risks` list of the analyze and extract responses (kind, severity, page, detail), and counted on
+the `laya.risk.findings` metric. The detail names the kind of thing and where; it never repeats the document's text, and
+the malware signature stays in the log and the trace.
+
+| Setting | Default | Effect |
+|---|---|---|
+| `Security:OnFinding` | `reject` | `reject` refuses a request with a blocking finding (422). `flag` reports it and carries on, which is also how to test the model without the filters in front of it |
+| `Security:Malware:Provider` | `clamd` | `none` switches scanning off (Development sets it, since `dotnet run` has no ClamAV) |
+| `Security:Malware:Host`, `Port` | `clamav`, 3310 | Where the clamd daemon is |
+| `Security:Malware:FailMode` | `closed` | While there is no verdict: `closed` answers 503, `open` accepts the upload unscanned (and logs a warning) |
+| `Security:Malware:TimeoutSeconds` | 60 | Connecting, sending and waiting for the verdict |
+
+**What this does not do.** The text check is a list of phrases, so a rephrased attack gets past it; it is one layer next
+to the prompt and the schema, not a guarantee, and a document may need to be refused even when no phrase matches. The
+hidden-text check skips a page that is a scan with a text layer over the image (that layer is invisible by design), so
+it does not yet compare the layer with what the image shows. Page-level additional actions in a PDF are not inspected
+(PdfPig does not expose them); the catalog's open action and the actions on annotations and form widgets are. The
+phrases are tuned to leave ordinary lending paperwork alone: every sample document under `docs/samples` has no blocking
+finding, including the scans and faxes read by the real OCR. Treat the extracted values as untrusted data downstream.
+
+ClamAV is GPL-2.0 and runs as its own container, which the API talks to over TCP; it is not part of the application (see
+`CLAUDE.md`). Run the tests that use a real daemon with `docker compose up -d clamav` and then
+`CLAMD_HOST=localhost dotnet run --project tests/LayaSample.Tests -c Release -- -trait "Category=Integration"`; the real-OCR
+check of the sample scans runs with `REAL_OCR=1` in the same command.
+
+**Red team.** [redteam/](redteam/README.md) attacks the API with [garak](https://github.com/NVIDIA/garak), by hand or with the manual
+`redteam` CI job, once with these filters on and once in `flag` mode to test the model itself.
+
+**Memory.** The upload is one seekable stream: ASP.NET already spools a multipart file above 64 KB to a temporary file
+(`/tmp`, a writable volume in the containers), and the scan, the classifier, the preparer and the hand-off to the renderer
+all read that stream in place. The document is never copied into memory. What still is: files embedded in a PDF (a few,
+bounded by `MaxAttachments`), the rendered page images (at most `MaxPages`) and their text, the libraries' own structures
+(PdfPig, ClosedXML, OpenXML, PDFium, ImageMagick), and the signed ranges of a signed PDF.
+
 ## OCR models
 
 Scanned pages, faxes and images are read with [RapidOcrNet](https://github.com/BobLd/RapidOcrNet), which runs
@@ -336,6 +513,10 @@ the API once with `dotnet run`, or copy `models/` from another machine.
     OCR_MODEL=PPOCRv6Small docker compose up --build           # multilingual OCR
     OPENAI_API_KEY=sk-... LAYA_API_KEY=$(openssl rand -base64 32) docker compose up --build   # enables /api/documents/extract
 
+A third container, `clamav`, scans every upload for malware; see [Security](#security). Its first start downloads the
+signature database (a minute or two), and the API starts once it reports healthy. It has no memory or CPU limit and uses
+about 1 GiB when idle.
+
 Containers run in Production, where user secrets are not read, so the keys come from the environment, and extraction
 answers 503 without `LAYA_API_KEY` (callers send it as `X-Api-Key`). The renderer
 is on an internal network with no route out, has a read-only file system (`/tmp` is a tmpfs), drops all Linux
@@ -348,8 +529,10 @@ non-root users and have a `HEALTHCHECK` on `/health/ready`. The images are built
 [`deploy/`](deploy/README.md) has a Helm chart that deploys both services to a DigitalOcean Kubernetes cluster: the API
 is public through the Gateway API with a Let's Encrypt certificate, the renderer is reachable only from the API and
 has no egress. The CI `deploy` job runs it on every push to `main`, with the cluster credentials, the Let's Encrypt
-e-mail, the OpenAI key and the API access key (`LAYA_API_KEY`) taken from GitHub secrets. The chart, the secrets and
-the cluster setup are described in [deploy/README.md](deploy/README.md).
+e-mail, the OpenAI key and the API access key (`LAYA_API_KEY`) taken from GitHub secrets. The chart also runs a ClamAV
+pod that scans uploads, and keeps the usage history on a PersistentVolumeClaim. ClamAV has no resource requests or
+limits, so the cluster's node needs the memory for it (see [deploy/README.md](deploy/README.md#malware-scanning-clamav)).
+The chart, the secrets and the cluster setup are described in [deploy/README.md](deploy/README.md).
 
 ## Telemetry (Honeycomb)
 

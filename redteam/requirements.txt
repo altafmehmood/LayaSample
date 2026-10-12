@@ -1,0 +1,2 @@
+# Developer tool, not part of the build (see CLAUDE.md). Apache-2.0. Python 3.11 to 3.13.
+garak==0.17.0

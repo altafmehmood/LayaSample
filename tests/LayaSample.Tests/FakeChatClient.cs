@@ -16,11 +16,16 @@ internal sealed class FakeChatClient(Func<ChatResponse> respond) : IChatClient
 
     public List<(IReadOnlyList<ChatMessage> Messages, ChatOptions? Options)> Calls { get; } = [];
 
-    public static FakeChatClient Returning(object payload, ChatFinishReason? finish = null, long inputTokens = 1000, long outputTokens = 200) =>
+    public static FakeChatClient Returning(object payload, ChatFinishReason? finish = null, long inputTokens = 1000, long outputTokens = 200,
+        long cachedTokens = 0, long? reasoningTokens = null) =>
         new(() => new ChatResponse(new ChatMessage(ChatRole.Assistant, JsonSerializer.Serialize(payload, Json)))
         {
             FinishReason = finish ?? ChatFinishReason.Stop,
-            Usage = new UsageDetails { InputTokenCount = inputTokens, OutputTokenCount = outputTokens }
+            Usage = new UsageDetails
+            {
+                InputTokenCount = inputTokens, OutputTokenCount = outputTokens,
+                CachedInputTokenCount = cachedTokens > 0 ? cachedTokens : null, ReasoningTokenCount = reasoningTokens
+            }
         });
 
     public static FakeChatClient Throwing(Exception ex) => new(() => throw ex);

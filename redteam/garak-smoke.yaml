@@ -1,0 +1,4 @@
+# A few prompts per probe, to check the setup in minutes before a full run.
+run:
+  generations: 1
+  soft_probe_prompt_cap: 5

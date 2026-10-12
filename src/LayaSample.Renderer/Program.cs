@@ -88,7 +88,8 @@ public sealed class RendererEntryPoint
                 return Problem(StatusCodes.Status400BadRequest, $"{mediaType} is not an image type");
             if (maxFrames < 1)
                 return Problem(StatusCodes.Status400BadRequest, "maxFrames must be at least 1");
-            if (await ReadBodyAsync(request, options.MaxDocumentBytes, ct) is not { } image)
+            await using var image = await SpoolBodyAsync(request, options.MaxDocumentBytes, ct);
+            if (image is null)
                 return Problem(StatusCodes.Status413PayloadTooLarge, $"image must be at most {options.MaxDocumentBytes} bytes");
 
             try
@@ -111,21 +112,20 @@ public sealed class RendererEntryPoint
             if (spec is null)
                 return Problem(StatusCodes.Status400BadRequest, error!);
 
-            var bytes = new byte[document.Length];
-            await using (var stream = document.OpenReadStream())
-                await stream.ReadExactlyAsync(bytes, ct);
+            // The form file is already on disk past 64 KB (ASP.NET spools it); render from that stream, never a copy in memory.
+            await using var stream = document.OpenReadStream();
 
             try
             {
-                var pages = await rasterizer.RenderAsync(new RenderJob(bytes, spec.MediaType, spec.Pages), ct);
+                var pages = await rasterizer.RenderAsync(new RenderJob(stream, spec.MediaType, spec.Pages), ct);
                 logger.LogInformation("Rendered {Pages} page(s) of a {Bytes}-byte {MediaType} document ({Ocr} with OCR)",
-                    pages.Count, bytes.Length, spec.MediaType, pages.Count(p => p.OcrText is not null));
+                    pages.Count, document.Length, spec.MediaType, pages.Count(p => p.OcrText is not null));
                 return Results.Ok(new RenderResponse(pages));
             }
             catch (InvalidDataException ex)
             {
                 // The API relays this as 422; the inner exception says which library rejected the content.
-                logger.LogInformation(ex.InnerException, "Rejected {Bytes}-byte {MediaType} document: {Reason}", bytes.Length, spec.MediaType, ex.Message);
+                logger.LogInformation(ex.InnerException, "Rejected {Bytes}-byte {MediaType} document: {Reason}", document.Length, spec.MediaType, ex.Message);
                 return Problem(StatusCodes.Status422UnprocessableEntity, ex.Message);
             }
             catch (OcrUnavailableException ex)
@@ -161,18 +161,39 @@ public sealed class RendererEntryPoint
         return (spec, null);
     }
 
-    /// <summary>The request body, or null when it is larger than <paramref name="max"/>.</summary>
-    private static async Task<byte[]?> ReadBodyAsync(HttpRequest request, long max, CancellationToken ct)
+    /// <summary>
+    /// The request body spooled to a temporary file (deleted when the stream is disposed) and rewound, or null when it is
+    /// larger than <paramref name="max"/>. Seekable, which the image parsers need, without holding the body in memory.
+    /// </summary>
+    private static async Task<Stream?> SpoolBodyAsync(HttpRequest request, long max, CancellationToken ct)
     {
         if (request.ContentLength > max) return null;
-        using var buffer = new MemoryStream();
-        var chunk = new byte[81920];
-        int read;
-        while ((read = await request.Body.ReadAsync(chunk, ct)) > 0)
+        var file = new FileStream(Path.Combine(Path.GetTempPath(), "laya-" + Guid.NewGuid().ToString("N")), FileMode.CreateNew,
+            FileAccess.ReadWrite, FileShare.None, 81920, FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+        var chunk = System.Buffers.ArrayPool<byte>.Shared.Rent(81920);
+        try
         {
-            if (buffer.Length + read > max) return null;
-            buffer.Write(chunk, 0, read);
+            int read;
+            while ((read = await request.Body.ReadAsync(chunk, ct)) > 0)
+            {
+                if (file.Length + read > max)
+                {
+                    await file.DisposeAsync();
+                    return null;
+                }
+                await file.WriteAsync(chunk.AsMemory(0, read), ct);
+            }
+            file.Position = 0;
+            return file;
         }
-        return buffer.ToArray();
+        catch
+        {
+            await file.DisposeAsync();
+            throw;
+        }
+        finally
+        {
+            System.Buffers.ArrayPool<byte>.Shared.Return(chunk);
+        }
     }
 }

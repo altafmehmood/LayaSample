@@ -13,9 +13,10 @@ public sealed class LocalPageRasterizer(IOcrEngine ocr, IOptions<RenderingOption
 {
     private const int DefaultPdfDpi = 150;
 
-    public Task<IReadOnlyList<RasterPage>> InspectImageAsync(byte[] image, string mediaType, int maxFrames, CancellationToken ct = default)
+    public Task<IReadOnlyList<RasterPage>> InspectImageAsync(Stream image, string mediaType, int maxFrames, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        RequireSeekable(image);
         using var span = LayaTelemetry.Source.StartActivity("renderer.inspect");
         span?.SetTag("laya.render.media_type", mediaType);
         span?.SetTag("laya.render.input_bytes", image.Length);
@@ -35,6 +36,7 @@ public sealed class LocalPageRasterizer(IOcrEngine ocr, IOptions<RenderingOption
     public Task<IReadOnlyList<RenderedPage>> RenderAsync(RenderJob job, CancellationToken ct = default)
     {
         if (!MediaTypes.IsRenderable(job.MediaType)) throw new InvalidDataException($"{job.MediaType} cannot be rendered");
+        RequireSeekable(job.Document);
 
         using var span = LayaTelemetry.Source.StartActivity("renderer.render");
         span?.SetTag("laya.render.media_type", job.MediaType);
@@ -111,6 +113,12 @@ public sealed class LocalPageRasterizer(IOcrEngine ocr, IOptions<RenderingOption
         }
     }
 
+    private static void RequireSeekable(Stream document)
+    {
+        if (!document.CanSeek)
+            throw new ArgumentException("the document stream must be seekable: each page is read from its start", nameof(document));
+    }
+
     /// <summary>The libraries surface bad input as many exception types; callers see one.</summary>
     private static T Readable<T>(string message, Func<T> read)
     {
@@ -124,11 +132,13 @@ public sealed class LocalPageRasterizer(IOcrEngine ocr, IOptions<RenderingOption
         }
     }
 
-    private static SKBitmap RenderPdfPage(byte[] pdf, int number, int dpi)
+    private static SKBitmap RenderPdfPage(Stream pdf, int number, int dpi)
     {
         if (number < 1) throw new InvalidDataException($"PDF has no page {number}");
         // A page can declare any size (up to 200 inches square), so cap the bitmap rather than the DPI alone.
-        var size = Conversion.GetPageSize(pdf, number - 1);
+        // leaveOpen: the same stream serves every page, and belongs to whoever opened it.
+        pdf.Position = 0;
+        var size = Conversion.GetPageSize(pdf, number - 1, leaveOpen: true);
         var pixels = (double)size.Width / 72 * dpi * ((double)size.Height / 72 * dpi);
         if (pixels > RasterImages.MaxPixels)
             dpi = (int)(dpi * Math.Sqrt(RasterImages.MaxPixels / pixels));
@@ -137,7 +147,8 @@ public sealed class LocalPageRasterizer(IOcrEngine ocr, IOptions<RenderingOption
         // Render what a person sees: WithFormFill draws AcroForm field values, WithAnnotations draws
         // Fill & Sign text, signatures and stamps. Without them a filled-in PDF renders blank.
         var render = new RenderOptions(Dpi: dpi, WithAnnotations: true, WithFormFill: true);
-        return Conversion.ToImage(new MemoryStream(pdf, writable: false), page: number - 1, options: render);
+        pdf.Position = 0;
+        return Conversion.ToImage(pdf, page: number - 1, leaveOpen: true, options: render);
     }
 
     private static byte[] Png(SKBitmap bitmap, bool grayscale)

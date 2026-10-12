@@ -6,6 +6,8 @@ using LayaSample.Api.Models;
 using LayaSample.Api.Services;
 using LayaSample.Api.Services.Documents;
 using LayaSample.Api.Services.Documents.Extraction;
+using LayaSample.Api.Services.Security;
+using LayaSample.Api.Services.Usage;
 using LayaSample.Rendering;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Mvc;
@@ -73,12 +75,14 @@ builder.Services.AddSingleton<IDocumentRouter, DocumentRouter>();
 builder.Services.AddSingleton<DocumentMetrics>();
 builder.Services.AddSingleton<DocumentPipeline>();
 builder.Services.AddSingleton<DocumentProblems>();
+builder.Services.AddUsageTracking(builder.Configuration);
 builder.Services.AddExtraction(builder.Configuration);
 foreach (var route in DocumentRoutes.All)
     builder.Services.AddSingleton<IDocumentAgent>(new StubDocumentAgent(route));
 builder.Services.AddSingleton<ModelWarmup>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ModelWarmup>());
 var healthChecks = builder.Services.AddHealthChecks().AddCheck<LayaHealthCheck>("laya", tags: [HealthReporting.Ready]);
+builder.Services.AddMalwareScanning(builder.Configuration, healthChecks);
 
 // Endpoint limits and where rendering runs are fixed when the app is built, so the options are read here;
 // ValidateOnStart still checks them (and refuses to start with neither a renderer nor in-process rendering allowed).
@@ -248,7 +252,7 @@ app.MapPost("/api/documents/analyze", async (
         var parts = prepared.Parts
             .Select(p => new PreparedPartDto(p.Role, p.MediaType, p.Page, p.Source, p.Text, includeData == false ? null : p.Data))
             .ToList();
-        return Results.Ok(new AnalyzeDocumentResponse(file.FileName, classification, parts, agent));
+        return Results.Ok(new AnalyzeDocumentResponse(file.FileName, classification, parts, agent, run.Risks));
     }
     catch (Exception ex) when (DocumentProblems.Handles(ex))
     {
@@ -299,7 +303,12 @@ app.MapPost("/api/documents/extract", async (
     {
         await pipeline.PrepareAsync(file, run, ct);
         TagDocument(httpContext, run.Classification!, run.Prepared!);
-        var response = await extractor.ExtractAsync(file.FileName, run.Classification!, run.Prepared!, ct);
+        // Who asked and what was uploaded, so each model call lands in the usage history (the key as a fingerprint only).
+        var usageContext = new UsageContext(httpContext.GetCaller(), UsageFileName.Clean(file.FileName), file.Length,
+            run.Classification!.Kind.ToString(), run.Classification.PageCount, Activity.Current?.TraceId.ToString());
+        var response = await extractor.ExtractAsync(file.FileName, run.Classification!, run.Prepared!, ct, usageContext);
+        // Findings about the file (structure and text) and about the answer, in one list.
+        response = response with { Risks = [.. run.Risks, .. response.Risks ?? []] };
         run.Lap("extract");
         Telemetry.TagRequest(httpContext, "laya.outcome", "ok");
         Telemetry.TagRequest(httpContext, "laya.extraction.document_type", response.DocumentType.ToString());
@@ -347,6 +356,8 @@ app.MapPost("/api/documents/extract", async (
 .WithMetadata(new RequestSizeLimitAttribute(maxBodyBytes), new RequestFormLimitsAttribute { MultipartBodyLengthLimit = maxBodyBytes })
 .WithRequestTimeout(TimeSpan.FromSeconds(documentOptions.RequestTimeoutSeconds))
 .RequireRateLimiting(ExtractionPolicy);
+
+app.MapUsageEndpoints();
 
 // One line that says how this instance was configured, so a trace can be read against it. No secrets.
 app.Lifetime.ApplicationStarted.Register(() => app.Logger.LogInformation(

@@ -86,6 +86,13 @@ public sealed record DocumentClassification
     public IReadOnlyList<PageClassification> Pages { get; init; } = [];
     public IReadOnlyList<SignatureInfo> Signatures { get; init; } = [];
     public IReadOnlyList<AttachmentInfo> Attachments { get; init; } = [];
+
+    /// <summary>
+    /// Active content, macros, executable attachments and hidden text found in the file's structure. Not serialised: the
+    /// responses carry every finding in their own <c>risks</c> list.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<RiskFinding> Risks { get; init; } = [];
 }
 
 public enum PartRole { PageImage, PageText, OcrText, StructuredData }
@@ -105,4 +112,6 @@ public sealed record AnalyzeDocumentResponse(
     string FileName,
     DocumentClassification Classification,
     IReadOnlyList<PreparedPartDto> Parts,
-    AgentResult? Agent);
+    AgentResult? Agent,
+    [property: System.ComponentModel.Description("Findings about the upload: active content, macros, executable attachments, hidden text, instruction-like text. Blocking ones refuse the upload unless Security:OnFinding is flag.")]
+    IReadOnlyList<RiskFinding>? Risks = null);

@@ -65,7 +65,7 @@ public class TelemetryTests
 
         Assert.Equal(HttpStatusCode.OK, status);
         var names = spans.Select(s => s.OperationName).ToList();
-        foreach (var expected in new[] { "laya.buffer", "laya.classify", "laya.prepare", "laya.extraction", "laya.extract" })
+        foreach (var expected in new[] { "laya.classify", "laya.prepare", "laya.extraction", "laya.extract" })
             Assert.Contains(expected, names);
 
         var server = spans.Single(s => s.Kind == ActivityKind.Server);

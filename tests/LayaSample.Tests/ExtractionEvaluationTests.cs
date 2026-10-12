@@ -3,6 +3,8 @@ using System.Text.Json;
 using LayaSample.Api.Models;
 using LayaSample.Api.Services.Documents;
 using LayaSample.Api.Services.Documents.Extraction;
+using LayaSample.Api.Services.Security;
+using LayaSample.Api.Services.Usage;
 using LayaSample.Rendering;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -12,9 +14,10 @@ namespace LayaSample.Tests;
 
 /// <summary>
 /// Runs the real pipeline (real OCR, real model) over the lending corpus and scores it against the manifest's facts.
-/// Skipped unless a key is set (OPENAI_API_KEY, or the Extraction:ApiKey user secret), so it never runs in CI's normal build. Calls the paid API: 39 documents.
+/// Calls the paid API for 39 documents, so it is skipped unless RUN_EXTRACTION_EVAL=1 is set on purpose. A key on the machine
+/// (OPENAI_API_KEY, or the Extraction:ApiKey user secret) is not enough: a plain `dotnet test` must never spend money.
 /// Optional: EVAL_VISION_MODEL, EVAL_TEXT_MODEL, EVAL_FILTER (substring of the file name), EVAL_MIN_ACCURACY (default 0.9).
-/// Run: dotnet run --project tests/LayaSample.Tests -c Release -- -trait "Category=Evaluation" -showLiveOutput
+/// Run: RUN_EXTRACTION_EVAL=1 dotnet run --project tests/LayaSample.Tests -c Release -- -trait "Category=Evaluation" -showLiveOutput
 /// </summary>
 public class ExtractionEvaluationTests(ITestOutputHelper output)
 {
@@ -22,6 +25,10 @@ public class ExtractionEvaluationTests(ITestOutputHelper output)
     [Trait("Category", "Evaluation")]
     public async Task Corpus_accuracy_meets_the_threshold()
     {
+        // First, before any key is read or any client built: this test costs real money.
+        Assert.SkipUnless(Environment.GetEnvironmentVariable("RUN_EXTRACTION_EVAL") == "1",
+            "set RUN_EXTRACTION_EVAL=1 to run the extraction evaluation; it calls the paid OpenAI API for 39 documents");
+
         // The environment variable wins; otherwise the same user secret the API reads in Development.
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY")
             ?? new ConfigurationBuilder().AddUserSecrets(typeof(Program).Assembly, optional: true).Build()["Extraction:ApiKey"];
@@ -43,8 +50,10 @@ public class ExtractionEvaluationTests(ITestOutputHelper output)
         var classifier = new DocumentClassifier(docOptions, rasterizer);
         var preparer = new DocumentPreparer(docOptions, classifier, rasterizer, NullLogger<DocumentPreparer>.Instance);
         IExtractionAgent[] agents = [new LoanApplicationAgent(), new Ucc1Agent(), new Ucc3Agent(), new SecurityAgreementAgent(), new GenericLendingAgent()];
+        var metrics = new DocumentMetrics(new NoMeterFactory());
         var extractor = new DocumentExtractor(Options.Create(settings), ExtractionClientFactory.Create(settings), new OpenAiExtractionErrorMapper(), agents,
-            new DocumentMetrics(new NoMeterFactory()), NullLogger<DocumentExtractor>.Instance);
+            metrics, new ModelPricing(Options.Create(new PricingOptions())), new NoopUsageRecorder(),
+            new RiskScanner(Options.Create(new SecurityOptions()), metrics, NullLogger<RiskScanner>.Instance), NullLogger<DocumentExtractor>.Instance);
 
         var corpus = LendingTypeDetectorTests.CorpusDirectory();
         using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(corpus, "manifest.json")));

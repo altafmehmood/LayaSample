@@ -23,13 +23,14 @@ internal static class RasterImages
 
     /// <param name="maxFrames">Pages read at most; a TIFF can hold any number of them.</param>
     /// <exception cref="InvalidDataException">A page is larger than the decode limit.</exception>
-    public static IReadOnlyList<RasterPage> Inspect(byte[] bytes, string mediaType, int maxFrames)
+    public static IReadOnlyList<RasterPage> Inspect(Stream image, string mediaType, int maxFrames)
     {
         // Ping reads each page's header without decoding pixels.
         using var pages = new MagickImageCollection();
         var settings = Settings(mediaType);
         settings.FrameCount = (uint)maxFrames;
-        pages.Ping(bytes, settings);
+        image.Position = 0;
+        pages.Ping(image, settings);
         if (pages.Count == 0) throw new InvalidDataException("image has no pages");
         return pages.Select((p, i) =>
         {
@@ -39,7 +40,7 @@ internal static class RasterImages
     }
 
     /// <summary>Decodes one page (zero-based) to an upright RGBA bitmap with square pixels.</summary>
-    public static SKBitmap Decode(byte[] bytes, string mediaType, int pageIndex)
+    public static SKBitmap Decode(Stream image, string mediaType, int pageIndex)
     {
         // Check the size from the page header before decoding its pixels. Pinging a TIFF frame by index fails, so this
         // pings the frames up to it (headers only; the frame count was capped at classification).
@@ -47,24 +48,26 @@ internal static class RasterImages
         settings.FrameCount = (uint)pageIndex + 1;
         using (var headers = new MagickImageCollection())
         {
-            headers.Ping(bytes, settings);
+            image.Position = 0;
+            headers.Ping(image, settings);
             if (pageIndex >= headers.Count) throw new InvalidDataException($"image has no page {pageIndex + 1}");
             SquarePixelSize(headers[pageIndex], pageIndex);
         }
 
         settings.FrameIndex = (uint)pageIndex;
         settings.FrameCount = 1;
-        using var image = new MagickImage(bytes, settings);
+        image.Position = 0;
+        using var page = new MagickImage(image, settings);
         // Phone photos are often stored sideways with an EXIF orientation tag.
-        image.AutoOrient();
+        page.AutoOrient();
 
         // Standard-mode fax is 204x98 dpi: stretch vertically so the page keeps its real proportions.
-        var (width, height) = SquarePixelSize(image, pageIndex);
-        if (width != image.Width || height != image.Height)
-            image.Resize(new MagickGeometry((uint)width, (uint)height) { IgnoreAspectRatio = true });
+        var (width, height) = SquarePixelSize(page, pageIndex);
+        if (width != page.Width || height != page.Height)
+            page.Resize(new MagickGeometry((uint)width, (uint)height) { IgnoreAspectRatio = true });
 
         byte[] rgba;
-        using (var pixels = image.GetPixelsUnsafe())
+        using (var pixels = page.GetPixelsUnsafe())
             rgba = pixels.ToByteArray(PixelMapping.RGBA) ?? throw new InvalidDataException("image page could not be decoded");
         return WrapPixels(rgba, width, height);
     }

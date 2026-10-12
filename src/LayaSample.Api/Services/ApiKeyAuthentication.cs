@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text;
 using LayaSample.Api.Services.Documents;
+using LayaSample.Api.Services.Usage;
 using Microsoft.Extensions.Options;
 
 namespace LayaSample.Api.Services;
@@ -18,20 +19,36 @@ public sealed class ApiAccessOptions : IValidatableObject
 
     public string[] ApiKeys { get; set; } = [];
 
+    /// <summary>
+    /// Keys that are also accepted everywhere, and that may read every caller's usage (a plain key sees only its own).
+    /// Empty by default.
+    /// </summary>
+    public string[] AdminKeys { get; set; } = [];
+
     /// <summary>The configured keys without blank entries (an empty environment variable binds as an empty entry).</summary>
     public IReadOnlyList<string> ConfiguredKeys => ApiKeys.Where(k => !string.IsNullOrWhiteSpace(k)).ToList();
+
+    public IReadOnlyList<string> ConfiguredAdminKeys => AdminKeys.Where(k => !string.IsNullOrWhiteSpace(k)).ToList();
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         // Messages name the position only, never the key.
+        foreach (var result in Check("Auth:ApiKeys", ConfiguredKeys, nameof(ApiKeys)))
+            yield return result;
+        foreach (var result in Check("Auth:AdminKeys", ConfiguredAdminKeys, nameof(AdminKeys)))
+            yield return result;
+    }
+
+    private static IEnumerable<ValidationResult> Check(string setting, IReadOnlyList<string> keys, string member)
+    {
         var i = 0;
-        foreach (var key in ConfiguredKeys)
+        foreach (var key in keys)
         {
             i++;
             if (key.Length < MinKeyLength)
-                yield return new ValidationResult($"Auth:ApiKeys entry {i} is shorter than {MinKeyLength} characters; use a random key, e.g. `openssl rand -base64 32`.", [nameof(ApiKeys)]);
+                yield return new ValidationResult($"{setting} entry {i} is shorter than {MinKeyLength} characters; use a random key, e.g. `openssl rand -base64 32`.", [member]);
             else if (key.Any(char.IsWhiteSpace))
-                yield return new ValidationResult($"Auth:ApiKeys entry {i} contains whitespace.", [nameof(ApiKeys)]);
+                yield return new ValidationResult($"{setting} entry {i} contains whitespace.", [member]);
         }
     }
 }
@@ -58,6 +75,7 @@ public sealed class ApiKeyMiddleware(
     ILogger<ApiKeyMiddleware> logger)
 {
     private readonly byte[][] _configured = options.Value.ConfiguredKeys.Select(Hash).ToArray();
+    private readonly byte[][] _admin = options.Value.ConfiguredAdminKeys.Select(Hash).ToArray();
 
     public async Task InvokeAsync(HttpContext context)
     {
@@ -67,10 +85,11 @@ public sealed class ApiKeyMiddleware(
             return;
         }
 
-        if (_configured.Length == 0)
+        if (_configured.Length == 0 && _admin.Length == 0)
         {
             if (environment.IsDevelopment())
             {
+                context.Items[ApiCaller.ItemKey] = ApiCaller.Development;
                 await next(context);
                 return;
             }
@@ -88,8 +107,15 @@ public sealed class ApiKeyMiddleware(
         // Every configured key is compared, with no early exit, so timing reveals neither which key matched nor how much of one.
         var suppliedHash = Hash(supplied[0]!);
         var valid = false;
+        var admin = false;
         foreach (var key in _configured)
             valid |= CryptographicOperations.FixedTimeEquals(suppliedHash, key);
+        foreach (var key in _admin)
+        {
+            var matches = CryptographicOperations.FixedTimeEquals(suppliedHash, key);
+            valid |= matches;
+            admin |= matches;
+        }
 
         if (!valid)
         {
@@ -97,6 +123,8 @@ public sealed class ApiKeyMiddleware(
             return;
         }
 
+        // Who is calling, for the usage record: a short hash prefix, never the key.
+        context.Items[ApiCaller.ItemKey] = new ApiCaller(ApiCaller.FingerprintOf(suppliedHash), admin);
         await next(context);
     }
 

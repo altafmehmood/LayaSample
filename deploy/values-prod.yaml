@@ -9,6 +9,11 @@ telemetry:
   collector:
     enabled: true
 
+# ClamAV scans every upload. It is on by default; the node must have the memory for it (see values.yaml).
+malware:
+  clamd:
+    enabled: true
+
 gateway:
   create: true
   hostname: api.mehmood.us
@@ -21,6 +26,10 @@ api:
   replicas: 1
   auth:
     existingSecret: laya-api-key
+  usage:
+    persistence:
+      enabled: true
+      size: 1Gi
   extraction:
     existingSecret: laya-llm
   resources:

@@ -36,7 +36,8 @@ public static class PdfClassificationRules
             IsDynamicXfa = doc.IsDynamicXfa,
             Pages = classified,
             Signatures = doc.Signatures,
-            Attachments = doc.Attachments
+            Attachments = doc.Attachments,
+            Risks = doc.Risks
         };
     }
 

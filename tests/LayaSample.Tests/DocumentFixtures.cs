@@ -25,6 +25,72 @@ public static class DocumentFixtures
         return builder.Build();
     }
 
+    /// <summary>
+    /// A one-page text PDF followed by an unreferenced stream object of the given size, to get a file as large as the
+    /// upload limit without a large rendering cost.
+    /// </summary>
+    public static byte[] PaddedTextPdf(int paddingBytes) => BuildPdf(
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+        StreamObject("<< ", $"BT /F1 12 Tf 50 700 Td ({LongText}) Tj ET"),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        StreamObject("<< ", new string('x', paddingBytes)));
+
+    private const string PlainFont = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+
+    /// <summary>One page with the given content stream (after the usual visible sentence), a Helvetica font as /F1, and optional catalog and annotation entries.</summary>
+    public static byte[] PdfWithContent(string extraContent = "", string catalogExtra = "", string? annotation = null) => BuildPdf(
+        $"<< /Type /Catalog /Pages 2 0 R {catalogExtra}>>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        $"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R {(annotation is null ? "" : "/Annots [6 0 R] ")}/Resources << /Font << /F1 5 0 R >> >> >>",
+        StreamObject("<< ", $"BT /F1 12 Tf 50 700 Td ({LongText}) Tj ET {extraContent}"),
+        PlainFont,
+        annotation ?? "null");
+
+    /// <summary>A text PDF that carries the given action in its catalog (what a viewer runs on opening).</summary>
+    public static byte[] PdfWithOpenAction(string action) => PdfWithContent(catalogExtra: $"/OpenAction {action} ");
+
+    /// <summary>A text PDF with a link annotation whose action is the given dictionary.</summary>
+    public static byte[] PdfWithLinkAction(string action) =>
+        PdfWithContent(annotation: $"<< /Type /Annot /Subtype /Link /Rect [50 600 200 620] /Border [0 0 0] /A {action} >>");
+
+    public static byte[] PdfWithAnnotationSubtype(string subtype) =>
+        PdfWithContent(annotation: $"<< /Type /Annot /Subtype /{subtype} /Rect [50 500 300 600] >>");
+
+    /// <summary>The page's visible sentence plus text a reader cannot see: white, one point tall, or far off the page.</summary>
+    public static byte[] PdfWithHiddenText(HiddenTextCase hidden)
+    {
+        const string text = "(quarterly revenue figures are confidential and restricted)";
+        return PdfWithContent(hidden switch
+        {
+            HiddenTextCase.White => $"1 1 1 rg BT /F1 12 Tf 50 650 Td {text} Tj ET 0 g",
+            HiddenTextCase.Tiny => $"BT /F1 1 Tf 50 600 Td {text} Tj ET",
+            HiddenTextCase.OffPage => $"BT /F1 12 Tf 2000 700 Td {text} Tj ET",
+            _ => throw new ArgumentOutOfRangeException(nameof(hidden))
+        });
+    }
+
+    public enum HiddenTextCase { White, Tiny, OffPage }
+
+    /// <summary>A page that is one full-page image with a one-point text layer over it, as an OCR'd scan has: invisible by design.</summary>
+    public static byte[] ScanWithInvisibleTextLayer()
+    {
+        var builder = new PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(UglyToad.PdfPig.Fonts.Standard14Fonts.Standard14Font.Helvetica);
+        var page = builder.AddPage(595, 842);
+        page.AddPng(Png(595, 842), new UglyToad.PdfPig.Core.PdfRectangle(0, 0, 595, 842));
+        page.AddText("quarterly revenue figures are confidential and restricted", 1, new UglyToad.PdfPig.Core.PdfPoint(50, 600), font);
+        return builder.Build();
+    }
+
+    /// <summary>A text PDF with a text-only form field whose widget runs JavaScript to format its value, as fillable forms do.</summary>
+    public static byte[] FormWithFormattingScript() => RawPdf(
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Annots [4 0 R] /Resources << /Font << /F1 7 0 R >> >> >>",
+        "<< /Type /Annot /Subtype /Widget /FT /Tx /T (amount) /V (1000) /Rect [50 700 250 720] /P 3 0 R /F 4 /DA (/F1 12 Tf 0 g) /AP << /N 6 0 R >> /AA << /F << /S /JavaScript /JS (AFNumber_Format(2,0,0,0,\"$\",true);) >> >> >>",
+        "<< /Fields [4 0 R] /DA (/F1 12 Tf 0 g) /DR << /Font << /F1 7 0 R >> >> >>",
+        "/Tx BMC q BT /F1 12 Tf 0 g 2 6 Td (1000) Tj ET Q EMC");
+
     /// <summary>A page with no text layer at all, as a scan would be.</summary>
     public static byte[] BlankPdf(int pages = 1)
     {

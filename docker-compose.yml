@@ -23,6 +23,13 @@ services:
       Extraction__ApiKey: ${OPENAI_API_KEY:-}
       # Callers must send this as X-Api-Key to /api/documents/extract; empty makes extraction answer 503.
       Auth__ApiKeys__0: ${LAYA_API_KEY:-}
+      # Where the usage history (tokens and cost per model call) is kept: the volume below.
+      Usage__DatabasePath: /data/usage.db
+      # Every upload is streamed to ClamAV before anything parses it. closed: while it does not answer, uploads get 503.
+      Security__Malware__Host: clamav
+      # reject (default): a blocking finding (hidden text, active content, instructions for the model) refuses the upload
+      # with 422. flag: report it in the response and carry on. The red-team run uses flag to test the model itself.
+      Security__OnFinding: ${LAYA_ON_FINDING:-reject}
       # OpenTelemetry export. Either straight to a backend (OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io and
       # OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=<ingest key>), or through the collector below
       # (LAYA_OTLP_ENDPOINT=http://collector:4318), which also carries the renderer's telemetry. Empty exports nothing.
@@ -30,8 +37,34 @@ services:
       OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
     networks: [public, internal]
+    volumes:
+      - usage-data:/data
+    depends_on:
+      clamav:
+        condition: service_healthy
     mem_limit: 3g
     cpus: 4
+    restart: unless-stopped
+
+  # Scans every upload for malware. The first start downloads the signature database (a few minutes), after which it
+  # reports healthy and the API starts. On the public network only: it needs the internet for signature updates, and the
+  # renderer, which is on the internal network alone, must not be able to reach it. No memory or CPU limits, by choice:
+  # about 1 GiB at rest, and ClamAV's documentation advises 3-4 GiB for when a signature update reloads.
+  # Published on loopback so `CLAMD_HOST=localhost dotnet run --project tests/LayaSample.Tests -- -trait "Category=Integration"`
+  # can scan with it.
+  clamav:
+    image: clamav/clamav:1.5.4_base-debian13-slim
+    entrypoint: ["/init-unprivileged"]
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+      - /var/log/clamav:uid=1000,gid=1000
+    volumes:
+      - clamav-db:/var/lib/clamav
+    ports:
+      - "127.0.0.1:3310:3310"
+    networks: [public]
     restart: unless-stopped
 
   renderer:
@@ -70,6 +103,12 @@ services:
     # On the internal network to receive from the renderer, and on the public one to reach the backend.
     networks: [public, internal]
     restart: unless-stopped
+
+volumes:
+  # GET /api/usage reads this; it survives `docker compose down` (not `down -v`).
+  usage-data: {}
+  # The ClamAV signature database, so a restart does not download it again.
+  clamav-db: {}
 
 networks:
   public: {}

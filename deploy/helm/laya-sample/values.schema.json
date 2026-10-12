@@ -1,49 +1,163 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["image", "api", "renderer", "gateway"],
+  "required": [
+    "image",
+    "api",
+    "renderer",
+    "gateway"
+  ],
   "properties": {
     "image": {
       "type": "object",
-      "required": ["registry", "tag"],
+      "required": [
+        "registry",
+        "tag"
+      ],
       "properties": {
-        "registry": { "type": "string", "minLength": 1 },
-        "tag": { "type": "string", "minLength": 1, "not": { "const": "latest" }, "description": "Pin a sha-<commit> tag." },
-        "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+        "registry": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 1,
+          "not": {
+            "const": "latest"
+          },
+          "description": "Pin a sha-<commit> tag."
+        },
+        "pullPolicy": {
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
       }
     },
     "api": {
       "type": "object",
       "properties": {
-        "replicas": { "type": "integer", "minimum": 0 },
+        "replicas": {
+          "type": "integer",
+          "minimum": 0
+        },
         "config": {
           "type": "object",
           "properties": {
-            "maxConcurrentAnalyses": { "type": "integer", "minimum": 0 },
-            "maxQueuedAnalyses": { "type": "integer", "minimum": 0 },
-            "requestTimeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 3600 },
-            "maxFileBytes": { "type": "integer", "minimum": 1 }
+            "maxConcurrentAnalyses": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "maxQueuedAnalyses": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "requestTimeoutSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600
+            },
+            "maxFileBytes": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         },
         "auth": {
           "type": "object",
           "properties": {
-            "existingSecret": { "type": "string" },
-            "secretKeys": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "maxItems": 4 },
-            "keyChecksum": { "type": "string" }
+            "existingSecret": {
+              "type": "string"
+            },
+            "secretKeys": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "maxItems": 4
+            },
+            "keyChecksum": {
+              "type": "string"
+            },
+            "adminSecretKeys": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "maxItems": 4
+            }
           }
         },
         "extraction": {
           "type": "object",
           "properties": {
-            "existingSecret": { "type": "string" },
-            "secretKey": { "type": "string", "minLength": 1 },
-            "keyChecksum": { "type": "string" },
-            "provider": { "enum": ["openai"] },
-            "visionModel": { "type": "string", "minLength": 1 },
-            "textModel": { "type": "string", "minLength": 1 },
-            "maxConcurrent": { "type": "integer", "minimum": 1, "maximum": 32 },
-            "timeoutSeconds": { "type": "integer", "minimum": 5, "maximum": 600 }
+            "existingSecret": {
+              "type": "string"
+            },
+            "secretKey": {
+              "type": "string",
+              "minLength": 1
+            },
+            "keyChecksum": {
+              "type": "string"
+            },
+            "provider": {
+              "enum": [
+                "openai"
+              ]
+            },
+            "visionModel": {
+              "type": "string",
+              "minLength": 1
+            },
+            "textModel": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxConcurrent": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32
+            },
+            "timeoutSeconds": {
+              "type": "integer",
+              "minimum": 5,
+              "maximum": 600
+            }
+          }
+        },
+        "usage": {
+          "type": "object",
+          "properties": {
+            "persistence": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "size": {
+                  "type": "string",
+                  "pattern": "^[0-9]+(\\.[0-9]+)?(Ki|Mi|Gi|Ti)$"
+                },
+                "storageClass": {
+                  "type": "string"
+                },
+                "accessMode": {
+                  "enum": [
+                    "ReadWriteOnce",
+                    "ReadWriteOncePod"
+                  ]
+                },
+                "existingClaim": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
@@ -51,18 +165,45 @@
     "telemetry": {
       "type": "object",
       "properties": {
-        "endpoint": { "type": "string", "pattern": "^(https?://.+)?$" },
-        "existingSecret": { "type": "string" },
-        "headersKey": { "type": "string", "minLength": 1 },
-        "headersChecksum": { "type": "string" },
+        "endpoint": {
+          "type": "string",
+          "pattern": "^(https?://.+)?$"
+        },
+        "existingSecret": {
+          "type": "string"
+        },
+        "headersKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "headersChecksum": {
+          "type": "string"
+        },
         "collector": {
           "type": "object",
           "properties": {
-            "enabled": { "type": "boolean" },
-            "image": { "type": "string", "minLength": 1 },
-            "tag": { "type": "string", "minLength": 1, "not": { "const": "latest" } },
-            "headerName": { "type": "string", "minLength": 1 },
-            "apiKeyKey": { "type": "string", "minLength": 1 }
+            "enabled": {
+              "type": "boolean"
+            },
+            "image": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tag": {
+              "type": "string",
+              "minLength": 1,
+              "not": {
+                "const": "latest"
+              }
+            },
+            "headerName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "apiKeyKey": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       }
@@ -70,13 +211,30 @@
     "renderer": {
       "type": "object",
       "properties": {
-        "replicas": { "type": "integer", "minimum": 0 },
+        "replicas": {
+          "type": "integer",
+          "minimum": 0
+        },
         "config": {
           "type": "object",
           "properties": {
-            "maxConcurrentJobs": { "type": "integer", "minimum": 0 },
-            "maxQueuedJobs": { "type": "integer", "minimum": 0 },
-            "ocrModel": { "enum": ["", "PPOCRv5Latin", "PPOCRv6Tiny", "PPOCRv6Small", "PPOCRv6Medium"] }
+            "maxConcurrentJobs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "maxQueuedJobs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "ocrModel": {
+              "enum": [
+                "",
+                "PPOCRv5Latin",
+                "PPOCRv6Tiny",
+                "PPOCRv6Small",
+                "PPOCRv6Medium"
+              ]
+            }
           }
         }
       }
@@ -84,13 +242,67 @@
     "gateway": {
       "type": "object",
       "properties": {
-        "enabled": { "type": "boolean" },
-        "hostname": { "type": "string" },
-        "create": { "type": "boolean" },
-        "requestTimeout": { "type": "string", "pattern": "^[0-9]+(ms|s|m|h)$" }
+        "enabled": {
+          "type": "boolean"
+        },
+        "hostname": {
+          "type": "string"
+        },
+        "create": {
+          "type": "boolean"
+        },
+        "requestTimeout": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m|h)$"
+        }
       },
-      "if": { "properties": { "enabled": { "const": true } }, "required": ["enabled"] },
-      "then": { "properties": { "hostname": { "minLength": 1 } }, "required": ["hostname"] }
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
+      "then": {
+        "properties": {
+          "hostname": {
+            "minLength": 1
+          }
+        },
+        "required": [
+          "hostname"
+        ]
+      }
+    },
+    "malware": {
+      "type": "object",
+      "properties": {
+        "clamd": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "image": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tag": {
+              "type": "string",
+              "minLength": 1
+            },
+            "failMode": {
+              "enum": [
+                "closed",
+                "open"
+              ]
+            }
+          }
+        }
+      }
     }
   }
 }

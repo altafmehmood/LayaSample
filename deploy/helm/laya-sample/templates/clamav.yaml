@@ -1,0 +1,120 @@
+{{- if .Values.malware.clamd.enabled }}
+{{- $name := printf "%s-clamav" (include "laya.fullname" .) }}
+# ClamAV daemon: the API streams every upload to it before anything parses the file. It holds the signature database in
+# memory, so it is the biggest pod in the release; there are deliberately no resource requests or limits (see values.yaml).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "laya.labels" (dict "root" . "component" "clamav") | nindent 4 }}
+spec:
+  replicas: 1
+  # Two copies would not fit on a small node at once, so replace in place.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "laya.selectorLabels" (dict "root" . "component" "clamav") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "laya.labels" (dict "root" . "component" "clamav") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      # The image's clamav user is 1000. fsGroup makes the empty volumes below writable for it.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: clamav
+          image: {{ printf "%s:%s" .Values.malware.clamd.image .Values.malware.clamd.tag | quote }}
+          # The image's non-root entrypoint: downloads the signature database on first start, keeps it updated, runs clamd.
+          command: ["/init-unprivileged"]
+          ports:
+            - name: clamd
+              containerPort: 3310
+          # The first start downloads the whole database, so allow up to 15 minutes before giving up.
+          startupProbe:
+            exec: { command: ["/usr/local/bin/clamdcheck.sh"] }
+            periodSeconds: 10
+            failureThreshold: 90
+            timeoutSeconds: 10
+          readinessProbe:
+            exec: { command: ["/usr/local/bin/clamdcheck.sh"] }
+            periodSeconds: 15
+            timeoutSeconds: 10
+          livenessProbe:
+            exec: { command: ["/usr/local/bin/clamdcheck.sh"] }
+            periodSeconds: 60
+            timeoutSeconds: 10
+            failureThreshold: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: db, mountPath: /var/lib/clamav }
+            - { name: log, mountPath: /var/log/clamav }
+            - { name: tmp, mountPath: /tmp }
+      # Empty volumes without size limits (a limit is a limit): the database is downloaded again when the pod is replaced.
+      volumes:
+        - name: db
+          emptyDir: {}
+        - name: log
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "laya.labels" (dict "root" . "component" "clamav") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: clamd
+      port: 3310
+      targetPort: clamd
+  selector:
+    {{- include "laya.selectorLabels" (dict "root" . "component" "clamav") | nindent 4 }}
+{{- if .Values.networkPolicy.enabled }}
+---
+# Documents in from the API only; out only for DNS and the signature updates (HTTPS).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "laya.labels" (dict "root" . "component" "clamav") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "laya.selectorLabels" (dict "root" . "component" "clamav") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "laya.selectorLabels" (dict "root" . "component" "api") | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 3310
+  egress:
+    - ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - ports:
+        - { protocol: TCP, port: 443 }
+{{- end }}
+{{- end }}

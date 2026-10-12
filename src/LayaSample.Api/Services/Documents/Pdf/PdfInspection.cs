@@ -33,14 +33,25 @@ public sealed class DocumentSignals
     public bool HasXfaData { get; set; }
     public List<SignatureInfo> Signatures { get; } = [];
     public List<AttachmentInfo> Attachments { get; } = [];
+    public List<RiskFinding> Risks { get; } = [];
+
+    /// <summary>Records a finding once: a form with a hundred JavaScript fields is one finding, not a hundred.</summary>
+    public void AddRisk(string kind, RiskSeverity severity, int? page, string detail)
+    {
+        if (!Risks.Any(r => r.Kind == kind && r.Severity == severity && r.Detail == detail))
+            Risks.Add(new RiskFinding(kind, severity, page, detail));
+    }
 }
 
-public sealed class PdfInspection(PdfDocument pdf, ReadOnlyMemory<byte> bytes, DocumentAnalysisOptions options)
+public sealed class PdfInspection(PdfDocument pdf, Stream file, DocumentAnalysisOptions options)
 {
     public PdfDocument Pdf { get; } = pdf;
 
-    /// <summary>The original file bytes (needed for signature byte ranges).</summary>
-    public ReadOnlyMemory<byte> Bytes { get; } = bytes;
+    /// <summary>
+    /// The original file, seekable (needed for signature byte ranges). PdfPig reads it lazily, so a reader must put the
+    /// position back.
+    /// </summary>
+    public Stream File { get; } = file;
 
     public DocumentAnalysisOptions Options { get; } = options;
     public DocumentSignals Document { get; } = new();

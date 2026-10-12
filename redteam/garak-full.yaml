@@ -1,0 +1,4 @@
+# One answer per prompt; up to 256 prompts per probe (garak's own cap). Each prompt is a model call.
+run:
+  generations: 1
+  soft_probe_prompt_cap: 256

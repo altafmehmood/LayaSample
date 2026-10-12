@@ -1,0 +1,13 @@
+{
+  "rest": {
+    "RestGenerator": {
+      "name": "laya extraction (through the shim)",
+      "uri": "http://127.0.0.1:5099/extract",
+      "method": "post",
+      "req_template_json_object": { "text": "$INPUT" },
+      "response_json": true,
+      "response_json_field": "text",
+      "request_timeout": 300
+    }
+  }
+}

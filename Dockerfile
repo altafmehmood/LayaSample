@@ -75,6 +75,8 @@ COPY --from=build /app/api .
 COPY --from=laya-model /models/laya /models/laya
 # DocumentAnalysis__RendererUrl must be set at run time (docker-compose.yml does); the API refuses to start without it.
 ENV Laya__ModelPath=/models/laya
+# Where the usage history (SQLite) is kept; a volume mounted here starts out writable for the non-root user.
+RUN mkdir /data && chown "$APP_UID" /data
 EXPOSE 8080
 USER $APP_UID
 # Ready once Laya is loaded; Degraded (still 200) when Laya failed for good or the renderer is down, since the rest of

@@ -1,4 +1,5 @@
-# Defaults are sized for a single 1 vCPU / 2 GB node: one replica each, one document at a time, short queues.
+# One replica each, one document at a time, short queues. The API and the renderer alone fit a 1 vCPU / 2 GB node, but the
+# ClamAV pod (malware.clamd, on by default) needs about 4 GB more: use a node with 8 GB, or turn it off.
 # See deploy/README.md. Settings under `config` map to DocumentAnalysis__* environment variables.
 
 nameOverride: ""
@@ -56,6 +57,23 @@ api:
     secretKeys: [api-key]
     # Short hash of the key(s) (never the key itself), set by CI so pods restart when a key changes.
     keyChecksum: ""
+    # Entries of that Secret that are also accepted everywhere and may read every caller's usage (a plain key sees only the
+    # rows of its own). Empty: nobody can read other callers' rows. Needs the entries to exist in the Secret.
+    adminSecretKeys: []
+  # Model usage history: one row per model call (API-key fingerprint, file name, tokens, list-price cost), kept in a SQLite
+  # file and served at GET /api/usage and /api/usage/summary (JSON or CSV).
+  usage:
+    persistence:
+      # false: the file lives in an emptyDir and is lost whenever the pod is replaced.
+      enabled: true
+      size: 1Gi
+      # Empty: the cluster's default class (DOKS: do-block-storage).
+      storageClass: ""
+      # One pod owns the file, so ReadWriteOnce. The Deployment replaces the pod in place (maxSurge 0), so the volume is free
+      # when the new pod starts.
+      accessMode: ReadWriteOnce
+      # An existing claim to use instead of creating one. The chart's own claim is kept on `helm uninstall`.
+      existingClaim: ""
   extraEnv: []
 
 # OpenTelemetry export (traces, metrics, logs) over OTLP. Empty endpoint: nothing is exported.
@@ -84,6 +102,23 @@ telemetry:
     resources:
       requests: { cpu: 25m, memory: 96Mi }
       limits: { memory: 256Mi }
+
+# Malware scanning: the API streams every upload to a ClamAV daemon before anything parses it, and refuses the upload
+# (422) when it is infected. ClamAV is GPL-2.0; it runs as its own pod and is not part of the application.
+malware:
+  clamd:
+    enabled: true
+    image: docker.io/clamav/clamav
+    # Debian, multi-arch, without a baked-in database: the pod downloads the signatures on start (a few minutes) and
+    # keeps them updated. Pin the tag.
+    tag: 1.5.4_base-debian13-slim
+    # What the API does while the scanner gives no verdict: `closed` refuses uploads with 503 + Retry-After, `open` lets
+    # them through unscanned (and logs a warning).
+    failMode: closed
+    # There are deliberately no `resources` here: no requests and no limits. clamd keeps the signature database in memory
+    # (about 1 GiB measured at rest; ClamAV's documentation advises 3-4 GiB because a database reload can double it), so the
+    # node needs that much free. With no requests the pod is BestEffort, so under memory pressure it is evicted first and,
+    # while it is down, uploads answer 503.
 
 renderer:
   image: laya-sample-renderer

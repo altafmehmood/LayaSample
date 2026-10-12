@@ -23,6 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\redteam\GarakShim\GarakShim.csproj" />
     <ProjectReference Include="..\..\src\LayaSample.Api\LayaSample.Api.csproj" />
     <ProjectReference Include="..\..\src\LayaSample.Renderer\LayaSample.Renderer.csproj" />
     <!-- Direct, so RapidOcrNet's build targets (which copy the bundled OCR models) reach this project too. -->

@@ -491,3 +491,10 @@ src/LayaSample.Rendering/ocr-models/
 
 # Test run output
 TestResults/
+
+# Usage history written by `dotnet run` (see Usage:DatabasePath)
+src/LayaSample.Api/data/
+
+# garak red-team run output and its virtualenv
+redteam/reports/
+.venv-garak/

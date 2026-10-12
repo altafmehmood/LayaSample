@@ -36,6 +36,11 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         {{- include "laya.podSecurityContext" . | nindent 8 }}
+        {{- if .Values.api.usage.persistence.enabled }}
+        # A new block volume is mounted root-owned; this makes it writable for the non-root user.
+        fsGroup: 1654
+        fsGroupChangePolicy: OnRootMismatch
+        {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -89,7 +94,32 @@ spec:
                   key: {{ $key | quote }}
                   optional: true
             {{- end }}
+            {{- range $i, $key := .Values.api.auth.adminSecretKeys }}
+            - name: {{ printf "Auth__AdminKeys__%d" $i }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.api.auth.existingSecret | quote }}
+                  key: {{ $key | quote }}
+                  optional: true
             {{- end }}
+            {{- end }}
+            {{- if .Values.malware.clamd.enabled }}
+            # Every upload is scanned by the ClamAV pod before anything parses it.
+            - name: Security__Malware__Provider
+              value: clamd
+            - name: Security__Malware__Host
+              value: {{ printf "%s-clamav" (include "laya.fullname" .) | quote }}
+            - name: Security__Malware__Port
+              value: "3310"
+            - name: Security__Malware__FailMode
+              value: {{ .Values.malware.clamd.failMode | quote }}
+            {{- else }}
+            - name: Security__Malware__Provider
+              value: none
+            {{- end }}
+            # Where the usage history is kept: the mounted volume below.
+            - name: Usage__DatabasePath
+              value: /data/usage.db
             {{- if .Values.gateway.enabled }}
             # Public URL Scalar's "Try it" calls: the OpenAPI document would otherwise advertise http:// and no path prefix.
             - name: OpenApi__ServerUrl
@@ -134,7 +164,17 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: data
+              mountPath: /data
       volumes:
         - name: tmp
           emptyDir:
             sizeLimit: 512Mi
+        - name: data
+          {{- if .Values.api.usage.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.api.usage.persistence.existingClaim | default (printf "%s-usage" (include "laya.fullname" .)) }}
+          {{- else }}
+          emptyDir:
+            sizeLimit: 256Mi
+          {{- end }}

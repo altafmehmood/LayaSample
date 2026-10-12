@@ -1,4 +1,6 @@
 using LayaSample.Api.Models;
+using LayaSample.Api.Services.Security;
+using LayaSample.Api.Services.Usage;
 using UglyToad.PdfPig.AcroForms;
 using UglyToad.PdfPig.AcroForms.Fields;
 using UglyToad.PdfPig.Tokens;
@@ -17,7 +19,7 @@ public sealed class AcroFormDetector : IPdfDetector
             switch (field)
             {
                 case AcroSignatureField signature:
-                    if (PdfSignatureVerifier.Verify(inspection.Pdf, signature, inspection.Bytes) is { } info)
+                    if (PdfSignatureVerifier.Verify(inspection.Pdf, signature, inspection.File) is { } info)
                         inspection.Document.Signatures.Add(info);
                     break;
                 case { FieldType: AcroFieldType.PushButton }:
@@ -55,6 +57,10 @@ public sealed class EmbeddedFileDetector : IPdfDetector
     public void InspectDocument(PdfInspection inspection)
     {
         foreach (var (name, bytes) in PdfStructuredData.ReadAttachments(inspection.Pdf))
+        {
             inspection.Document.Attachments.Add(new AttachmentInfo(name, bytes.Length, DocumentSniffer.Sniff(bytes)));
+            if (ExecutableSniffer.Describe(name, bytes.Span) is { } what)
+                inspection.Document.AddRisk(RiskKinds.ExecutableAttachment, RiskSeverity.Block, null, $"embedded file '{UsageFileName.Clean(name)}' looks like {what}");
+        }
     }
 }

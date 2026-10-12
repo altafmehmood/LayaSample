@@ -4,6 +4,8 @@ using System.Text.Json;
 using LayaSample.Api.Models;
 using LayaSample.Api.Services.Documents;
 using LayaSample.Api.Services.Documents.Extraction;
+using LayaSample.Api.Services.Security;
+using LayaSample.Api.Services.Usage;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -31,11 +33,16 @@ public class ExtractionTests
         Reason = "test", MediaType = "application/pdf", PageCount = pages
     };
 
-    private static DocumentExtractor Extractor(IChatClient? vision, IChatClient? text, ExtractionOptions? options = null, IExtractionErrorMapper? errors = null)
+    private static DocumentExtractor Extractor(IChatClient? vision, IChatClient? text, ExtractionOptions? options = null, IExtractionErrorMapper? errors = null,
+        ModelPricing? pricing = null, IUsageRecorder? recorder = null, SecurityOptions? security = null)
     {
         IExtractionAgent[] agents = [new LoanApplicationAgent(), new Ucc1Agent(), new Ucc3Agent(), new SecurityAgreementAgent(), new GenericLendingAgent()];
+        var metrics = new DocumentMetrics(new TestMeterFactory());
+        var riskScanner = new RiskScanner(Microsoft.Extensions.Options.Options.Create(security ?? new SecurityOptions()), metrics, NullLogger<RiskScanner>.Instance);
         return new DocumentExtractor(Microsoft.Extensions.Options.Options.Create(options ?? Options()), new ExtractionClients(vision, text),
-            errors ?? new OpenAiExtractionErrorMapper(), agents, new DocumentMetrics(new TestMeterFactory()), NullLogger<DocumentExtractor>.Instance);
+            errors ?? new OpenAiExtractionErrorMapper(), agents, metrics,
+            pricing ?? new ModelPricing(Microsoft.Extensions.Options.Options.Create(new PricingOptions())), recorder ?? new NoopUsageRecorder(),
+            riskScanner, NullLogger<DocumentExtractor>.Instance);
     }
 
     private sealed class TestMeterFactory : System.Diagnostics.Metrics.IMeterFactory
@@ -392,5 +399,124 @@ public class ExtractionTests
         Assert.Contains("filer reference data (10)", new Ucc3Agent().SystemPrompt);
         Assert.Contains("OtherFields", new LoanApplicationAgent().SystemPrompt);
         Assert.Contains("Checkboxes", new Ucc1Agent().SystemPrompt);
+    }
+
+    // --- usage and cost ---
+
+    private sealed class CollectingRecorder : IUsageRecorder
+    {
+        public List<UsageRecord> Records { get; } = [];
+        public void Record(UsageRecord record) => Records.Add(record);
+    }
+
+    private static readonly UsageContext Context = new(new ApiCaller("abc123def456", false), "loan.pdf", 1234, "ScannedPdf", 1, "trace-1");
+
+    private static ModelPricing Pricing(params string[] models) => new(Microsoft.Extensions.Options.Options.Create(new PricingOptions
+    {
+        AsOf = "2026-10-11",
+        Models = models.ToDictionary(m => m, _ => new ModelPriceOptions
+        {
+            Tiers = [new PriceTier { MaxInputTokens = 272_000, InputPerMillion = 2.00m, CachedInputPerMillion = 0.10m, OutputPerMillion = 10.00m }]
+        }, StringComparer.OrdinalIgnoreCase)
+    }));
+
+    [Fact]
+    public async Task A_model_call_is_recorded_with_its_tokens_images_and_list_price()
+    {
+        var recorder = new CollectingRecorder();
+        var client = FakeChatClient.Returning(Extracted.Ucc1Root(), inputTokens: 10_000, outputTokens: 1_000, cachedTokens: 2_000, reasoningTokens: 300);
+
+        var response = await Extractor(client, client, pricing: Pricing("vision-model"), recorder: recorder)
+            .ExtractAsync("x.pdf", Classification(1), Ucc1Scan(), TestContext.Current.CancellationToken, Context);
+
+        // (10,000 - 2,000) x $2 + 2,000 x $0.10 + 1,000 x $10, per million tokens.
+        Assert.Equal(new ExtractionUsage(10_000, 1_000, 2_000, 300, 0.0262m), response.Usage);
+        var record = Assert.Single(recorder.Records);
+        Assert.Equal(("abc123def456", "loan.pdf", 1234L, "ScannedPdf", 1, 1), (record.ApiKeyFingerprint, record.FileName, record.FileBytes, record.DocumentKind, record.Pages, record.Images));
+        Assert.Equal(("vision-model", 1, "ok", "trace-1"), (record.Model, record.Attempt, record.Outcome, record.TraceId));
+        Assert.Equal((10_000L, 2_000L, 300L, 1_000L), (record.InputTokens, record.CachedInputTokens, record.ReasoningTokens, record.OutputTokens));
+        Assert.Equal((0.0262m, "vision-model@2026-10-11"), (record.CostUsd, record.PriceKey));
+    }
+
+    [Fact]
+    public async Task The_generic_retry_is_its_own_record_and_the_costs_add_up()
+    {
+        var blank = Extracted.Ucc1();
+        var empty = new Ucc1Extraction(Extracted.Borrower(null), Extracted.Lender(null),
+            blank with { FileNumber = Extracted.Empty(), FilingDate = Extracted.Empty(), FilingOffice = Extracted.Empty(), Jurisdiction = Extracted.Empty(), Collateral = Extracted.Empty() }, []);
+        var calls = 0;
+        var client = new FakeChatClient(() =>
+        {
+            var payload = calls++ == 0 ? (object)empty : Extracted.GenericRoot(LendingDocumentType.Ucc1, ucc1: Extracted.Ucc1());
+            return new ChatResponse(new ChatMessage(ChatRole.Assistant, JsonSerializer.Serialize(payload, FakeChatClient.Json)))
+            { FinishReason = ChatFinishReason.Stop, Usage = new UsageDetails { InputTokenCount = 1_000_000, OutputTokenCount = 0 } };
+        });
+        var recorder = new CollectingRecorder();
+
+        var response = await Extractor(client, client, pricing: Pricing("vision-model"), recorder: recorder)
+            .ExtractAsync("x.pdf", Classification(1), Ucc1Scan(), TestContext.Current.CancellationToken, Context);
+
+        Assert.Equal([1, 2], recorder.Records.Select(r => r.Attempt));
+        Assert.Equal(["ucc1-agent", "generic-lending-agent"], recorder.Records.Select(r => r.Agent));
+        // 1,000,000 tokens is past the 272,000 tier limit; with no higher tier configured the last one still applies.
+        Assert.Equal([2.00m, 2.00m], recorder.Records.Select(r => r.CostUsd!.Value));
+        Assert.Equal(4.00m, response.Usage.CostUsd);
+    }
+
+    [Fact]
+    public async Task A_cut_off_answer_is_recorded_with_the_tokens_it_was_billed_for()
+    {
+        var client = FakeChatClient.Returning(Extracted.Ucc1Root(), finish: ChatFinishReason.Length, inputTokens: 5_000, outputTokens: 4_000);
+        var recorder = new CollectingRecorder();
+
+        var ex = await Assert.ThrowsAsync<ExtractionException>(() => Extractor(client, client, pricing: Pricing("vision-model"), recorder: recorder)
+            .ExtractAsync("x.pdf", Classification(1), Ucc1Scan(), TestContext.Current.CancellationToken, Context));
+
+        Assert.Equal(502, ex.StatusCode);
+        var record = Assert.Single(recorder.Records);
+        Assert.Equal(("http_502", 5_000L, 4_000L), (record.Outcome, record.InputTokens, record.OutputTokens));
+        Assert.Equal(0.05m, record.CostUsd);
+    }
+
+    [Fact]
+    public async Task A_provider_error_is_recorded_without_tokens_or_cost()
+    {
+        var client = FakeChatClient.Throwing(new ClientResultException(new FakeProviderResponse(429, null)));
+        var recorder = new CollectingRecorder();
+
+        await Assert.ThrowsAsync<ExtractionException>(() => Extractor(client, client, pricing: Pricing("vision-model"), recorder: recorder)
+            .ExtractAsync("x.pdf", Classification(1), Ucc1Scan(), TestContext.Current.CancellationToken, Context));
+
+        var record = Assert.Single(recorder.Records);
+        Assert.Equal("http_503", record.Outcome);
+        Assert.Null(record.InputTokens);
+        Assert.Null(record.CostUsd);
+    }
+
+    [Fact]
+    public async Task A_model_without_a_price_is_recorded_with_an_unknown_cost()
+    {
+        var client = FakeChatClient.Returning(Extracted.Ucc1Root());
+        var recorder = new CollectingRecorder();
+
+        var response = await Extractor(client, client, pricing: Pricing("some-other-model"), recorder: recorder)
+            .ExtractAsync("x.pdf", Classification(1), Ucc1Scan(), TestContext.Current.CancellationToken, Context);
+
+        Assert.Null(response.Usage.CostUsd);
+        var record = Assert.Single(recorder.Records);
+        Assert.Equal(1000L, record.InputTokens);
+        Assert.Null(record.CostUsd);
+        Assert.Null(record.PriceKey);
+    }
+
+    [Fact]
+    public async Task Without_a_usage_context_nothing_is_recorded()
+    {
+        var client = FakeChatClient.Returning(Extracted.Ucc1Root());
+        var recorder = new CollectingRecorder();
+
+        await Extractor(client, client, recorder: recorder).ExtractAsync("x.pdf", Classification(1), Ucc1Scan(), TestContext.Current.CancellationToken);
+
+        Assert.Empty(recorder.Records);
     }
 }

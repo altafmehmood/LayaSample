@@ -55,7 +55,7 @@ public sealed class DocumentPreparer(
         {
             var budget = new Budget(_options.MaxPages);
             return new PreparedDocument(classification.Strategy,
-                await PreparePartsAsync(StreamBytes.Read(stream), classification, budget, includeAttachments: true, ct));
+                await PreparePartsAsync(stream, classification, budget, includeAttachments: true, ct));
         }
         // The container was valid enough to classify, but the libraries (or the renderer) reject its content.
         catch (Exception ex) when (!IsServerProblem(ex) && ex is not DocumentException)
@@ -68,20 +68,28 @@ public sealed class DocumentPreparer(
     private static bool IsServerProblem(Exception ex) =>
         ex is OperationCanceledException or OcrUnavailableException or RendererUnavailableException or RenderingFailedException;
 
-    private async Task<List<PreparedPart>> PreparePartsAsync(byte[] bytes, DocumentClassification classification, Budget budget,
+    /// <param name="document">Seekable and read in place (never copied into memory); each stage rewinds it and leaves it open.</param>
+    private async Task<List<PreparedPart>> PreparePartsAsync(Stream document, DocumentClassification classification, Budget budget,
         bool includeAttachments, CancellationToken ct)
     {
         var strategy = classification.Strategy;
         return classification.Kind switch
         {
-            DocumentKind.Spreadsheet => [Markdown(null, SpreadsheetToMarkdown(new MemoryStream(bytes, writable: false), ct))],
-            DocumentKind.WordDocument => [Markdown(null, WordToMarkdown(new MemoryStream(bytes, writable: false)))],
-            DocumentKind.Image => await PrepareImageAsync(bytes, classification, strategy, budget, ct),
-            _ => await PreparePdfAsync(bytes, classification, strategy, budget, includeAttachments, ct)
+            DocumentKind.Spreadsheet => [Markdown(null, SpreadsheetToMarkdown(Lend(document), ct))],
+            DocumentKind.WordDocument => [Markdown(null, WordToMarkdown(Lend(document)))],
+            DocumentKind.Image => await PrepareImageAsync(document, classification, strategy, budget, ct),
+            _ => await PreparePdfAsync(document, classification, strategy, budget, includeAttachments, ct)
         };
     }
 
-    private async Task<List<PreparedPart>> PrepareImageAsync(byte[] bytes, DocumentClassification classification, PreparationStrategy strategy,
+    /// <summary>The document from its start, in a wrapper whose disposal leaves it open for the next stage (the Office libraries close what they read).</summary>
+    private static LeaveOpenStream Lend(Stream document)
+    {
+        document.Position = 0;
+        return new LeaveOpenStream(document);
+    }
+
+    private async Task<List<PreparedPart>> PrepareImageAsync(Stream image, DocumentClassification classification, PreparationStrategy strategy,
         Budget budget, CancellationToken ct)
     {
         var requests = new List<PageRequest>();
@@ -93,7 +101,7 @@ public sealed class DocumentPreparer(
         }
 
         var parts = new List<PreparedPart>();
-        foreach (var page in await RenderAsync(bytes, classification.MediaType, requests, ct))
+        foreach (var page in await RenderAsync(image, classification.MediaType, requests, ct))
         {
             parts.Add(PageImage(page));
             if (OcrText(page) is { } text) parts.Add(text);
@@ -101,10 +109,12 @@ public sealed class DocumentPreparer(
         return parts;
     }
 
-    private async Task<List<PreparedPart>> PreparePdfAsync(byte[] bytes, DocumentClassification classification, PreparationStrategy strategy,
+    private async Task<List<PreparedPart>> PreparePdfAsync(Stream file, DocumentClassification classification, PreparationStrategy strategy,
         Budget budget, bool includeAttachments, CancellationToken ct)
     {
-        using var pdf = PdfDocument.Open(bytes);
+        // PdfPig reads the stream in place and leaves it open; the renderer reads it too, in between.
+        file.Position = 0;
+        using var pdf = PdfDocument.Open(file);
 
         // First decide each page: markdown from the text layer here, or a render (with OCR where the text layer is
         // missing or unusable). All renders then go to the rasterizer as one job.
@@ -133,7 +143,7 @@ public sealed class DocumentPreparer(
             logger.LogWarning("Page budget of {Max} renders reached: {Skipped} of {Pages} page(s) are not in the result",
                 _options.MaxPages, pages.Count - slots.Count, pages.Count);
         Activity.Current?.SetTag("laya.prepare.slots", string.Join(",", slots.GroupBy(s => s.Strategy).Select(g => $"{g.Key}={g.Count()}")));
-        var rendered = (await RenderAsync(bytes, DocumentSniffer.Pdf, requests, ct)).ToDictionary(p => p.Number);
+        var rendered = (await RenderAsync(file, DocumentSniffer.Pdf, requests, ct)).ToDictionary(p => p.Number);
         var parts = new List<PreparedPart>();
         foreach (var (page, pageStrategy, markdown) in slots)
         {
@@ -171,30 +181,36 @@ public sealed class DocumentPreparer(
 
     private static bool NeedsOcr(PageClassification page) => page.Content is PageContent.Scanned or PageContent.Fax or PageContent.BrokenText;
 
-    private async Task<IReadOnlyList<RenderedPage>> RenderAsync(byte[] bytes, string mediaType, List<PageRequest> requests, CancellationToken ct)
+    private async Task<IReadOnlyList<RenderedPage>> RenderAsync(Stream document, string mediaType, List<PageRequest> requests, CancellationToken ct)
     {
         if (requests.Count == 0) return [];
 
         // The round trip to the renderer as the API sees it; the renderer's own spans nest under it.
         using var span = Telemetry.Source.StartActivity("laya.render");
         span?.SetTag("laya.render.media_type", mediaType);
-        span?.SetTag("laya.render.input_bytes", bytes.Length);
+        span?.SetTag("laya.render.input_bytes", document.Length);
         span?.SetTag("laya.render.pages_requested", requests.Count);
         span?.SetTag("laya.render.pages_ocr", requests.Count(r => r.Ocr));
         span?.SetTag("laya.render.pages_grayscale", requests.Count(r => r.Grayscale));
+        // PdfPig is still reading this stream, and the renderer moves it; put it back where it was.
+        var position = document.Position;
         try
         {
-            var pages = await rasterizer.RenderAsync(new RenderJob(bytes, mediaType, requests), ct);
+            var pages = await rasterizer.RenderAsync(new RenderJob(document, mediaType, requests), ct);
             span?.SetTag("laya.render.output_bytes", pages.Sum(p => (long)p.Png.Length));
             span?.SetTag("laya.render.ocr_characters", pages.Sum(p => p.OcrText?.Length ?? 0));
             logger.LogInformation("Rendered {Pages} of {Requested} requested page(s) of a {Bytes}-byte {MediaType} document ({Ocr} with OCR)",
-                pages.Count, requests.Count, bytes.Length, mediaType, requests.Count(r => r.Ocr));
+                pages.Count, requests.Count, document.Length, mediaType, requests.Count(r => r.Ocr));
             return pages;
         }
         catch (Exception ex)
         {
             span.RecordFailure(ex);
             throw;
+        }
+        finally
+        {
+            document.Position = position;
         }
     }
 
@@ -212,8 +228,10 @@ public sealed class DocumentPreparer(
 
         try
         {
-            var classification = await classifier.ClassifyAsync(new MemoryStream(bytes, writable: false), ct);
-            return (await PreparePartsAsync(bytes, classification, budget, includeAttachments: false, ct))
+            // An embedded file is small and already in memory (PdfPig extracted it), so it stays a MemoryStream.
+            using var attachment = new MemoryStream(bytes, writable: false);
+            var classification = await classifier.ClassifyAsync(attachment, ct);
+            return (await PreparePartsAsync(attachment, classification, budget, includeAttachments: false, ct))
                 .Select(p => p with { Source = name });
         }
         // A corrupt embedded file must not fail the document that carries it; it stays listed in the classification.

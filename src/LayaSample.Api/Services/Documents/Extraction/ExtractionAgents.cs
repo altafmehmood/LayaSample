@@ -38,14 +38,18 @@ public abstract class ExtractionAgent<TRoot> : IExtractionAgent where TRoot : cl
     {
         var response = await client.GetResponseAsync<TRoot>(messages, Json, new ChatOptions { MaxOutputTokens = maxOutputTokens }, useJsonSchemaResponseFormat: true, ct);
 
-        if (response.FinishReason == ChatFinishReason.Length)
-            throw new ExtractionException(StatusCodes.Status502BadGateway, "the model's answer was cut off; try fewer pages");
-        if (response.FinishReason == ChatFinishReason.ContentFilter)
-            throw new ExtractionException(StatusCodes.Status422UnprocessableEntity, "the model declined to process this document");
-        if (!response.TryGetResult(out var root) || root is null)
-            throw new ExtractionException(StatusCodes.Status502BadGateway, "the model returned an unreadable answer");
+        // Read before the checks below: a cut-off or refused answer was still billed, and the usage record needs it.
+        var usage = new ExtractionUsage(
+            response.Usage?.InputTokenCount ?? 0, response.Usage?.OutputTokenCount ?? 0,
+            response.Usage?.CachedInputTokenCount ?? 0, response.Usage?.ReasoningTokenCount);
 
-        var usage = new ExtractionUsage(response.Usage?.InputTokenCount ?? 0, response.Usage?.OutputTokenCount ?? 0);
+        if (response.FinishReason == ChatFinishReason.Length)
+            throw new ExtractionException(StatusCodes.Status502BadGateway, "the model's answer was cut off; try fewer pages") { Usage = usage };
+        if (response.FinishReason == ChatFinishReason.ContentFilter)
+            throw new ExtractionException(StatusCodes.Status422UnprocessableEntity, "the model declined to process this document") { Usage = usage };
+        if (!response.TryGetResult(out var root) || root is null)
+            throw new ExtractionException(StatusCodes.Status502BadGateway, "the model returned an unreadable answer") { Usage = usage };
+
         return new AgentOutput(ToResult(root), usage);
     }
 

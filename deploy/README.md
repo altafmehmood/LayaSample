@@ -9,10 +9,12 @@ internet -> DigitalOcean load balancer -> Gateway (cilium, TLS) -> HTTPRoute -> 
                                                        renderer Service <----------+  (NetworkPolicy: only the API may call it)
 ```
 
-The defaults fit **one node with 1 vCPU and 2 GB of memory**: one replica of each, one document analysed at a time,
-short queues, no CPU limits, and a rolling update that replaces the pod in place (a second copy would not fit).
-Expect slow OCR and brief downtime on upgrades. For real traffic use a bigger node and raise the values under
-`api.config`, `renderer.config` and `*.resources`.
+The API and the renderer fit **one node with 1 vCPU and 2 GB of memory**: one replica of each, one document analysed at a
+time, short queues, no CPU limits, and a rolling update that replaces the pod in place (a second copy would not fit).
+Expect slow OCR and brief downtime on upgrades. **The malware scanner changes that:** the ClamAV pod (on by default) needs
+about 4 GB of its own, so use a node with 8 GB, or set `malware.clamd.enabled: false` (see
+[Malware scanning](#malware-scanning-clamav)). For real traffic use a bigger node and raise the values under `api.config`,
+`renderer.config` and `*.resources`.
 
 ## Prerequisites
 
@@ -126,6 +128,57 @@ deploy again.
 **Cap the spend.** The access key decides who may call; it does not limit how much they spend. Give this service's
 OpenAI key its own OpenAI project and set a monthly budget there; that is the only limit that still holds if the access
 key leaks.
+
+## Malware scanning (ClamAV)
+
+The chart runs a ClamAV pod (`malware.clamd`, on by default) and the API streams every upload to it before anything parses
+the file; an infected upload gets 422. It is the largest pod in the release, so plan the node around it:
+
+- **Memory.** ClamAV keeps its signature database in memory: about 1 GiB measured when idle, and its documentation advises
+  3 to 4 GiB because a database reload can briefly double that. The chart's default node (1 vCPU, 2 GB) cannot hold it
+  together with the API and the renderer. Resize the DigitalOcean node pool **before** merging: otherwise the ClamAV pod
+  stays `Pending` or is evicted, `helm upgrade --wait` times out and the deploy job fails.
+- **No requests or limits.** By choice, the pod has none (and its volumes have no size limit). It is therefore `BestEffort`:
+  under memory pressure the kubelet evicts it first, and while it is down uploads answer 503 (`FailMode: closed`). To change
+  that, add a `resources` block to `templates/clamav.yaml`.
+- **Start-up.** The pod runs ClamAV's non-root entrypoint on an empty volume, so its first start downloads the signature
+  database (a minute or two; the startup probe allows 15). The database is downloaded again whenever the pod is replaced,
+  and `freshclam` keeps it current. The pod is the only one besides the telemetry collector with internet egress (HTTPS
+  and DNS), and only the API can reach it (port 3310).
+- **Failure mode.** `malware.clamd.failMode` is `closed` (refuse uploads while there is no verdict, 503 with `Retry-After`)
+  or `open` (accept them unscanned, with a warning in the log). Readiness shows the scanner as `Degraded` while it does not
+  answer; the API stays in rotation.
+- **Switch it off** with `malware.clamd.enabled: false`, which sets `Security__Malware__Provider=none`.
+- **File size.** clamd's default stream limit is 25 MB, above the 20 MB upload limit. If you raise
+  `api.config.maxFileBytes` past that, raise clamd's `StreamMaxLength` too (mount a `clamd.conf` at `/etc/clamav`).
+
+Check it after a deploy: `kubectl -n laya get pods` shows `laya-clamav` Ready, and uploading the
+[EICAR test file](https://www.eicar.org/download-anti-malware-testfile/) answers 422 `malware detected`.
+
+## Usage history (PVC)
+
+The API records every model call (API-key fingerprint, file name, tokens, list-price cost) in a SQLite file and serves it
+at `GET /api/usage` and `/api/usage/summary` as JSON or CSV (see the [README](../README.md#ai-extraction)). On Kubernetes
+the file lives on a PersistentVolumeClaim, so the history survives a pod restart or a deploy:
+
+- `api.usage.persistence` creates the claim `laya-usage` (1 GiB, ReadWriteOnce, the cluster's default storage class; on DOKS
+  `do-block-storage`) and mounts it at `/data`. Set `enabled: false` to use an emptyDir instead, which loses the history
+  whenever the pod is replaced, or `existingClaim` to bring your own volume.
+- The claim is annotated `helm.sh/resource-policy: keep`: `helm uninstall` leaves it, because it is the record of what the
+  model cost. Delete it with `kubectl -n laya delete pvc laya-usage` when you really want it gone.
+- A ReadWriteOnce volume can only be attached to one pod. The API Deployment already replaces its pod in place
+  (`maxSurge: 0`), so the old pod releases the volume before the new one starts; a deploy takes the same short outage as
+  before. Do not raise `api.replicas` above 1 while it is on: a second pod could not mount the volume.
+- The pod runs as UID 1654 with a read-only root file system, so the chart sets `fsGroup: 1654` to make the new volume
+  writable for it.
+- Back it up with a snapshot of the DigitalOcean volume (Volumes > the `pvc-...` volume > Snapshots).
+- To let a key read everyone's usage, add an entry such as `admin-key` to the `laya-api-key` Secret and list it in
+  `api.auth.adminSecretKeys`. Without one, each key sees only its own rows.
+
+Check it after a deploy: send one extraction, then
+`curl -H "X-Api-Key: $LAYA_API_KEY" "https://api.mehmood.us/laya/api/usage?format=csv"`. Costs use the prices in
+`Extraction:Pricing`; to change them in the cluster, set the matching `Extraction__Pricing__...` environment variables with
+`api.extraEnv`. For a total that matches the OpenAI dashboard, give this service its own OpenAI project.
 
 ## Telemetry (OpenTelemetry)
 

@@ -17,23 +17,26 @@ public sealed class RemotePageRasterizer(IHttpClientFactory httpClientFactory) :
 
     private static readonly JsonSerializerOptions Json = JsonSerializerOptions.Web;
 
-    public async Task<IReadOnlyList<RasterPage>> InspectImageAsync(byte[] image, string mediaType, int maxFrames, CancellationToken ct = default)
+    public async Task<IReadOnlyList<RasterPage>> InspectImageAsync(Stream image, string mediaType, int maxFrames, CancellationToken ct = default)
     {
+        image.Position = 0;
+        // Streamed from where the upload sits; LeaveOpenStream because disposing the request would otherwise close it.
         using var request = new HttpRequestMessage(HttpMethod.Post,
             $"inspect?mediaType={Uri.EscapeDataString(mediaType)}&maxFrames={maxFrames}")
         {
-            Content = new ByteArrayContent(image) { Headers = { ContentType = new MediaTypeHeaderValue("application/octet-stream") } }
+            Content = new StreamContent(new LeaveOpenStream(image)) { Headers = { ContentType = new MediaTypeHeaderValue("application/octet-stream") } }
         };
         return await SendAsync<List<RasterPage>>(request, ct);
     }
 
     public async Task<IReadOnlyList<RenderedPage>> RenderAsync(RenderJob job, CancellationToken ct = default)
     {
+        job.Document.Position = 0;
         using var request = new HttpRequestMessage(HttpMethod.Post, "render")
         {
             Content = new MultipartFormDataContent
             {
-                { new ByteArrayContent(job.Document), "document", "document" },
+                { new StreamContent(new LeaveOpenStream(job.Document)), "document", "document" },
                 { JsonContent.Create(new RenderRequest(job.MediaType, job.Pages), options: Json), "job" }
             }
         };

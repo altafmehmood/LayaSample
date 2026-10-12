@@ -1,4 +1,5 @@
 using System.Diagnostics.Metrics;
+using LayaSample.Api.Models;
 
 namespace LayaSample.Api.Services.Documents;
 
@@ -25,6 +26,12 @@ public sealed class DocumentMetrics
     private readonly Counter<long> _extractionFields;
     private readonly Counter<long> _extractionWarnings;
     private readonly Histogram<double> _modelLoad;
+    private readonly Counter<double> _llmCost;
+    private readonly Counter<long> _scans;
+    private readonly Counter<long> _risks;
+    private readonly Histogram<double> _scanDuration;
+    private readonly Counter<long> _usageWriteFailures;
+    private readonly Counter<long> _usageUnpriced;
 
     public DocumentMetrics(IMeterFactory meterFactory)
     {
@@ -36,7 +43,7 @@ public sealed class DocumentMetrics
         _extractions = meter.CreateCounter<long>("laya.extraction.documents", "{document}",
             "Documents extracted, by agent, document type and model.");
         _tokens = meter.CreateCounter<long>("laya.extraction.tokens", "{token}",
-            "Model tokens used by extraction, by model and direction.");
+            "Model tokens used by extraction calls, by model and direction (input, cached, reasoning, output). Cached tokens are part of input, reasoning ones part of output.");
         _authRejections = meter.CreateCounter<long>("laya.auth.rejections", "{request}",
             "Requests rejected for a missing, invalid or unconfigured API key.");
         _extractionDuration = meter.CreateHistogram<double>("laya.extraction.duration", "s",
@@ -56,6 +63,14 @@ public sealed class DocumentMetrics
         _extractionWarnings = meter.CreateCounter<long>("laya.extraction.warnings", "{warning}",
             "Warnings returned with extraction results (validation, cut text, skipped images).");
         _modelLoad = meter.CreateHistogram<double>("laya.model.load.duration", "s", "Time to load the Laya model at startup, by outcome.");
+        _llmCost = meter.CreateCounter<double>("laya.llm.cost", "USD", "List-price cost of model calls, by model.");
+        _risks = meter.CreateCounter<long>("laya.risk.findings", "{finding}", "Findings about uploads and answers (active content, macros, hidden text, prompt injection), by kind and severity.");
+        _scans = meter.CreateCounter<long>("laya.scan.results", "{upload}", "Uploads scanned for malware, by result (clean, infected, unavailable).");
+        _scanDuration = meter.CreateHistogram<double>("laya.scan.duration", "s", "Time the malware scanner took per upload, by result.");
+        _usageWriteFailures = meter.CreateCounter<long>("laya.usage.write_failures", "{record}",
+            "Usage records that could not be stored (store failure or full queue).");
+        _usageUnpriced = meter.CreateCounter<long>("laya.usage.unpriced", "{call}",
+            "Model calls whose model has no configured price, so their cost is unknown.");
     }
 
     public void RecordExtractionRun(string agent, string model, TimeSpan elapsed, string outcome) =>
@@ -103,15 +118,40 @@ public sealed class DocumentMetrics
             new KeyValuePair<string, object?>("strategy", strategy),
             new KeyValuePair<string, object?>("status", status));
 
-    public void RecordExtraction(string agent, string documentType, string model, long inputTokens, long outputTokens)
-    {
+    public void RecordExtraction(string agent, string documentType, string model) =>
         _extractions.Add(1,
             new KeyValuePair<string, object?>("agent", agent),
             new KeyValuePair<string, object?>("document_type", documentType),
             new KeyValuePair<string, object?>("model", model));
-        _tokens.Add(inputTokens, new KeyValuePair<string, object?>("model", model), new KeyValuePair<string, object?>("direction", "input"));
-        _tokens.Add(outputTokens, new KeyValuePair<string, object?>("model", model), new KeyValuePair<string, object?>("direction", "output"));
+
+    /// <summary>One model call, so a generic-agent retry on another model is attributed to the right model and price.</summary>
+    public void RecordLlmCall(string model, ExtractionUsage usage, decimal? costUsd)
+    {
+        void Add(string direction, long tokens)
+        {
+            if (tokens > 0)
+                _tokens.Add(tokens, new KeyValuePair<string, object?>("model", model), new KeyValuePair<string, object?>("direction", direction));
+        }
+        Add("input", usage.InputTokens);
+        Add("cached", usage.CachedInputTokens);
+        Add("reasoning", usage.ReasoningTokens ?? 0);
+        Add("output", usage.OutputTokens);
+        if (costUsd is { } cost)
+            _llmCost.Add((double)cost, new KeyValuePair<string, object?>("model", model));
+        else
+            _usageUnpriced.Add(1, new KeyValuePair<string, object?>("model", model));
     }
+
+    public void RecordRisk(string kind, string severity) =>
+        _risks.Add(1, new KeyValuePair<string, object?>("kind", kind), new KeyValuePair<string, object?>("severity", severity));
+
+    public void RecordScan(string result, TimeSpan elapsed)
+    {
+        _scans.Add(1, new KeyValuePair<string, object?>("result", result));
+        _scanDuration.Record(elapsed.TotalSeconds, new KeyValuePair<string, object?>("result", result));
+    }
+
+    public void RecordUsageWriteFailure(int records) => _usageWriteFailures.Add(records);
 
     public void RecordAuthRejection(string reason) =>
         _authRejections.Add(1, new KeyValuePair<string, object?>("reason", reason));
