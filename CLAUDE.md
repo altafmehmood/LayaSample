@@ -8,6 +8,12 @@
 - Deployment details live in `deploy/README.md`; link to it from the README rather than copying it.
 - Say what a feature does not do, and which tests are opt-in (they spend money or need a daemon).
 
+## Git workflow
+
+- When executing a plan, first create a new branch from an up-to-date `main` before making any change: `feature/<plan-name>` (or `fix/<plan-name>` for a fix), kebab-case, matching the `docs/<feature-name>.md` page for that plan. One plan, one branch.
+- Never commit plan work directly to `main`; it lands through a pull request.
+- If the working tree is dirty or you are already on a non-main branch when a plan starts, stop and ask before branching.
+
 ## .NET conventions
 
 - Use central package management. Package versions live only in `Directory.Packages.props`; csproj files contain version-less `<PackageReference Include="..." />`.
