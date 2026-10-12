@@ -48,7 +48,7 @@ jobs:
 
       # Dependency policy (CLAUDE.md): permissive licences only, transitive dependencies included.
       - name: Licences
-        run: dotnet dnx -y nuget-license@4.0.18 -- -i LayaSample.slnx -t -a .github/allowed-licenses.json
+        run: dotnet dnx -y nuget-license@4.0.18 -- -i DocIntake.slnx -t -a .github/allowed-licenses.json
 
   # Every run builds both images. Pushes to main also publish them to GHCR, tagged with the commit SHA and latest;
   # pull requests build without pushing, so they never need write access to the registry.
@@ -94,7 +94,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
 
   # The Helm chart must lint, render and validate against the Kubernetes and Gateway API schemas for every values
-  # file in deploy/helm/laya-sample/ci. Nothing is deployed.
+  # file in deploy/helm/docintake/ci. Nothing is deployed.
   helm:
     runs-on: ubuntu-latest
     env:
@@ -114,10 +114,10 @@ jobs:
       - name: Lint, render and validate
         run: |
           helm version --short
-          for values in deploy/helm/laya-sample/ci/*.yaml; do
+          for values in deploy/helm/docintake/ci/*.yaml; do
             echo "::group::$values"
-            helm lint deploy/helm/laya-sample -f "$values"
-            helm template laya deploy/helm/laya-sample -f "$values" | ./kubeconform -strict -summary -kubernetes-version 1.33.0 \
+            helm lint deploy/helm/docintake -f "$values"
+            helm template laya deploy/helm/docintake -f "$values" | ./kubeconform -strict -summary -kubernetes-version 1.33.0 \
               -schema-location default \
               -schema-location "https://raw.githubusercontent.com/datreeio/CRDs-catalog/${CRD_SCHEMAS_COMMIT}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
             echo "::endgroup::"
@@ -193,7 +193,7 @@ jobs:
           # Get the commit SHA short form
           COMMIT_SHA=$(git rev-parse --short HEAD)
 
-          helm upgrade --install laya deploy/helm/laya-sample \
+          helm upgrade --install laya deploy/helm/docintake \
             --namespace laya \
             --create-namespace \
             --values deploy/values-prod.yaml \
@@ -226,7 +226,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           RUN_EXTRACTION_EVAL: "1"
-        run: dotnet run --project tests/LayaSample.Tests -c Release -- -trait "Category=Evaluation" -showLiveOutput
+        run: dotnet run --project tests/DocIntake.Tests -c Release -- -trait "Category=Evaluation" -showLiveOutput
 
   # Manual only: starts the stack on the runner and attacks it with garak (see redteam/README.md). Needs the OPENAI_API_KEY
   # secret, and spends it: every prompt is a model call. Never runs on push and never targets production.
@@ -253,7 +253,7 @@ jobs:
             echo "::error::OPENAI_API_KEY is not set; the extraction API cannot call the model"
             exit 1
           fi
-          echo "LAYA_API_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+          echo "DOCINTAKE_API_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
           # The key is read from the environment of the next steps, which is set from the line above.
 
       - name: Attack with the defences on
@@ -266,7 +266,7 @@ jobs:
       - name: Attack the model itself (findings flagged, not refused)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          LAYA_ON_FINDING: flag
+          DOCINTAKE_ON_FINDING: flag
         run: |
           docker compose up -d --force-recreate --wait api
           redteam/run.sh --target http://localhost:8080 --label flag --probes "${{ inputs.redteam_probes }}" --max-requests 2000

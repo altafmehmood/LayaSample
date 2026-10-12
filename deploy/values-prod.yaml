@@ -1,4 +1,8 @@
 fullnameOverride: laya
+# The chart was renamed docintake on 2026-10-11, but the running release's selector labels (app.kubernetes.io/name) are
+# immutable, so they keep the old chart name until the services cutover replaces these Deployments
+# (docs/docintake-architecture.md). Namespace, release, secrets and image names are unchanged for the same reason.
+nameOverride: laya-sample
 
 image:
   tag: sha-000000002  # will be overridden by CI with actual commit SHA

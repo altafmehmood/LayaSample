@@ -5,7 +5,7 @@
 #   redteam/run.sh --probes probes.latentinjection # one family, full size
 #   redteam/run.sh --target http://localhost:8080 --label flag-mode
 #
-# Needs LAYA_API_KEY when the target asks for an X-Api-Key. Every prompt is a paid model call.
+# Needs DOCINTAKE_API_KEY when the target asks for an X-Api-Key. Every prompt is a paid model call.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

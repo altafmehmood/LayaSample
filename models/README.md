@@ -12,7 +12,7 @@ models/
 
 How files get here:
 
-- `dotnet run --project src/LayaSample.Api` downloads Laya into `elbruno_laya-onnx/` on first start.
+- `dotnet run --project src/DocIntake.Api` downloads Laya into `elbruno_laya-onnx/` on first start.
 - `scripts/download-models.sh laya` and `scripts/download-models.sh ocr <OcrModel>` download the pinned versions.
 - Or copy the folders from a machine that already has them.
 

@@ -1,6 +1,6 @@
 # Deploying to DigitalOcean Kubernetes
 
-The Helm chart in [`helm/laya-sample`](helm/laya-sample) runs the API and the isolated renderer and publishes the API
+The Helm chart in [`helm/docintake`](helm/docintake) runs the API and the isolated renderer and publishes the API
 through the Gateway API.
 
 ```
@@ -49,7 +49,7 @@ about 4 GB of its own, so use a node with 8 GB, or set `malware.clamd.enabled: f
 
 ```sh
 cp deploy/values-doks.example.yaml my-values.yaml     # set gateway.hostname and image.tag
-helm upgrade --install laya deploy/helm/laya-sample -n laya --create-namespace -f my-values.yaml
+helm upgrade --install laya deploy/helm/docintake -n laya --create-namespace -f my-values.yaml
 ```
 
 Then create the DNS record. The load balancer address appears once DigitalOcean has provisioned it (a minute or two):
@@ -67,7 +67,7 @@ kubectl get certificate -n laya -w        # READY becomes True
 Start with `letsencrypt-staging` (the example values do). When the staging certificate is issued, switch:
 
 ```sh
-helm upgrade laya deploy/helm/laya-sample -n laya -f my-values.yaml --set gateway.tls.clusterIssuer=letsencrypt-prod
+helm upgrade laya deploy/helm/docintake -n laya -f my-values.yaml --set gateway.tls.clusterIssuer=letsencrypt-prod
 ```
 
 (Delete the old certificate Secret `laya-tls` first if cert-manager keeps the staging one: `kubectl delete secret laya-tls -n laya`.)
@@ -118,7 +118,7 @@ The CI deploy job does this from the **`LAYA_API_KEY`** GitHub secret and passes
 without it the deploy succeeds but extraction answers 503. Callers then send the same value:
 
 ```sh
-curl -H "X-Api-Key: $LAYA_API_KEY" -F "file=@document.pdf" https://api.mehmood.us/laya/api/documents/extract
+curl -H "X-Api-Key: $DOCINTAKE_API_KEY" -F "file=@document.pdf" https://api.mehmood.us/laya/api/documents/extract
 ```
 
 **Rotate without downtime.** Add the new key to the Secret under a second entry, list both entries in the chart
@@ -176,7 +176,7 @@ the file lives on a PersistentVolumeClaim, so the history survives a pod restart
   `api.auth.adminSecretKeys`. Without one, each key sees only its own rows.
 
 Check it after a deploy: send one extraction, then
-`curl -H "X-Api-Key: $LAYA_API_KEY" "https://api.mehmood.us/laya/api/usage?format=csv"`. Costs use the prices in
+`curl -H "X-Api-Key: $DOCINTAKE_API_KEY" "https://api.mehmood.us/laya/api/usage?format=csv"`. Costs use the prices in
 `Extraction:Pricing`; to change them in the cluster, set the matching `Extraction__Pricing__...` environment variables with
 `api.extraEnv`. For a total that matches the OpenAI dashboard, give this service its own OpenAI project.
 
@@ -204,13 +204,13 @@ the API's client span to it.
 Spans cover each request (tagged with the document and the outcome), buffering, classification, preparation, the render
 round trip with per-page renderer and OCR spans, each extraction and model call (agent, model, tokens, retries, prompts
 and answers; page images are recorded only as sizes), and the calls to the renderer and the model provider. Prompts and
-answers are captured because this is a demonstrator; remove that (`laya.prompt.*` and `laya.extraction.result` in
+answers are captured because this is a demonstrator; remove that (`intake.prompt.*` and `intake.extraction.result` in
 `DocumentExtractor`) before real documents flow through.
 
 ## Upgrade, roll back, remove
 
 ```sh
-helm upgrade laya deploy/helm/laya-sample -n laya -f my-values.yaml --set image.tag=sha-<new commit>
+helm upgrade laya deploy/helm/docintake -n laya -f my-values.yaml --set image.tag=sha-<new commit>
 helm rollback laya -n laya
 helm uninstall laya -n laya
 ```

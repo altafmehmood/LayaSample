@@ -2,11 +2,11 @@
 
 Small documents for manually testing `POST /api/documents/analyze`. Each one exercises a different classification path.
 
-All files are generated, so there are no third-party licensing questions. Most come from the test fixtures in [`tests/LayaSample.Tests/DocumentFixtures.cs`](../../tests/LayaSample.Tests/DocumentFixtures.cs). The `-ocr` samples are rendered with real text so OCR has something to read.
+All files are generated, so there are no third-party licensing questions. Most come from the test fixtures in [`tests/DocIntake.Tests/DocumentFixtures.cs`](../../tests/DocIntake.Tests/DocumentFixtures.cs). The `-ocr` samples are rendered with real text so OCR has something to read.
 
 ## Trying them
 
-1. Start the API: `dotnet run --project src/LayaSample.Api` (listens on http://localhost:5091).
+1. Start the API: `dotnet run --project src/DocIntake.Api` (listens on http://localhost:5091).
 2. Send the samples using one of these:
    - [`samples.http`](samples.http) in VS Code (REST Client extension), Visual Studio or Rider.
    - Scalar at http://localhost:5091/scalar/v1.

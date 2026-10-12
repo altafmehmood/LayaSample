@@ -1,4 +1,4 @@
-#:project ../../tests/LayaSample.Tests/LayaSample.Tests.csproj
+#:project ../../tests/DocIntake.Tests/DocIntake.Tests.csproj
 #:property RestorePackagesWithLockFile=false
 
 // Generates the lending corpus in docs/samples/pdf/corpus: loan applications, UCC filings and loan and security
@@ -998,7 +998,7 @@ static class Corpus
                 : "";
             Set(1, $"<< /Type /Catalog /Pages 2 0 R{acro} >>");
             Set(2, $"<< /Type /Pages /Kids [{string.Join(" ", pageIds.Select(i => $"{i} 0 R"))}] /Count {pageIds.Count} >>");
-            var info = Add($"<< /Title ({Esc(title)}) /Producer (LayaSample corpus generator) /Subject (Synthetic sample document; all parties and data are fictional) >>");
+            var info = Add($"<< /Title ({Esc(title)}) /Producer (DocIntake corpus generator) /Subject (Synthetic sample document; all parties and data are fictional) >>");
 
             using var ms = new MemoryStream();
             void Write(byte[] b) => ms.Write(b);

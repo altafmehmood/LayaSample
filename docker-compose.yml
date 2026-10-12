@@ -7,14 +7,14 @@
 # network with no route out, a read-only file system, no Linux capabilities and its own memory/CPU/process limits,
 # so a malicious document that crashes or takes over a parser can neither reach the network nor touch the API.
 
-name: laya-sample
+name: docintake
 
 services:
   api:
     build:
       context: .
       target: api
-    image: laya-sample-api
+    image: docintake-api
     ports:
       - "8080:8080"
     environment:
@@ -22,18 +22,18 @@ services:
       # Enables POST /api/documents/extract; empty leaves it answering 503.
       Extraction__ApiKey: ${OPENAI_API_KEY:-}
       # Callers must send this as X-Api-Key to /api/documents/extract; empty makes extraction answer 503.
-      Auth__ApiKeys__0: ${LAYA_API_KEY:-}
+      Auth__ApiKeys__0: ${DOCINTAKE_API_KEY:-}
       # Where the usage history (tokens and cost per model call) is kept: the volume below.
       Usage__DatabasePath: /data/usage.db
       # Every upload is streamed to ClamAV before anything parses it. closed: while it does not answer, uploads get 503.
       Security__Malware__Host: clamav
       # reject (default): a blocking finding (hidden text, active content, instructions for the model) refuses the upload
       # with 422. flag: report it in the response and carry on. The red-team run uses flag to test the model itself.
-      Security__OnFinding: ${LAYA_ON_FINDING:-reject}
+      Security__OnFinding: ${DOCINTAKE_ON_FINDING:-reject}
       # OpenTelemetry export. Either straight to a backend (OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io and
       # OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=<ingest key>), or through the collector below
-      # (LAYA_OTLP_ENDPOINT=http://collector:4318), which also carries the renderer's telemetry. Empty exports nothing.
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${LAYA_OTLP_ENDPOINT:-${OTEL_EXPORTER_OTLP_ENDPOINT:-}}
+      # (DOCINTAKE_OTLP_ENDPOINT=http://collector:4318), which also carries the renderer's telemetry. Empty exports nothing.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${DOCINTAKE_OTLP_ENDPOINT:-${OTEL_EXPORTER_OTLP_ENDPOINT:-}}
       OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
     networks: [public, internal]
@@ -50,7 +50,7 @@ services:
   # reports healthy and the API starts. On the public network only: it needs the internet for signature updates, and the
   # renderer, which is on the internal network alone, must not be able to reach it. No memory or CPU limits, by choice:
   # about 1 GiB at rest, and ClamAV's documentation advises 3-4 GiB for when a signature update reloads.
-  # Published on loopback so `CLAMD_HOST=localhost dotnet run --project tests/LayaSample.Tests -- -trait "Category=Integration"`
+  # Published on loopback so `CLAMD_HOST=localhost dotnet run --project tests/DocIntake.Tests -- -trait "Category=Integration"`
   # can scan with it.
   clamav:
     image: clamav/clamav:1.5.4_base-debian13-slim
@@ -73,10 +73,10 @@ services:
       target: renderer
       args:
         OCR_MODEL: ${OCR_MODEL:-PPOCRv5Latin}
-    image: laya-sample-renderer
+    image: docintake-renderer
     environment:
       # Set with the collector profile; the renderer can reach nothing else.
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${LAYA_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${DOCINTAKE_OTLP_ENDPOINT:-}
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
     networks: [internal]
     read_only: true
@@ -91,7 +91,7 @@ services:
     # A document that crashes the renderer fails its own request (502 from the API); the renderer comes straight back.
     restart: always
 
-  # docker compose --profile telemetry up   with LAYA_OTLP_ENDPOINT=http://collector:4318 and HONEYCOMB_API_KEY=<ingest key>
+  # docker compose --profile telemetry up   with DOCINTAKE_OTLP_ENDPOINT=http://collector:4318 and HONEYCOMB_API_KEY=<ingest key>
   collector:
     image: otel/opentelemetry-collector-contrib:0.162.0
     profiles: [telemetry]

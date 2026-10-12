@@ -1,5 +1,5 @@
 # Example values for a single 1 vCPU / 2 GB DOKS node. Copy, set the hostname and image tag, and install with
-#   helm upgrade --install laya deploy/helm/laya-sample -n laya --create-namespace -f my-values.yaml
+#   helm upgrade --install laya deploy/helm/docintake -n laya --create-namespace -f my-values.yaml
 # (see deploy/README.md).
 
 # Short, predictable names: services laya-api and laya-renderer, Gateway laya (matches deploy/cluster-issuer.yaml).

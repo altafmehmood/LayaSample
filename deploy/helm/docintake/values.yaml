@@ -1,0 +1,171 @@
+# One replica each, one document at a time, short queues. The API and the renderer alone fit a 1 vCPU / 2 GB node, but the
+# ClamAV pod (malware.clamd, on by default) needs about 4 GB more: use a node with 8 GB, or turn it off.
+# See deploy/README.md. Settings under `config` map to DocumentAnalysis__* environment variables.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  registry: ghcr.io/altafmehmood
+  # Required. Pin the commit tag CI pushes (sha-<commit>); `latest` moves under you.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+api:
+  # Still the pre-rename GHCR package names, which CI pushes; they move with the services cutover (docs/docintake-architecture.md).
+  image: laya-sample-api
+  replicas: 1
+  config:
+    # Documents analysed at once, and requests allowed to wait for a slot (further ones get 503 + Retry-After).
+    maxConcurrentAnalyses: 1
+    maxQueuedAnalyses: 5
+    # Includes time spent queued. OCR on one vCPU is slow, so this is above the app's 120 s default.
+    requestTimeoutSeconds: 300
+    maxFileBytes: 20971520
+  resources:
+    # No CPU limit: a limit would throttle OCR-heavy requests and lower the CPU count the app sizes itself from.
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+  # The Laya model loads at startup; allow failureThreshold x periodSeconds (default 10 minutes) before restarting.
+  startupProbe: { periodSeconds: 10, failureThreshold: 60 }
+  # AI extraction (POST /api/documents/extract). Document pages are sent to the model provider.
+  extraction:
+    # Secret holding the provider API key, under `secretKey`. Empty, or the Secret missing: the endpoint answers 503.
+    # Create it outside Helm so the key never lands in the release history:
+    #   kubectl -n <ns> create secret generic laya-llm --from-literal=api-key=...
+    existingSecret: ""
+    secretKey: api-key
+    # Short hash of the key (never the key), set by CI so pods restart when the key is rotated.
+    keyChecksum: ""
+    provider: openai
+    # Models for documents sent as page images / as text. Tune with the evaluation harness (see deploy/README.md).
+    visionModel: gpt-6.1-sol
+    textModel: gpt-6-luna
+    # Extractions in flight at once. They mostly wait on the provider but each holds the buffered document and its page images.
+    maxConcurrent: 4
+    # One provider call, including retries by the SDK. The request timeout above still caps the whole request.
+    timeoutSeconds: 120
+  # Access key for POST /api/documents/extract, which spends model-provider money. Callers send it as `X-Api-Key`.
+  auth:
+    # Secret holding the key(s), created outside Helm so they never land in the release history:
+    #   kubectl -n <ns> create secret generic laya-api-key --from-literal=api-key="$(openssl rand -base64 32)"
+    # Empty, or no usable key: extraction answers 503 (it fails closed).
+    existingSecret: ""
+    # Entries of that Secret to accept. To rotate: add the new key under a second entry (e.g. api-key-next), list both,
+    # deploy, move callers to the new key, then remove the old entry.
+    secretKeys: [api-key]
+    # Short hash of the key(s) (never the key itself), set by CI so pods restart when a key changes.
+    keyChecksum: ""
+    # Entries of that Secret that are also accepted everywhere and may read every caller's usage (a plain key sees only the
+    # rows of its own). Empty: nobody can read other callers' rows. Needs the entries to exist in the Secret.
+    adminSecretKeys: []
+  # Model usage history: one row per model call (API-key fingerprint, file name, tokens, list-price cost), kept in a SQLite
+  # file and served at GET /api/usage and /api/usage/summary (JSON or CSV).
+  usage:
+    persistence:
+      # false: the file lives in an emptyDir and is lost whenever the pod is replaced.
+      enabled: true
+      size: 1Gi
+      # Empty: the cluster's default class (DOKS: do-block-storage).
+      storageClass: ""
+      # One pod owns the file, so ReadWriteOnce. The Deployment replaces the pod in place (maxSurge 0), so the volume is free
+      # when the new pod starts.
+      accessMode: ReadWriteOnce
+      # An existing claim to use instead of creating one. The chart's own claim is kept on `helm uninstall`.
+      existingClaim: ""
+  extraEnv: []
+
+# OpenTelemetry export (traces, metrics, logs) over OTLP. Empty endpoint: nothing is exported.
+# With `collector.enabled` the API and the renderer send to a collector pod in the cluster, which alone holds the key and
+# reaches the backend; the renderer's NetworkPolicy then allows only that collector (and DNS). Without it the API exports
+# directly and the renderer exports nothing, because opening egress for it would weaken its isolation.
+telemetry:
+  # e.g. https://api.honeycomb.io (OTLP over HTTP).
+  endpoint: ""
+  # Secret holding the OTLP headers, under `headersKey`, as `x-honeycomb-team=<ingest key>`. Create it outside Helm:
+  #   kubectl -n <ns> create secret generic laya-otel --from-literal=headers="x-honeycomb-team=<ingest key>"
+  # A missing Secret leaves the pod starting with no headers (the backend then rejects the data) instead of failing.
+  existingSecret: ""
+  headersKey: headers
+  # Short hash of the headers (never the headers), set by CI so pods restart when the key is rotated.
+  headersChecksum: ""
+  collector:
+    enabled: false
+    # OpenTelemetry Collector (contrib distribution, Apache-2.0). Pin the tag.
+    image: docker.io/otel/opentelemetry-collector-contrib
+    tag: 0.162.0
+    # With the collector, the Secret above also needs the bare key under `apiKeyKey`, sent as the `headerName` header
+    # (Honeycomb: x-honeycomb-team). The `headersKey` entry is only used when the API exports directly.
+    headerName: x-honeycomb-team
+    apiKeyKey: api-key
+    resources:
+      requests: { cpu: 25m, memory: 96Mi }
+      limits: { memory: 256Mi }
+
+# Malware scanning: the API streams every upload to a ClamAV daemon before anything parses it, and refuses the upload
+# (422) when it is infected. ClamAV is GPL-2.0; it runs as its own pod and is not part of the application.
+malware:
+  clamd:
+    enabled: true
+    image: docker.io/clamav/clamav
+    # Debian, multi-arch, without a baked-in database: the pod downloads the signatures on start (a few minutes) and
+    # keeps them updated. Pin the tag.
+    tag: 1.5.4_base-debian13-slim
+    # What the API does while the scanner gives no verdict: `closed` refuses uploads with 503 + Retry-After, `open` lets
+    # them through unscanned (and logs a warning).
+    failMode: closed
+    # There are deliberately no `resources` here: no requests and no limits. clamd keeps the signature database in memory
+    # (about 1 GiB measured at rest; ClamAV's documentation advises 3-4 GiB because a database reload can double it), so the
+    # node needs that much free. With no requests the pod is BestEffort, so under memory pressure it is evicted first and,
+    # while it is down, uploads answer 503.
+
+renderer:
+  image: laya-sample-renderer
+  replicas: 1
+  config:
+    maxConcurrentJobs: 1
+    maxQueuedJobs: 5
+    # Leave empty to keep the model baked into the image (PPOCRv5Latin unless built otherwise).
+    ocrModel: ""
+  resources:
+    requests: { cpu: 100m, memory: 384Mi }
+    # Measured peak is about 550 MiB OCRing a five-page scan.
+    limits: { memory: 1Gi }
+  startupProbe: { periodSeconds: 10, failureThreshold: 60 }
+  extraEnv: []
+
+# The renderer parses untrusted documents with native code: only the API may reach it, and it may reach nothing.
+networkPolicy:
+  enabled: true
+
+gateway:
+  enabled: true
+  # Public DNS name of the API. Required when the gateway is enabled.
+  hostname: ""
+  # true: this chart creates the Gateway. false: attach the route to a Gateway that already exists (see `existing`).
+  create: true
+  # GatewayClass for the Gateway. DOKS provides `cilium` (managed Gateway API) on VPC-native clusters, 1.33+.
+  className: cilium
+  # Name of the Gateway this chart creates; defaults to the release's full name.
+  name: ""
+  # DigitalOcean load balancer name (annotation service.beta.kubernetes.io/do-loadbalancer-name). Optional.
+  loadBalancerName: ""
+  # Extra load balancer annotations. DigitalOcean allows at most 8 in total.
+  infrastructureAnnotations: {}
+  existing:
+    name: ""
+    namespace: ""
+    httpSectionName: http
+    httpsSectionName: https
+  tls:
+    enabled: true
+    # Secret the Gateway terminates TLS with. cert-manager creates it when clusterIssuer is set. Defaults to <gateway>-tls.
+    secretName: ""
+    # ClusterIssuer cert-manager uses for the HTTPS listener (deploy/cluster-issuer.yaml). Empty: bring your own Secret.
+    clusterIssuer: letsencrypt-prod
+  # Path the API is published under, e.g. /laya. The prefix is stripped before the request reaches the API.
+  pathPrefix: /
+  # Longer than the API's request timeout (api.config.requestTimeoutSeconds), so the API answers before the gateway cuts in.
+  requestTimeout: 330s

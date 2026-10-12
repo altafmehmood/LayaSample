@@ -4,6 +4,11 @@ Built 2026-10-11 (plan: track token usage and cost; scan uploads for malware, hi
 the document end to end; add a manual garak red-team run). This page says what each feature does, how it works, how to try
 it, and what it does not do. The README has the short versions: the Features table and "Quickstarts by date".
 
+**Update 2026-10-11:** the project is now DocIntake. Paths on this page read `src/DocIntake.Api` and
+`tests/DocIntake.Tests`, the metrics are `intake.*` (they were `laya.*`), and the compose and red-team variables are
+`DOCINTAKE_API_KEY` and `DOCINTAKE_ON_FINDING`. Kubernetes names (`laya-otel`, `laya-clamav`, namespace `laya`) are
+unchanged. See [docintake-architecture.md](docintake-architecture.md).
+
 ## Why
 
 - Two extractions on DOKS showed about $3 on the OpenAI dashboard and nothing in the repository could explain it. (The cause
@@ -29,21 +34,21 @@ A key sees only its own rows; keys in `Auth:AdminKeys` see all and are also acce
 
 | Piece | File |
 |---|---|
-| Records, options, pricing, fingerprint, file-name cleaning | `src/LayaSample.Api/Services/Usage/UsageModels.cs` |
+| Records, options, pricing, fingerprint, file-name cleaning | `src/DocIntake.Api/Services/Usage/UsageModels.cs` |
 | SQLite store (WAL, micro-dollar costs, filters, summaries) | `Services/Usage/UsageStore.cs` |
 | Background writer (bounded queue, batches, drains on shutdown) | `Services/Usage/UsageWriter.cs` |
 | Endpoints and CSV | `Services/Usage/UsageEndpoints.cs` |
 | Recording each call, failed or billed | `Services/Documents/Extraction/DocumentExtractor.cs` (`RunAsync`) |
 | Caller fingerprint (first 12 hex of the key's SHA-256, never the key) | `Services/ApiKeyAuthentication.cs` |
 
-A store failure is logged and counted (`laya.usage.write_failures`) but never fails an extraction. Spend is on the
-`laya.llm.cost` and `laya.extraction.tokens` metrics.
+A store failure is logged and counted (`intake.usage.write_failures`) but never fails an extraction. Spend is on the
+`intake.llm.cost` and `intake.extraction.tokens` metrics.
 
 **Cost.** `Extraction:Pricing` in `appsettings.json` holds per-model tiers (USD per million tokens) and the date they were
 read; cost is computed when the call is recorded, so a later price change does not rewrite history. Cached tokens are billed
 at the cached rate out of the input count; the higher tier starts above 272,000 input tokens (the OpenAI page says "272K";
 this reads it as 272,000). It is list price, not the invoice. A model with no price gets a null cost and counts on
-`laya.usage.unpriced`.
+`intake.usage.unpriced`.
 
 | Setting | Default | |
 |---|---|---|
@@ -57,8 +62,8 @@ ReadWriteOnce volume is free when the new pod starts. Keep `api.replicas` at 1.
 
 **Try it.**
 
-    dotnet user-secrets set "Extraction:ApiKey" "sk-..." --project src/LayaSample.Api       # (paid)
-    dotnet run --project src/LayaSample.Api
+    dotnet user-secrets set "Extraction:ApiKey" "sk-..." --project src/DocIntake.Api       # (paid)
+    dotnet run --project src/DocIntake.Api
     curl -F "file=@docs/samples/pdf/corpus/redwood-mechanical-ucc1-fax.pdf" localhost:5091/api/documents/extract
     curl "localhost:5091/api/usage?format=csv" -o usage.csv
     curl "localhost:5091/api/usage/summary?groupBy=model"
@@ -107,7 +112,7 @@ replaced. clamd's default stream limit is 25 MB, above the 20 MB upload limit.
 
     docker compose up -d clamav
     printf 'X5O!P%%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > eicar.txt
-    Security__Malware__Provider=clamd Security__Malware__Host=localhost dotnet run --project src/LayaSample.Api
+    Security__Malware__Provider=clamd Security__Malware__Host=localhost dotnet run --project src/DocIntake.Api
     curl -F "file=@eicar.txt" localhost:5091/api/documents/analyze          # 422
     docker compose stop clamav                                              # uploads now answer 503
 
@@ -146,9 +151,9 @@ scans and faxes read by the real OCR.
 
 **Try it.**
 
-    dotnet run --project tests/LayaSample.Tests -c Release -- -class LayaSample.Tests.RiskTests
-    Security__OnFinding=flag dotnet run --project src/LayaSample.Api
-    REAL_OCR=1 dotnet run --project tests/LayaSample.Tests -c Release -- -class LayaSample.Tests.RealOcrRiskTests   # (opt-in)
+    dotnet run --project tests/DocIntake.Tests -c Release -- -class DocIntake.Tests.RiskTests
+    Security__OnFinding=flag dotnet run --project src/DocIntake.Api
+    REAL_OCR=1 dotnet run --project tests/DocIntake.Tests -c Release -- -class DocIntake.Tests.RealOcrRiskTests   # (opt-in)
 
 No hostile sample files are checked in; the tests build them (`DocumentFixtures.PdfWithHiddenText` and friends).
 
@@ -181,7 +186,7 @@ their text, the libraries' own structures, and the signed ranges of a signed PDF
 **What.** [garak](https://github.com/NVIDIA/garak) 0.17.0 attacks the whole extraction agent. `redteam/GarakShim` turns each
 garak prompt into a PDF (the remarks of a loan application), uploads it to `/api/documents/extract` with the API key (only the
 shim holds it) and returns `HTTP <status> <body>` as the answer, so a 422 counts as "attack blocked". Run it twice: with the
-defences on, and with `LAYA_ON_FINDING=flag` to test the model alone.
+defences on, and with `DOCINTAKE_ON_FINDING=flag` to test the model alone.
 
 **Files.** `redteam/run.sh`, `GarakShim/` (a project in the solution, covered by `GarakShimTests`), `garak-rest.json`,
 `garak-smoke.yaml`, `garak-full.yaml`, `requirements.txt` (pinned), `README.md`. Manual CI job: `redteam` (Actions > CI > Run
@@ -192,8 +197,8 @@ workflow).
 
 **Try it.**
 
-    OPENAI_API_KEY=sk-... LAYA_API_KEY=$(openssl rand -base64 32) docker compose up -d --build      # (paid)
-    export LAYA_API_KEY=<the same key>
+    OPENAI_API_KEY=sk-... DOCINTAKE_API_KEY=$(openssl rand -base64 32) docker compose up -d --build      # (paid)
+    export DOCINTAKE_API_KEY=<the same key>
     redteam/run.sh --smoke
 
 **Verified.** The whole chain ran against local stubs (an echoing stub failed at 100% attack success, a refusing stub passed
@@ -221,7 +226,7 @@ confirmed on the cluster: the collector image pull, and traces arriving in Honey
 is on the machine, so a plain test run never spends money (the suite takes about 10 seconds). The manual `extraction-eval` CI
 job sets the flag.
 
-    RUN_EXTRACTION_EVAL=1 dotnet run --project tests/LayaSample.Tests -c Release -- -trait "Category=Evaluation"     # (paid)
+    RUN_EXTRACTION_EVAL=1 dotnet run --project tests/DocIntake.Tests -c Release -- -trait "Category=Evaluation"     # (paid)
 
 ## Checklist before merging to `main`
 

@@ -12,7 +12,7 @@ garak's REST generator posts `{"text": "<prompt>"}` and reads `{"text": "<answer
 turns plain text away (415). `GarakShim` sits between them: it writes each prompt into a small PDF, the free-text remarks of
 a loan application, uploads it to `POST /api/documents/extract`, and returns `HTTP <status>` and the response body as the
 answer. A 422 that refused the document comes back as text, so garak sees "attack blocked" instead of an error. The shim
-holds the API key (`LAYA_API_KEY`), so it never reaches garak's config, log or reports.
+holds the API key (`DOCINTAKE_API_KEY`), so it never reaches garak's config, log or reports.
 
 ```
 garak -- {"text": prompt} --> GarakShim -- PDF upload + X-Api-Key --> /api/documents/extract
@@ -23,8 +23,8 @@ garak <-- {"text": "HTTP 200 {...}"} -- GarakShim <-- response ------
 
 You need Python 3.11 to 3.13, the .NET SDK, and the stack running with a model key:
 
-    OPENAI_API_KEY=sk-... LAYA_API_KEY=$(openssl rand -base64 32) docker compose up -d --build
-    export LAYA_API_KEY=<the same key>
+    OPENAI_API_KEY=sk-... DOCINTAKE_API_KEY=$(openssl rand -base64 32) docker compose up -d --build
+    export DOCINTAKE_API_KEY=<the same key>
     redteam/run.sh --smoke                              # a few prompts per probe, to check the setup
     redteam/run.sh                                      # all default probes (about 7,500 prompts; see below)
 
@@ -41,7 +41,7 @@ The first run creates `.venv-garak` and installs the pinned `garak` from `requir
 | `--max-requests <n>` | Stop paying after this many uploads (the shim answers "budget exhausted"; default 5000) |
 | `--allow-remote` | Attack a non-local API. Refused otherwise: it spends real money, and the attack text lands in that service's telemetry and prompt capture |
 
-The shim sends `User-Agent: laya-garak/<run id>`, so a run can be found in Honeycomb (`user_agent.original`) with the prompts
+The shim sends `User-Agent: docintake-garak/<run id>`, so a run can be found in Honeycomb (`user_agent.original`) with the prompts
 the model was given.
 
 ## How big is a full run
@@ -57,7 +57,7 @@ attacks are refused with 422 before any model call. The usage endpoint (`GET /ap
 ## Two runs, on purpose
 
 1. **Defences on** (the default, `Security:OnFinding=reject`). Most attacks should come back as `HTTP 422` and pass.
-2. **Model alone**: restart the API with `LAYA_ON_FINDING=flag docker compose up -d --force-recreate api`, then
+2. **Model alone**: restart the API with `DOCINTAKE_ON_FINDING=flag docker compose up -d --force-recreate api`, then
    `redteam/run.sh --label flag`. Findings are reported instead of refused, so the attacks reach the model. This measures
    how well the extraction agent itself resists, which is what to compare across prompt or model changes.
 
