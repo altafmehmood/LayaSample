@@ -64,6 +64,9 @@ spec:
             # Where the extraction service is. The gateway holds no model provider key and no model: they are the service's.
             - name: Extraction__ServiceUrl
               value: {{ printf "http://%s-extraction:8080" (include "docintake.fullname" .) | quote }}
+            # Where Laya (the feedback model) is. The gateway loads no model.
+            - name: Decisions__ServiceUrl
+              value: {{ printf "http://%s-decisions:8080" (include "docintake.fullname" .) | quote }}
             - name: Extraction__MaxConcurrentExtractions
               value: {{ .Values.extraction.maxConcurrent | int64 | quote }}
             {{- if .Values.api.auth.existingSecret }}

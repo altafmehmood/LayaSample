@@ -19,7 +19,6 @@ public sealed class DocumentMetrics
     private readonly Histogram<int> _documentPages;
     private readonly Histogram<double> _queueWait;
     private readonly Counter<long> _rateLimited;
-    private readonly Histogram<double> _modelLoad;
     private readonly Counter<long> _scans;
     private readonly Counter<long> _risks;
     private readonly Histogram<double> _scanDuration;
@@ -40,7 +39,6 @@ public sealed class DocumentMetrics
             "Time from the request starting to its handler running: upload plus waiting for a rate-limit slot.");
         _rateLimited = meter.CreateCounter<long>("intake.ratelimit.rejections", "{request}",
             "Requests turned away with 503 because every slot and queue place was taken, by policy.");
-        _modelLoad = meter.CreateHistogram<double>("intake.model.load.duration", "s", "Time to load the Laya model at startup, by outcome.");
         _risks = meter.CreateCounter<long>("intake.risk.findings", "{finding}", "Findings about uploads and answers (active content, macros, hidden text, prompt injection), by kind and severity.");
         _scans = meter.CreateCounter<long>("intake.scan.results", "{upload}", "Uploads scanned for malware, by result (clean, infected, unavailable).");
         _scanDuration = meter.CreateHistogram<double>("intake.scan.duration", "s", "Time the malware scanner took per upload, by result.");
@@ -59,9 +57,6 @@ public sealed class DocumentMetrics
 
     public void RecordRateLimited(string policy) =>
         _rateLimited.Add(1, new KeyValuePair<string, object?>("policy", policy));
-
-    public void RecordModelLoad(TimeSpan elapsed, string outcome) =>
-        _modelLoad.Record(elapsed.TotalSeconds, new KeyValuePair<string, object?>("outcome", outcome));
 
     public void RecordStage(string stage, TimeSpan elapsed) =>
         _stageDuration.Record(elapsed.TotalSeconds, new KeyValuePair<string, object?>("stage", stage));

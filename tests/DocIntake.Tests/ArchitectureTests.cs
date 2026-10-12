@@ -37,6 +37,7 @@ public class ArchitectureTests
     [InlineData("src/DocIntake.DocumentService/Pdf")]
     [InlineData("src/DocIntake.DocumentService/Inspection")]
     [InlineData("src/DocIntake.ExtractionService")]
+    [InlineData("src/DocIntake.DecisionsService")]
     public void The_services_below_the_endpoints_never_mention_http_status_codes(string folder)
     {
         var files = Directory.EnumerateFiles(Path.Combine(RepositoryRoot(), folder), "*.cs", SearchOption.AllDirectories)
@@ -49,10 +50,9 @@ public class ArchitectureTests
         Assert.All(files, file => Assert.DoesNotContain("StatusCodes", File.ReadAllText(file)));
     }
 
-    // The gateway never reads a document, so none of what reads one may be in its build: not a PDF, Office, image or OCR
-    // library, and not the rendering project that wraps them. The dependency manifest lists everything that is published.
-    // ONNX Runtime is deliberately not on the list: the Laya feedback model runs on it, in the gateway, until it moves to
-    // its own service (Phase 5).
+    // The gateway never reads a document and never runs a model, so none of what does either may be in its build: not a PDF,
+    // Office, image or OCR library, not ONNX Runtime or the library that runs Laya, and not the projects that wrap them.
+    // The dependency manifest lists everything that is published.
     [Fact]
     public void The_gateway_carries_no_parser_and_no_native_library()
     {
@@ -62,7 +62,8 @@ public class ArchitectureTests
         string[] forbidden =
         [
             "PdfPig", "ClosedXML", "DocumentFormat.OpenXml", "System.Security.Cryptography.Pkcs", "Magick.NET", "PDFtoImage",
-            "SkiaSharp", "RapidOcrNet", "DocIntake.Rendering", "DocIntake.DocumentService"
+            "SkiaSharp", "RapidOcrNet", "Microsoft.ML.OnnxRuntime", "ElBruno", "DocIntake.Rendering", "DocIntake.DocumentService",
+            "DocIntake.DecisionsService"
         ];
         foreach (var manifest in manifests)
         {
@@ -134,5 +135,18 @@ public class ArchitectureTests
         var gatewayService = compose[compose.IndexOf("\n  api:", StringComparison.Ordinal)..compose.IndexOf("\n  clamav:", StringComparison.Ordinal)];
         Assert.DoesNotContain("OPENAI_API_KEY", gatewayService);
         Assert.DoesNotContain("Extraction__ApiKey", gatewayService);
+    }
+
+    [Fact]
+    public void The_decisions_service_has_the_model_libraries_and_nothing_that_reads_documents_or_calls_a_provider()
+    {
+        var libraries = Libraries("DocIntake.DecisionsService");
+
+        foreach (var name in new[] { "ElBruno.LocalLLMs.Decisions", "Microsoft.ML.OnnxRuntime" })
+            Assert.Contains(libraries, l => l.StartsWith(name, StringComparison.OrdinalIgnoreCase));
+        foreach (var name in new[] { "PdfPig", "ClosedXML", "DocumentFormat.OpenXml", "Magick.NET", "PDFtoImage", "SkiaSharp", "RapidOcrNet",
+                     "OpenAI", "Microsoft.Extensions.AI", "Microsoft.Data.Sqlite", "DocIntake.Api", "DocIntake.Rendering",
+                     "DocIntake.DocumentService", "DocIntake.ExtractionService" })
+            Assert.DoesNotContain(libraries, l => l.StartsWith(name, StringComparison.OrdinalIgnoreCase));
     }
 }

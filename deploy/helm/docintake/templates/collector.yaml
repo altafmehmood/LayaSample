@@ -99,6 +99,9 @@ spec:
         - podSelector:
             matchLabels:
               {{- include "docintake.selectorLabels" (dict "root" . "component" "extraction") | nindent 14 }}
+        - podSelector:
+            matchLabels:
+              {{- include "docintake.selectorLabels" (dict "root" . "component" "decisions") | nindent 14 }}
       ports:
         - protocol: TCP
           port: 4318

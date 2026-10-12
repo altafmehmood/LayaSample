@@ -1,7 +1,7 @@
 using ElBruno.LocalLLMs.Decisions;
 using DocIntake.Contracts;
 
-namespace DocIntake.Api.Services;
+namespace DocIntake.DecisionsService;
 
 public interface IDissatisfactionAnalyzer
 {

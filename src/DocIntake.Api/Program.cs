@@ -1,10 +1,10 @@
 using DocIntake.ServiceDefaults;
 using System.Diagnostics;
 using System.Threading.RateLimiting;
-using ElBruno.LocalLLMs.Decisions;
 using DocIntake.Api;
 using DocIntake.Contracts;
 using DocIntake.Api.Services;
+using DocIntake.Api.Services.Decisions;
 using DocIntake.Api.Services.Documents;
 using DocIntake.Api.Services.Documents.Extraction;
 using DocIntake.Api.Services.Security;
@@ -20,13 +20,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddIntakeTelemetry("docintake-gateway", DocumentMetrics.MeterName);
 
-builder.Services.AddLocalDecisions(o =>
-{
-    builder.Configuration.GetSection("Laya").Bind(o);
-    // Resolve a relative cache path against the project folder, not the working directory.
-    if (!string.IsNullOrEmpty(o.CacheDirectory))
-        o.CacheDirectory = Path.GetFullPath(o.CacheDirectory, builder.Environment.ContentRootPath);
-});
 builder.Services.AddOpenApi(o =>
 {
     o.AddDocumentTransformer((document, _, _) =>
@@ -63,7 +56,6 @@ builder.Services.AddOptions<ApiAccessOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddProblemDetails();
-builder.Services.AddSingleton<IDissatisfactionAnalyzer, DissatisfactionAnalyzer>();
 builder.Services.AddOptions<DocumentGatewayOptions>()
     .Bind(builder.Configuration.GetSection(DocumentGatewayOptions.Section))
     .ValidateDataAnnotations()
@@ -76,9 +68,7 @@ builder.Services.AddSingleton<ProblemMapping>();
 builder.Services.AddUsageTracking(builder.Configuration);
 foreach (var route in DocumentRoutes.All)
     builder.Services.AddSingleton<IDocumentAgent>(new StubDocumentAgent(route));
-builder.Services.AddSingleton<ModelWarmup>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<ModelWarmup>());
-var healthChecks = builder.Services.AddHealthChecks().AddCheck<LayaHealthCheck>("laya", tags: [HealthReporting.Ready]);
+var healthChecks = builder.Services.AddHealthChecks();
 builder.Services.AddMalwareScanning(builder.Configuration, healthChecks);
 
 // Endpoint limits are fixed when the app is built, so the options are read here; ValidateOnStart still checks them (and
@@ -113,6 +103,21 @@ builder.Services.AddHttpClient(ExtractionServiceClient.HttpClientName, c =>
 builder.Services.AddSingleton<ExtractionServiceClient>();
 builder.Services.AddSingleton<IDocumentExtractor, DocumentExtractor>();
 healthChecks.AddCheck<ExtractionServiceHealthCheck>("extraction-service", tags: [HealthReporting.Ready], timeout: TimeSpan.FromSeconds(5));
+// Laya, the feedback model, runs in the decisions service. Without a URL, feedback analysis answers 503.
+builder.Services.AddOptions<DecisionsGatewayOptions>()
+    .Bind(builder.Configuration.GetSection(DecisionsGatewayOptions.Section))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+var decisionsOptions = builder.Configuration.GetSection(DecisionsGatewayOptions.Section).Get<DecisionsGatewayOptions>() ?? new();
+builder.Services.AddHttpClient(DecisionsServiceClient.HttpClientName, c =>
+{
+    if (!string.IsNullOrWhiteSpace(decisionsOptions.ServiceUrl))
+        c.BaseAddress = new Uri(decisionsOptions.ServiceUrl.TrimEnd('/') + "/");
+    // Bounded by the request's own token instead, which carries the request timeout.
+    c.Timeout = Timeout.InfiniteTimeSpan;
+});
+builder.Services.AddSingleton<DecisionsServiceClient>();
+healthChecks.AddCheck<DecisionsServiceHealthCheck>("decisions-service", tags: [HealthReporting.Ready], timeout: TimeSpan.FromSeconds(5));
 healthChecks.AddCheck<DocumentServiceHealthCheck>("document-service", tags: [HealthReporting.Ready], timeout: TimeSpan.FromSeconds(5));
 
 const string DocumentsPolicy = "documents";
@@ -172,7 +177,6 @@ app.UseRateLimiter();
 app.MapOpenApi();            // /openapi/v1.json
 app.MapScalarApiReference(); // /scalar/v1
 
-const int MaxTextLength = 4000;
 
 static IResult Problem(int status, string detail) => ProblemMapping.Problem(status, detail);
 
@@ -191,17 +195,24 @@ var readiness = new HealthCheckOptions { Predicate = c => c.Tags.Contains(Health
 app.MapHealthChecks("/health/ready", readiness);
 app.MapHealthChecks("/health", readiness);
 
-app.MapPost("/api/feedback/analyze", async (AnalyzeRequest req, IDissatisfactionAnalyzer analyzer, ModelWarmup warmup, CancellationToken ct) =>
+app.MapPost("/api/feedback/analyze", async (AnalyzeRequest req, DecisionsServiceClient decisions, ProblemMapping problems, HttpContext httpContext, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(req.Text))
         return Problem(StatusCodes.Status400BadRequest, "text is required");
-    if (req.Text.Length > MaxTextLength)
-        return Problem(StatusCodes.Status400BadRequest, $"text must be at most {MaxTextLength} characters");
-    if (!warmup.Ready)
-        return Problem(StatusCodes.Status503ServiceUnavailable,
-            warmup.State == WarmupState.Failed ? "model failed to load" : "model is still loading");
+    if (req.Text.Length > FeedbackLimits.MaxTextLength)
+        return Problem(StatusCodes.Status400BadRequest, $"text must be at most {FeedbackLimits.MaxTextLength} characters");
+    if (!decisions.IsConfigured)
+        return Problem(StatusCodes.Status503ServiceUnavailable, "feedback analysis is not configured");
 
-    return Results.Ok(await analyzer.AnalyzeAsync(req.Text, ct));
+    try
+    {
+        return Results.Ok(await decisions.AnalyzeAsync(req.Text, ct));
+    }
+    catch (IntakeFailureException ex)
+    {
+        // The service's own "model is still loading" or "model failed to load" arrives here with its text, as 503.
+        return problems.ToServiceResult(ex, httpContext);
+    }
 })
 .WithName("AnalyzeFeedback")
 .WithSummary("Analyze hotel guest feedback for dissatisfaction")
@@ -353,11 +364,12 @@ app.MapUsageEndpoints();
 
 // One line that says how this instance was configured, so a trace can be read against it. No secrets.
 app.Lifetime.ApplicationStarted.Register(() => app.Logger.LogInformation(
-    "DocIntake API {Version} started in {Environment}: document service {DocumentService}, extraction service {Extraction}, "
+    "DocIntake API {Version} started in {Environment}: document service {DocumentService}, extraction service {Extraction}, decisions service {Decisions}, "
     + "{Analyses} analyses and {Extractions} extractions at once, telemetry export {Telemetry}",
     IntakeTelemetry.Version, app.Environment.EnvironmentName,
     documentOptions.DocumentServiceUrl,
     string.IsNullOrWhiteSpace(extractionOptions.ServiceUrl) ? "not configured" : extractionOptions.ServiceUrl,
+    string.IsNullOrWhiteSpace(decisionsOptions.ServiceUrl) ? "not configured" : decisionsOptions.ServiceUrl,
     documentOptions.EffectiveMaxConcurrentAnalyses, extractionOptions.MaxConcurrentExtractions,
     string.IsNullOrWhiteSpace(app.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]) ? "off" : "on"));
 

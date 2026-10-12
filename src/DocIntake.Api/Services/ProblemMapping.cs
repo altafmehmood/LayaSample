@@ -64,6 +64,26 @@ public sealed class ProblemMapping(ILogger<ProblemMapping> logger, DocumentMetri
         _ => new(StatusCodes.Status502BadGateway, "render_failed", "document could not be processed", null, LogLevel.Error, ex)
     };
 
+    /// <summary>
+    /// The answer for a failure that is not about an uploaded document (feedback analysis): the same status, retry hint,
+    /// outcome on the span and log line, without the document metric or a document kind.
+    /// </summary>
+    public IResult ToServiceResult(Exception ex, HttpContext httpContext)
+    {
+        var failure = Describe(ex);
+        var cause = ex.InnerException?.GetType().Name ?? "none";
+
+        Telemetry.TagRequest(httpContext, "intake.outcome", failure.Outcome);
+        Telemetry.TagRequest(httpContext, "intake.failure.cause", cause);
+        Activity.Current?.RecordFailure(ex, failure.Outcome);
+        logger.Log(failure.Level, failure.Logged, "{Outcome}: request answered {Status}: {Reason} (cause {Cause}){Hint}",
+            failure.Outcome, failure.Status, failure.Detail, cause, failure.Hint);
+
+        if (failure.RetryAfterSeconds is { } seconds)
+            httpContext.Response.Headers.RetryAfter = seconds.ToString();
+        return Problem(failure.Status, failure.Detail);
+    }
+
     public IResult ToResult(Exception ex, long bytes, DocumentClassification? classification, HttpContext httpContext)
     {
         var kind = classification?.Kind.ToString() ?? "unclassified";

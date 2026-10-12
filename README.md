@@ -22,7 +22,7 @@ OpenAI vision and text models.
 | [Lending corpus and evaluation](#lending-corpus) | 39 synthetic lending PDFs with ground truth, and an opt-in accuracy score for the model | `RUN_EXTRACTION_EVAL=1 dotnet run --project tests/DocIntake.Tests -c Release -- -trait "Category=Evaluation"` (paid) |
 | [Red team](redteam/README.md) | garak attacks the extraction API through a shim, with the defences on and in `flag` mode | `redteam/run.sh --smoke` (paid) |
 | [Kubernetes deploy](#kubernetes) | Helm chart and CI deploy to DOKS: Gateway API, TLS, ClamAV, usage PVC, collector | see [deploy/README.md](deploy/README.md) |
-| [Feedback sentiment](#feedback-sentiment) | The original sample: hotel feedback sentiment with the Laya decision model | `curl -H 'Content-Type: application/json' -d '{"text":"The room was dirty"}' localhost:5091/api/feedback/analyze` |
+| [Feedback sentiment](#feedback-sentiment) | The original sample: hotel feedback sentiment with the Laya decision model | `dotnet run --project src/DocIntake.DecisionsService`, then `curl -H 'Content-Type: application/json' -d '{"text":"The room was dirty"}' localhost:5091/api/feedback/analyze` |
 
 Longer notes on how each feature set works, its settings, limits and what was verified:
 [docs/security-cost-hardening.md](docs/security-cost-hardening.md) (usage tracking, ClamAV, content checks, streaming, red team) and
@@ -38,15 +38,17 @@ or its own section if it needs setup.
 You need the .NET 10 SDK. Steps 1 to 3 need no Docker, API key or cluster.
 
 1. **Start the services.** The gateway (the API) reads no document itself: every upload is classified and prepared by
-   the document service, so run both, each in its own terminal. The first run of the gateway downloads the Laya model
-   (~850 MB, several minutes); the OCR models ship with the document service. A third service, for AI extraction, is only
-   needed for step 4.
+   the document service, so run both, each in its own terminal. The gateway is ready in seconds. Two more services are only
+   needed for what they do: the decisions service for feedback analysis (it downloads the Laya model, ~850 MB, on its first
+   run, several minutes), and the extraction service for AI extraction (step 4). The OCR models ship with the document service.
 
        dotnet run --project src/DocIntake.DocumentService        # http://localhost:5092
-       dotnet run --project src/DocIntake.Api                    # http://localhost:5091 (finds the service at 5092)
+       dotnet run --project src/DocIntake.Api                    # http://localhost:5091 (finds the services at 5092, 5093, 5094)
+       dotnet run --project src/DocIntake.DecisionsService       # http://localhost:5094, optional: feedback analysis
 
-2. **Wait until they are ready.** `503` means a model is still loading, `200` means ready. The gateway's answer lists the
-   document service as `document-service`.
+2. **Wait until they are ready.** `503` means a model is still loading, `200` means ready. The gateway is ready at once and
+   lists the other services as `document-service`, `extraction-service` and `decisions-service` (`Degraded` while one is down
+   or loading: only what needs it answers 503).
 
        curl -i localhost:5092/health/ready
        curl -i localhost:5091/health/ready
@@ -98,6 +100,25 @@ One entry per day's work, newest first: what was added, the commands to try it a
 Compose on 8080.
 
 ### 2026-10-12
+
+**Decisions service: Laya leaves the gateway.** Laya, the local feedback model, now runs in `DocIntake.DecisionsService`, and
+the gateway **loads no model and carries no native library**: it is ready in seconds instead of waiting for an 850 MB model.
+`POST /api/feedback/analyze` keeps its validation (400) and its answers (503 `model is still loading` / `model failed to
+load`, the same text); the gateway just passes the call on. What changed for you: **feedback analysis needs the decisions
+service running** (a fourth process locally), the gateway's readiness is **no longer 503 while Laya loads** (it is `200`
+`Degraded`, and `decisions-service` says why), the `Laya` settings moved to the service, and in Kubernetes there is **a new
+Deployment** (see the pre-deploy checklist in [docs/docintake-architecture.md](docs/docintake-architecture.md), Phase 5).
+
+    dotnet run --project src/DocIntake.DecisionsService         # http://localhost:5094 (loads the model; downloads it on the first run)
+    dotnet run --project src/DocIntake.Api                      # http://localhost:5091, ready in seconds
+    curl -s localhost:5091/health/ready                          # decisions-service is Degraded until the model has loaded
+    curl -s -H 'Content-Type: application/json' -d '{"text":"The room was dirty"}' localhost:5091/api/feedback/analyze
+
+You should see `503 model is still loading` for a moment, then `dissatisfied: true`, `primaryDriver: Cleanliness`. With the
+service stopped you get `503` `the decisions service is unreachable; retry later` and a `Retry-After`. Run on this machine with
+the real model (no cost): the gateway up in 4 s; the decisions service restarted while the gateway was polled, which showed
+unreachable, then `model is still loading` at +1 s, then answers at +3 s; a happy guest scored `None`. Not run: Kubernetes,
+`docker compose up` of the quartet.
 
 **Extraction service: the model key leaves the gateway.** `POST /extract` now lives in `DocIntake.ExtractionService`, the
 only process that holds the OpenAI key and reaches the internet. The gateway sends it the prepared document and gets back the
@@ -500,20 +521,21 @@ Details and the other, smaller samples are in [docs/samples](docs/samples/README
 
 ## Architecture
 
-Three services. The **gateway** (`DocIntake.Api`) is the public API: access keys, rate limits, the malware scan, the risk
-policy, the usage history and Laya. The **document service** (`DocIntake.DocumentService`) reads every upload: it
-classifies and prepares it with PdfPig, the Office libraries and the native C/C++ libraries (PDFium, ImageMagick, Skia,
-ONNX Runtime for OCR). The **extraction service** (`DocIntake.ExtractionService`) turns a prepared document into structured
-data with the model provider. Each holds only what it needs, so a malformed file that takes over a parser cannot reach the
-model key, and nothing that holds the key ever parses a file:
+Four services. The **gateway** (`DocIntake.Api`) is the public API: access keys, rate limits, the malware scan, the risk
+policy and the usage history. The **document service** (`DocIntake.DocumentService`) reads every upload: it classifies and
+prepares it with PdfPig, the Office libraries and the native C/C++ libraries (PDFium, ImageMagick, Skia, ONNX Runtime for
+OCR). The **extraction service** (`DocIntake.ExtractionService`) turns a prepared document into structured data with the
+model provider. The **decisions service** (`DocIntake.DecisionsService`) runs Laya, the local model that scores hotel-guest
+feedback. Each holds only what it needs, so a malformed file that takes over a parser cannot reach the model key, nothing
+that holds the key ever parses a file, and the gateway, which has no native library at all, starts in seconds:
 
-| | `DocIntake.Api` (gateway) | `DocIntake.DocumentService` | `DocIntake.ExtractionService` |
-|---|---|---|---|
-| Does | Auth, scanning, risk policy, routing, usage, Laya | File-type detection, PDF classification and text, Office conversion, form data, signatures, rendering, image decoding, OCR | Agent choice, prompts, the model call, validation of the answer, list-price cost |
-| Reads untrusted document bytes | No: it streams the upload on, and has no parser in its build | Yes, isolated: no network egress, read-only file system, no capabilities | No: it receives prepared pages and text |
-| Holds the model provider's key | No | No | **Yes**, and it alone reaches the internet |
-| Knows who asked and the file's name | Yes | No | No |
-| Talks to | The two services and ClamAV | Nothing outside; only the gateway may reach it | The model provider; only the gateway may reach it |
+| | `DocIntake.Api` (gateway) | `DocIntake.DocumentService` | `DocIntake.ExtractionService` | `DocIntake.DecisionsService` |
+|---|---|---|---|---|
+| Does | Auth, scanning, risk policy, routing, usage | File-type detection, PDF classification and text, Office conversion, form data, signatures, rendering, image decoding, OCR | Agent choice, prompts, the model call, validation of the answer, list-price cost | Laya: scores feedback for dissatisfaction, level and main driver |
+| Reads untrusted document bytes | No: it streams the upload on | Yes, isolated | No: it receives prepared pages and text | No |
+| Holds | No key, no model | The OCR models | **The model provider's key** | **The 850 MB Laya model** |
+| Network | Calls the services and ClamAV | No egress | Egress to the model provider only (443) | No egress |
+| Ready after | Seconds | About a minute (OCR models) | Seconds | Minutes on a small node (model load) |
 
 The gateway asks the document service twice per upload, over HTTP: `POST /documents/classify`, then, if the risk policy
 lets the document through, `POST /documents/prepare`. For extraction it then sends the prepared document to the extraction
@@ -522,16 +544,19 @@ tokens, cost, outcome). The gateway records each call as usage, adding the calle
 never sees, and applies the risk policy to the findings: the service finds, the gateway decides. A failed extraction
 carries the calls made before it failed, so a call the provider billed is recorded even when the answer was refused.
 
-The services' addresses are `DocumentAnalysis:DocumentServiceUrl` (required: the gateway refuses to start without it) and
-`Extraction:ServiceUrl` (optional: empty, extraction answers `503` "not configured"). If the document service dies on a
-document, that request gets 502 and it restarts; if it is down, **every** document upload gets 503 with `Retry-After`. If the
-extraction service is down, extraction gets 503 with `Retry-After` while analysis and feedback keep working. The gateway's
-readiness reports `document-service` and `extraction-service` as `Degraded`. Shared types are in `src/DocIntake.Contracts`
+The services' addresses are `DocumentAnalysis:DocumentServiceUrl` (required: the gateway refuses to start without it),
+`Extraction:ServiceUrl` and `Decisions:ServiceUrl` (optional: empty, that feature answers `503` "not configured" and the
+gateway starts). If the document service dies on a document, that request gets 502 and it restarts; if it is down, **every**
+document upload gets 503 with `Retry-After`. If the extraction service is down, extraction gets 503 with `Retry-After` while
+analysis and feedback keep working; if the decisions service is down or still loading its model, feedback analysis gets 503
+(with `Retry-After` when it cannot be reached, none while it loads) and documents are unaffected. The gateway's readiness
+reports `document-service`, `extraction-service` and `decisions-service` as `Degraded`: **the gateway no longer waits for Laya
+to load before it is ready**. Shared types are in `src/DocIntake.Contracts`
 and the telemetry setup in `src/DocIntake.ServiceDefaults`; the rendering code the document service uses is in
 `src/DocIntake.Rendering`.
 
 There is no in-process mode: `appsettings.Development.json` points the gateway at `http://localhost:5092` and
-`http://localhost:5093`. See [Quick start](#quick-start) for running them.
+`http://localhost:5093` and `http://localhost:5094`. See [Quick start](#quick-start) for running them.
 
 ## Limits
 
@@ -622,8 +647,9 @@ rather than being reported as unreadable. Local models live in [`models/`](model
 ## Docker
 
 `docker-compose.yml` runs the gateway, the hardened document service (the `renderer` service and image target keep their old
-name for now) and the extraction service. The images bake in their models (Laya in the gateway, OCR in the document service;
-the extraction service has none), so containers never download anything and run offline. The build itself takes models from the local
+name for now), the extraction service and the decisions service. The images bake in their models (Laya in the decisions
+service, OCR in the document service; the gateway and the extraction service have none), so containers never download
+anything and run offline. The gateway image is small and starts in seconds. The build itself takes models from the local
 [`models/`](models/README.md) folder when their SHA-256 matches the pinned version and downloads only what is missing,
 so a machine that cannot download (a proxy or TLS inspection blocking curl) can build once the files are there: run
 the API once with `dotnet run`, or copy `models/` from another machine.
@@ -641,8 +667,9 @@ the **extraction service only**, and extraction answers 503 without `DOCINTAKE_A
 gateway checks it). The renderer is on an internal network with no route out, and the extraction service is on the public
 network only (it needs the internet for the model provider). Both have a read-only file system (`/tmp` is a tmpfs), drop all
 Linux capabilities, and have their own memory, CPU and process limits; they restart automatically after a crash. All run as
-non-root users and have a `HEALTHCHECK` on `/health/ready`. The images are built from one `Dockerfile`
-(`--target api` / `--target renderer` / `--target extraction`); model downloads use a BuildKit cache, so rebuilds don't fetch
+non-root users and have a `HEALTHCHECK` on `/health/ready`. The decisions service is on the internal network with no route
+out, like the document service. The images are built from one `Dockerfile`
+(`--target api` / `--target renderer` / `--target extraction` / `--target decisions`); model downloads use a BuildKit cache, so rebuilds don't fetch
 them again.
 
 ## Kubernetes
@@ -650,7 +677,8 @@ them again.
 [`deploy/`](deploy/README.md) has a Helm chart that deploys the services to a DigitalOcean Kubernetes cluster: the API
 is public through the Gateway API with a Let's Encrypt certificate, the renderer (now the document service) is reachable only
 from the API and has no egress, and the extraction service, the only pod that gets the OpenAI key, is reachable only from the
-API and may reach only port 443, DNS and the collector. The CI `deploy` job runs it on every push to `main`, with the cluster credentials, the Let's Encrypt
+API and may reach only port 443, DNS and the collector; the decisions service (Laya) is reachable only from the API and
+reaches nothing but the collector. The CI `deploy` job runs it on every push to `main`, with the cluster credentials, the Let's Encrypt
 e-mail, the OpenAI key and the API access key (`LAYA_API_KEY`) taken from GitHub secrets. The chart also runs a ClamAV
 pod that scans uploads, and keeps the usage history on a PersistentVolumeClaim. ClamAV has no resource requests or
 limits, so the cluster's node needs the memory for it (see [deploy/README.md](deploy/README.md#malware-scanning-clamav)).
@@ -715,8 +743,10 @@ Collector (`http://localhost:4318`, protocol `http/protobuf`).
 ## Feedback sentiment
 
 `POST /api/feedback/analyze` is the original sample: hotel guest feedback to dissatisfaction, using the open-weight
-[Laya](https://huggingface.co/elbruno/laya-onnx) "System 1" decision model on ONNX Runtime, in-process via the
-`ElBruno.LocalLLMs.Decisions` package.
+[Laya](https://huggingface.co/elbruno/laya-onnx) "System 1" decision model on ONNX Runtime, via the
+`ElBruno.LocalLLMs.Decisions` package. The model runs in the **decisions service** (`DocIntake.DecisionsService`), which the
+gateway calls; run it with `dotnet run --project src/DocIntake.DecisionsService` (the first run downloads the model). Until the
+model has loaded, or while the service is down, the endpoint answers `503`.
 
     curl -X POST localhost:5091/api/feedback/analyze -H 'content-type: application/json' \
       -d '{"text":"Room was filthy and the staff were rude."}'
@@ -724,7 +754,7 @@ Collector (`http://localhost:4318`, protocol `http/protobuf`).
 The response has `dissatisfied`, `dissatisfactionScore` (P(dissatisfied), 0 to 1), `rating` (1 to 5 dissatisfaction),
 `level` (None when not dissatisfied, otherwise Mild/Moderate/Severe from the rating), `primaryDriver` (null when unclear
 or not dissatisfied) and `confidence`. Confidences are **uncalibrated**; tune thresholds on your own labeled feedback
-before relying on them. Model settings go under the `Laya` section of `appsettings.json` (`ModelRepository`,
+before relying on them. Model settings go under the `Laya` section of the decisions service's `appsettings.json` (`ModelRepository`,
 `ModelPath`, `CacheDirectory`, `IntraOpNumThreads`, `DecisionThreshold`); `ModelPath` loads a local copy and skips the
 download.
 

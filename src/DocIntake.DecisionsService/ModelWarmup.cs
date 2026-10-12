@@ -1,21 +1,25 @@
 using DocIntake.ServiceDefaults;
 using ElBruno.LocalLLMs.Decisions;
-using DocIntake.Api.Services.Documents;
 
-namespace DocIntake.Api.Services;
+namespace DocIntake.DecisionsService;
+
+/// <summary>Whether the model can answer. A seam, so tests can say "ready" without loading an 850 MB model.</summary>
+public interface IModelStatus
+{
+    WarmupState State { get; }
+}
 
 /// <summary>
 /// Loads the Laya model at startup so the first request doesn't pay the download/load cost. A failed load (usually a
 /// dropped download) is retried with backoff before the model is reported as failed.
 /// </summary>
-public sealed class ModelWarmup(IDecisionClient client, DocumentMetrics metrics, ILogger<ModelWarmup> logger) : BackgroundService
+public sealed class ModelWarmup(IDecisionClient client, DecisionsMetrics metrics, ILogger<ModelWarmup> logger) : BackgroundService, IModelStatus
 {
     private static readonly TimeSpan[] RetryDelays = [TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(2)];
 
     private volatile WarmupState _state;
 
     public WarmupState State => _state;
-    public bool Ready => _state == WarmupState.Ready;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

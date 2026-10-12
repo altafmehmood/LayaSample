@@ -1,4 +1,4 @@
-# One replica each, one document at a time, short queues. The API, the renderer and the extraction service alone fit a 1 vCPU / 2 GB node, but the
+# One replica each, one document at a time, short queues. The API, the renderer, the extraction and the decisions service alone fit a 1 vCPU / 2 GB node, but the
 # ClamAV pod (malware.clamd, on by default) needs about 4 GB more: use a node with 8 GB, or turn it off.
 # See deploy/README.md. Settings under `config` map to DocumentAnalysis__* environment variables.
 
@@ -28,8 +28,8 @@ api:
     # No CPU limit: a limit would throttle OCR-heavy requests and lower the CPU count the app sizes itself from.
     requests: { cpu: 100m, memory: 256Mi }
     limits: { memory: 1Gi }
-  # The Laya model loads at startup; allow failureThreshold x periodSeconds (default 10 minutes) before restarting.
-  startupProbe: { periodSeconds: 10, failureThreshold: 60 }
+  # The gateway loads no model and is ready in seconds; allow failureThreshold x periodSeconds (2 minutes) before restarting.
+  startupProbe: { periodSeconds: 5, failureThreshold: 24 }
   # Access key for POST /api/documents/extract, which spends model-provider money. Callers send it as `X-Api-Key`.
   auth:
     # Secret holding the key(s), created outside Helm so they never land in the release history:
@@ -119,6 +119,20 @@ renderer:
   startupProbe: { periodSeconds: 10, failureThreshold: 60 }
   extraEnv: []
 
+# The decisions service: Laya, the local model that scores hotel-guest feedback (POST /api/feedback/analyze is answered by the
+# gateway, which calls this). It carries the 850 MB model and needs no network. A new GHCR package starts private on GitHub:
+# make laya-sample-decisions public after CI first pushes it (deploy/README.md).
+decisions:
+  # Still the pre-rename GHCR package names, which CI pushes; they move with the services cutover (docs/docintake-architecture.md).
+  image: laya-sample-decisions
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+  # The Laya model loads at startup; allow failureThreshold x periodSeconds (default 10 minutes) before restarting.
+  startupProbe: { periodSeconds: 10, failureThreshold: 60 }
+  extraEnv: []
+
 # The extraction service (POST /api/documents/extract is answered by the gateway, which calls this). The only pod that holds the
 # model provider's API key and reaches the internet. Document pages are sent to the model provider, so they leave the cluster.
 extraction:
@@ -149,7 +163,7 @@ extraction:
 
 # The renderer (the document service) reads every untrusted document: only the API may reach it, and it may reach nothing.
 # The extraction service may be reached only by the API and may reach only the internet on 443 (the model provider), DNS and
-# the collector.
+# the collector. The decisions service may be reached only by the API and may reach nothing but the collector.
 networkPolicy:
   enabled: true
 
