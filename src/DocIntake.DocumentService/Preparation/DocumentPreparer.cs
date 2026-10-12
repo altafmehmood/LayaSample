@@ -7,25 +7,12 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using DocIntake.Contracts;
-using DocIntake.Api.Services.Documents.Pdf;
+using DocIntake.DocumentService.Pdf;
 using DocIntake.Rendering;
 using Microsoft.Extensions.Options;
 using UglyToad.PdfPig;
 
-namespace DocIntake.Api.Services.Documents;
-
-public interface IDocumentPreparer
-{
-    /// <summary>
-    /// Converts the document into the form the downstream agent should receive, using the strategy the classification
-    /// chose (per page for PDFs).
-    /// </summary>
-    /// <exception cref="IntakeFailureException">The content is unreadable.</exception>
-    /// <exception cref="OcrUnavailableException"/>
-    /// <exception cref="RendererUnavailableException"/>
-    /// <exception cref="RenderingFailedException"/>
-    Task<PreparedDocument> PrepareAsync(Stream stream, DocumentClassification classification, CancellationToken ct = default);
-}
+namespace DocIntake.DocumentService;
 
 /// <summary>
 /// Prepares documents. Page images and OCR come from <see cref="IPageRasterizer"/> (the renderer service in
@@ -186,7 +173,7 @@ public sealed class DocumentPreparer(
         if (requests.Count == 0) return [];
 
         // The round trip to the renderer as the API sees it; the renderer's own spans nest under it.
-        using var span = Telemetry.Source.StartActivity("intake.render");
+        using var span = IntakeTelemetry.Source.StartActivity("intake.render");
         span?.SetTag("intake.render.media_type", mediaType);
         span?.SetTag("intake.render.input_bytes", document.Length);
         span?.SetTag("intake.render.pages_requested", requests.Count);

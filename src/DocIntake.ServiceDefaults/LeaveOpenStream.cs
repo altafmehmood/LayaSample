@@ -1,4 +1,4 @@
-namespace DocIntake.Rendering;
+namespace DocIntake.ServiceDefaults;
 
 /// <summary>
 /// Lends a stream to code that disposes what it is given (HttpClient's StreamContent, some parsers) without closing it.

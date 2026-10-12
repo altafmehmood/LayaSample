@@ -1,11 +1,10 @@
 using DocIntake.Contracts;
-using DocIntake.Api.Services.Security;
-using DocIntake.Api.Services.Usage;
+using DocIntake.DocumentService.Inspection;
 using UglyToad.PdfPig.AcroForms;
 using UglyToad.PdfPig.AcroForms.Fields;
 using UglyToad.PdfPig.Tokens;
 
-namespace DocIntake.Api.Services.Documents.Pdf;
+namespace DocIntake.DocumentService.Pdf;
 
 /// <summary>Counts AcroForm fields and verifies digital signatures.</summary>
 public sealed class AcroFormDetector : IPdfDetector

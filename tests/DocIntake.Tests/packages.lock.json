@@ -676,34 +676,35 @@
       "docintake.api": {
         "type": "Project",
         "dependencies": {
-          "ClosedXML": "[0.105.1, )",
           "DocIntake.Contracts": "[1.0.0, )",
-          "DocIntake.Rendering": "[1.0.0, )",
           "DocIntake.ServiceDefaults": "[1.0.0, )",
-          "DocumentFormat.OpenXml": "[3.5.1, )",
           "ElBruno.LocalLLMs.Decisions": "[0.22.0, )",
           "Microsoft.AspNetCore.OpenApi": "[10.0.12, )",
           "Microsoft.Data.Sqlite": "[10.0.12, )",
           "Microsoft.Extensions.AI": "[10.10.0, )",
           "Microsoft.Extensions.AI.OpenAI": "[10.10.1, )",
-          "PdfPig": "[0.1.16, )",
-          "Scalar.AspNetCore": "[2.17.13, )",
-          "System.Security.Cryptography.Pkcs": "[10.0.12, )"
+          "Scalar.AspNetCore": "[2.17.13, )"
         }
       },
       "docintake.contracts": {
         "type": "Project"
       },
-      "docintake.renderer": {
+      "docintake.documentservice": {
         "type": "Project",
         "dependencies": {
+          "ClosedXML": "[0.105.1, )",
+          "DocIntake.Contracts": "[1.0.0, )",
           "DocIntake.Rendering": "[1.0.0, )",
-          "DocIntake.ServiceDefaults": "[1.0.0, )"
+          "DocIntake.ServiceDefaults": "[1.0.0, )",
+          "DocumentFormat.OpenXml": "[3.5.1, )",
+          "PdfPig": "[0.1.16, )",
+          "System.Security.Cryptography.Pkcs": "[10.0.12, )"
         }
       },
       "docintake.rendering": {
         "type": "Project",
         "dependencies": {
+          "DocIntake.Contracts": "[1.0.0, )",
           "DocIntake.ServiceDefaults": "[1.0.0, )",
           "Magick.NET-Q8-AnyCPU": "[14.17.2, )",
           "PDFtoImage": "[5.4.0, )",
@@ -713,6 +714,7 @@
       "docintake.servicedefaults": {
         "type": "Project",
         "dependencies": {
+          "DocIntake.Contracts": "[1.0.0, )",
           "OpenTelemetry.Exporter.OpenTelemetryProtocol": "[1.19.1, )",
           "OpenTelemetry.Extensions.Hosting": "[1.19.1, )",
           "OpenTelemetry.Instrumentation.AspNetCore": "[1.19.0, )",

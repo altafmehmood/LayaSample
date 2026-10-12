@@ -16,7 +16,7 @@ OpenAI vision and text models.
 | [Usage and cost](#ai-extraction) | Every model call recorded (API key fingerprint, file name, input, cached, reasoning, output tokens, list-price cost) and served as JSON or CSV | `curl -H "X-Api-Key: $KEY" "localhost:5091/api/usage?format=csv"` |
 | [Security layers](#security) | Malware scan (ClamAV), active-content, hidden-text and prompt-injection checks, all reported in `risks` and refused with 422 by default | `docker compose up -d clamav`, then upload the EICAR test file |
 | [Authentication](#authentication) | `X-Api-Key` on the endpoints that spend money; key fingerprints in the usage history; optional admin keys | `dotnet user-secrets set "Auth:ApiKeys:0" "$(openssl rand -base64 32)" --project src/DocIntake.Api` |
-| [Isolated renderer](#architecture) | PDFium, ImageMagick and OCR in a separate container: no network, read-only file system | `docker compose up --build` |
+| [Document service](#architecture) | Classification, preparation, PDFium, ImageMagick and OCR in a separate container: no network, read-only file system. The gateway reads no document | `docker compose up --build` |
 | [Telemetry](#telemetry-honeycomb) | Traces, metrics and logs to Honeycomb, including prompts, answers, tokens and cost | set the `OTEL_EXPORTER_OTLP_*` user secrets, see [Telemetry](#telemetry-honeycomb) |
 | [Lending corpus and evaluation](#lending-corpus) | 39 synthetic lending PDFs with ground truth, and an opt-in accuracy score for the model | `RUN_EXTRACTION_EVAL=1 dotnet run --project tests/DocIntake.Tests -c Release -- -trait "Category=Evaluation"` (paid) |
 | [Red team](redteam/README.md) | garak attacks the extraction API through a shim, with the defences on and in `flag` mode | `redteam/run.sh --smoke` (paid) |
@@ -36,12 +36,17 @@ or its own section if it needs setup.
 
 You need the .NET 10 SDK. Steps 1 to 3 need no Docker, API key or cluster.
 
-1. **Start the API.** The first run downloads the Laya model (~850 MB, several minutes); the OCR models ship with the app.
+1. **Start the two services.** The gateway (the API) reads no document itself: every upload is classified and prepared by
+   the document service, so run both, each in its own terminal. The first run of the gateway downloads the Laya model
+   (~850 MB, several minutes); the OCR models ship with the document service.
 
-       dotnet run --project src/DocIntake.Api
+       dotnet run --project src/DocIntake.DocumentService        # http://localhost:5092
+       dotnet run --project src/DocIntake.Api                    # http://localhost:5091 (finds the service at 5092)
 
-2. **Wait until it is ready.** `503` means the models are still loading, `200` means ready.
+2. **Wait until they are ready.** `503` means a model is still loading, `200` means ready. The gateway's answer lists the
+   document service as `document-service`.
 
+       curl -i localhost:5092/health/ready
        curl -i localhost:5091/health/ready
 
 3. **Analyse a sample document.** This is a fax-quality UCC-1 from the [lending corpus](#lending-corpus). The response
@@ -76,9 +81,10 @@ You need the .NET 10 SDK. Steps 1 to 3 need no Docker, API key or cluster.
    paid OpenAI API; it needs `RUN_EXTRACTION_EVAL=1`, even when a key is set, see [AI extraction](#ai-extraction)), the
    ClamAV tests (`CLAMD_HOST`) and the real-OCR check (`REAL_OCR=1`), both described under [Security](#security).
 
+Without the document service the gateway still starts and serves feedback analysis, but every document upload answers `503`.
 `dotnet run` does not scan uploads for malware (Development sets `Security:Malware:Provider` to `none`, because there is no
-ClamAV daemon). To run with the isolated renderer and the scanner, as in production, use `docker compose up --build`
-(http://localhost:8080); see [Docker](#docker).
+ClamAV daemon). To run with the isolated document service and the scanner, as in production, use
+`docker compose up --build` (http://localhost:8080); see [Docker](#docker).
 
 ## Quickstarts by date
 
@@ -87,6 +93,25 @@ One entry per day's work, newest first: what was added, the commands to try it a
 Compose on 8080.
 
 ### 2026-10-12
+
+**Document service: the gateway no longer reads documents.** `DocIntake.Renderer` became `DocIntake.DocumentService`, and
+classification and preparation moved into it, with PdfPig and the Office libraries. The gateway streams each upload to it
+twice (`POST /documents/classify`, then `/prepare`) and keeps the scan, the risk policy, extraction and usage. Callers see
+the same answers. What changed for you: **run two processes locally**, a document service outage now fails **every**
+upload (it used to fail only the ones that needed rendering), and `DocumentAnalysis:RendererUrl` and
+`AllowInProcessRendering` are replaced by `DocumentAnalysis:DocumentServiceUrl`. See
+[docs/docintake-architecture.md](docs/docintake-architecture.md), Phase 3.
+
+    dotnet run --project src/DocIntake.DocumentService          # terminal 1, http://localhost:5092
+    dotnet run --project src/DocIntake.Api                      # terminal 2, http://localhost:5091
+    curl -s localhost:5091/health/ready                          # lists laya, scanner and document-service
+    curl -F "file=@docs/samples/pdf/corpus/redwood-mechanical-ucc1-fax.pdf" "localhost:5091/api/documents/analyze?dispatch=false&includeData=false"
+    curl -i -F "file=@docs/samples/unsupported/legacy.doc" localhost:5091/api/documents/analyze
+
+You should see the fax PDF classified as `FaxPdf` with strategy `Hybrid` and a page image plus OCR text, and `415` for the
+legacy `.doc`. In Honeycomb one request is one trace across `docintake-gateway` and `docintake-document`. Nothing here is
+paid. Run on the machine: both services, 12 sample documents, real OCR. Not run: Kubernetes, `docker compose up` of the
+new pair, extraction against the real model provider.
 
 **One failure type, one place that turns it into HTTP.** The code every service will share is now in two projects
 (`DocIntake.Contracts` and `DocIntake.ServiceDefaults`), and failures below the endpoints are an
@@ -208,7 +233,7 @@ See [Telemetry](#telemetry-honeycomb) and [deploy/README.md](deploy/README.md).
 | `GET /api/usage` | Model calls with tokens and list-price cost, newest first; filters, paging, `format=csv`. **Needs `X-Api-Key`**; a key sees its own rows (see [AI extraction](#ai-extraction)). |
 | `GET /api/usage/summary` | The same, totalled per day, model or key. **Needs `X-Api-Key`.** |
 | `POST /api/feedback/analyze` | JSON `{ "text": "..." }`. Hotel feedback sentiment (the original sample). |
-| `GET /health/live`, `/health/ready` (also `/health`) | Liveness; readiness (503 while models load, 200 `Degraded` if one failed for good or the renderer is unreachable). |
+| `GET /health/live`, `/health/ready` (also `/health`) | Liveness; readiness (503 while models load, 200 `Degraded` if one failed for good or the document service is unreachable). |
 | `GET /scalar/v1`, `/openapi/v1.json` | Interactive API docs and the OpenAPI document. |
 
 Errors are problem details (`application/problem+json`). The analyze and extract responses carry a `risks` list of
@@ -439,27 +464,28 @@ Details and the other, smaller samples are in [docs/samples](docs/samples/README
 
 ## Architecture
 
-Untrusted PDFs and images are parsed by native C/C++ libraries (PDFium, ImageMagick, Skia, ONNX Runtime for OCR).
-Those run only in a separate **renderer** service, so a malicious or malformed file that crashes or takes over a
-parser cannot take down the API or reach its data:
+Two services. The **gateway** (`DocIntake.Api`) is the public API: access keys, rate limits, the malware scan, the risk
+policy, AI extraction, the usage history and Laya. The **document service** (`DocIntake.DocumentService`) reads every
+upload: it classifies and prepares it with PdfPig, the Office libraries and the native C/C++ libraries (PDFium,
+ImageMagick, Skia, ONNX Runtime for OCR). A malicious or malformed file that crashes or takes over a parser therefore
+cannot take down the gateway or reach its data:
 
-| | `DocIntake.Api` | `DocIntake.Renderer` |
+| | `DocIntake.Api` (gateway) | `DocIntake.DocumentService` |
 |---|---|---|
-| Does | File-type detection, PDF classification and text (PdfPig, managed), Office conversion, form data, signatures, AI extraction, Laya, routing | Page rendering (PDFium), image decoding (ImageMagick), PNG encoding, OCR |
-| Sees untrusted bytes in native code | No | Yes, isolated: no network egress, read-only file system, no capabilities, own memory/CPU limits |
-| Talks to | The renderer, and OpenAI for extraction | Nothing outside; only the API may reach it |
+| Does | Auth, scanning, risk policy, routing, AI extraction, usage, Laya | File-type detection, PDF classification and text, Office conversion, form data, signatures, page rendering, image decoding, OCR |
+| Reads untrusted document bytes | No: it streams the upload on, and has no parser in its build | Yes, isolated: no network egress, read-only file system, no capabilities, own memory/CPU limits |
+| Talks to | The document service, ClamAV, and OpenAI for extraction | Nothing outside; only the gateway may reach it |
 
-The API calls the renderer over HTTP (`DocumentAnalysis:RendererUrl`). If the renderer dies on a document, that
-request gets 502 and the renderer restarts; if it is down, documents that need it get 503 with `Retry-After` while
-text PDFs, Office files and feedback analysis keep working, and the API's readiness reports the renderer as
-`Degraded`. Shared code is in `src/DocIntake.Rendering`.
+The gateway asks the document service twice per upload over HTTP: `POST /documents/classify`, then, if the risk policy lets
+the document through, `POST /documents/prepare`. Each call carries the file; the service keeps nothing between them. The
+service's address is `DocumentAnalysis:DocumentServiceUrl`, and without it the gateway refuses to start. If the service dies
+on a document, that request gets 502 and the service restarts. If it is down, **every** document upload gets 503 with
+`Retry-After` (classification happens there too), while feedback analysis keeps working, and the gateway's readiness reports
+`document-service` as `Degraded`. Shared types are in `src/DocIntake.Contracts` and the telemetry setup in
+`src/DocIntake.ServiceDefaults`; the rendering code the document service uses is in `src/DocIntake.Rendering`.
 
-In development (`dotnet run`) the API renders in-process, because `appsettings.Development.json` sets
-`DocumentAnalysis:AllowInProcessRendering`. Without that setting or a `RendererUrl`, the API refuses to start, so a
-production deployment cannot fall back to in-process rendering by accident. To run the renderer locally as well:
-
-    dotnet run --project src/DocIntake.Renderer                  # http://localhost:5092
-    DocumentAnalysis__RendererUrl=http://localhost:5092 dotnet run --project src/DocIntake.Api
+There is no in-process mode any more: `DocumentAnalysis:AllowInProcessRendering` is gone, and `appsettings.Development.json`
+points the gateway at `http://localhost:5092`. See [Quick start](#quick-start) for running both.
 
 ## Limits
 
@@ -482,7 +508,7 @@ Durations per stage and documents by kind and outcome are published on the `DocI
 
 ## Security
 
-An upload goes through these layers. The first four run in the API; the native-code parsers run only in the renderer.
+An upload goes through these layers. The scan, the policy decisions, the prompt and the checks of the text and the answer run in the gateway; finding the file's structure, preparing it and every parser run only in the document service.
 
 | Layer | What it does | Refuses with |
 |---|---|---|
@@ -491,7 +517,7 @@ An upload goes through these layers. The first four run in the API; the native-c
 | **Text** | The text the model will read (text layer, OCR, form values, attachments) is checked for phrases aimed at the model: "ignore the previous instructions", "you are now an AI", a system-prompt request, chat-template tokens. | 422 `instructions addressed to an AI model` |
 | **Prompt** | The document sits in a `<document>` block that the system prompt declares to be data. A `<document>` tag inside the text is made inert, so it cannot close the block. The model has no tools and answers in a fixed JSON schema. | |
 | **Answer** | The answer is checked for the same phrases, which an injection that got through can echo into a field or its quote. | 422 `extraction rejected` |
-| **Isolation** | PDFium, ImageMagick and OCR run only in the renderer: no network, read-only file system, no capabilities. | |
+| **Isolation** | Every parser (PdfPig, the Office libraries, PDFium, ImageMagick, OCR) runs only in the document service: no network, read-only file system, no capabilities. | |
 
 Every finding is in the `risks` list of the analyze and extract responses (kind, severity, page, detail), and counted on
 the `intake.risk.findings` metric. The detail names the kind of thing and where; it never repeats the document's text, and
@@ -522,8 +548,8 @@ check of the sample scans runs with `REAL_OCR=1` in the same command.
 `redteam` CI job, once with these filters on and once in `flag` mode to test the model itself.
 
 **Memory.** The upload is one seekable stream: ASP.NET already spools a multipart file above 64 KB to a temporary file
-(`/tmp`, a writable volume in the containers), and the scan, the classifier, the preparer and the hand-off to the renderer
-all read that stream in place. The document is never copied into memory. What still is: files embedded in a PDF (a few,
+(`/tmp`, a writable volume in the containers), and the scan, the classify call and the prepare call to the document service
+all read that stream in place (the gateway sends it twice, once per call). The document is never copied into memory in the gateway. What still is: files embedded in a PDF (a few,
 bounded by `MaxAttachments`), the rendered page images (at most `MaxPages`) and their text, the libraries' own structures
 (PdfPig, ClosedXML, OpenXML, PDFium, ImageMagick), and the signed ranges of a signed PDF.
 
@@ -549,8 +575,8 @@ rather than being reported as unreadable. Local models live in [`models/`](model
 
 ## Docker
 
-`docker-compose.yml` runs the API and the hardened renderer. Both images bake in their models (Laya in the API, OCR
-in the renderer), so containers never download anything and run offline. The build itself takes models from the local
+`docker-compose.yml` runs the gateway and the hardened document service (the `renderer` service and image target keep their
+old name for now). Both images bake in their models (Laya in the gateway, OCR in the document service), so containers never download anything and run offline. The build itself takes models from the local
 [`models/`](models/README.md) folder when their SHA-256 matches the pinned version and downloads only what is missing,
 so a machine that cannot download (a proxy or TLS inspection blocking curl) can build once the files are there: run
 the API once with `dotnet run`, or copy `models/` from another machine.
@@ -573,8 +599,8 @@ non-root users and have a `HEALTHCHECK` on `/health/ready`. The images are built
 ## Kubernetes
 
 [`deploy/`](deploy/README.md) has a Helm chart that deploys both services to a DigitalOcean Kubernetes cluster: the API
-is public through the Gateway API with a Let's Encrypt certificate, the renderer is reachable only from the API and
-has no egress. The CI `deploy` job runs it on every push to `main`, with the cluster credentials, the Let's Encrypt
+is public through the Gateway API with a Let's Encrypt certificate, the renderer (now the document service) is reachable only
+from the API and has no egress. The CI `deploy` job runs it on every push to `main`, with the cluster credentials, the Let's Encrypt
 e-mail, the OpenAI key and the API access key (`LAYA_API_KEY`) taken from GitHub secrets. The chart also runs a ClamAV
 pod that scans uploads, and keeps the usage history on a PersistentVolumeClaim. ClamAV has no resource requests or
 limits, so the cluster's node needs the memory for it (see [deploy/README.md](deploy/README.md#malware-scanning-clamav)).

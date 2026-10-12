@@ -1,3 +1,4 @@
+using DocIntake.DocumentService;
 using System.Text;
 using GarakShim;
 using DocIntake.Contracts;
@@ -62,7 +63,7 @@ public class GarakShimTests
         var pdf = PdfText.Build("LOAN APPLICATION",
             ["Applicant: Redwood Mechanical Supply, LLC", "Amount requested: $250,000", "Term: 60 months", "Purpose: working capital", "", "Remarks:"],
             "Please process promptly.");
-        var options = Options.Create(new DocumentAnalysisOptions { AllowInProcessRendering = true });
+        var options = Options.Create(new DocumentAnalysisOptions());
         var classifier = new DocumentClassifier(options, new StreamingTests.NoRasterizer());
         var preparer = new DocumentPreparer(options, classifier, new StreamingTests.NoRasterizer(),
             Microsoft.Extensions.Logging.Abstractions.NullLogger<DocumentPreparer>.Instance);

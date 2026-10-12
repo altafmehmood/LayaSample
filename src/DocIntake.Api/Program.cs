@@ -9,7 +9,6 @@ using DocIntake.Api.Services.Documents;
 using DocIntake.Api.Services.Documents.Extraction;
 using DocIntake.Api.Services.Security;
 using DocIntake.Api.Services.Usage;
-using DocIntake.Rendering;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -19,7 +18,7 @@ using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddIntakeTelemetry("docintake-gateway", DocumentMetrics.MeterName, RenderingMetrics.MeterName);
+builder.AddIntakeTelemetry("docintake-gateway", DocumentMetrics.MeterName);
 
 builder.Services.AddLocalDecisions(o =>
 {
@@ -65,13 +64,11 @@ builder.Services.AddOptions<ApiAccessOptions>()
     .ValidateOnStart();
 builder.Services.AddProblemDetails();
 builder.Services.AddSingleton<IDissatisfactionAnalyzer, DissatisfactionAnalyzer>();
-builder.Services.AddOptions<DocumentAnalysisOptions>()
-    .Bind(builder.Configuration.GetSection(DocumentAnalysisOptions.Section))
+builder.Services.AddOptions<DocumentGatewayOptions>()
+    .Bind(builder.Configuration.GetSection(DocumentGatewayOptions.Section))
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
-builder.Services.AddSingleton<IDocumentClassifier, DocumentClassifier>();
-builder.Services.AddSingleton<IDocumentPreparer, DocumentPreparer>();
 builder.Services.AddSingleton<IDocumentRouter, DocumentRouter>();
 builder.Services.AddSingleton<DocumentMetrics>();
 builder.Services.AddSingleton<DocumentPipeline>();
@@ -85,36 +82,23 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<ModelWarmup>());
 var healthChecks = builder.Services.AddHealthChecks().AddCheck<LayaHealthCheck>("laya", tags: [HealthReporting.Ready]);
 builder.Services.AddMalwareScanning(builder.Configuration, healthChecks);
 
-// Endpoint limits and where rendering runs are fixed when the app is built, so the options are read here;
-// ValidateOnStart still checks them (and refuses to start with neither a renderer nor in-process rendering allowed).
-var documentOptions = builder.Configuration.GetSection(DocumentAnalysisOptions.Section).Get<DocumentAnalysisOptions>() ?? new();
+// Endpoint limits are fixed when the app is built, so the options are read here; ValidateOnStart still checks them (and
+// refuses to start without a document service to send uploads to).
+var documentOptions = builder.Configuration.GetSection(DocumentGatewayOptions.Section).Get<DocumentGatewayOptions>() ?? new();
 var extractionOptions = builder.Configuration.GetSection(ExtractionOptions.Section).Get<ExtractionOptions>() ?? new();
-if (!string.IsNullOrWhiteSpace(documentOptions.RendererUrl))
+
+// Untrusted bytes are read only inside the document service: classification, preparation, rendering and OCR all happen there.
+builder.Services.AddHttpClient(DocumentServiceClient.HttpClientName, c =>
 {
-    // Untrusted bytes reach PDFium, ImageMagick and OCR only inside the isolated renderer service.
-    builder.Services.AddHttpClient(RemotePageRasterizer.HttpClientName, c =>
-    {
-        c.BaseAddress = new Uri(documentOptions.RendererUrl.TrimEnd('/') + "/");
-        // Bounded by the request's own token instead, which carries the request timeout.
-        c.Timeout = Timeout.InfiniteTimeSpan;
-    });
-    builder.Services.AddSingleton<RemotePageRasterizer>();
-    builder.Services.AddSingleton<IPageRasterizer>(sp => sp.GetRequiredService<RemotePageRasterizer>());
-    healthChecks.AddCheck<RendererHealthCheck>("renderer", tags: [HealthReporting.Ready], timeout: TimeSpan.FromSeconds(5));
-}
-else
-{
-    // Development and tests only: AllowInProcessRendering must be set (see DocumentAnalysisOptions.Validate).
-    builder.Services.AddOptions<RenderingOptions>()
-        .Bind(builder.Configuration.GetSection(RenderingOptions.Section))
-        .ValidateDataAnnotations()
-        .ValidateOnStart();
-    builder.Services.AddSingleton<IOcrEngine, RapidOcrEngine>();
-    builder.Services.AddSingleton<IPageRasterizer, LocalPageRasterizer>();
-    builder.Services.AddSingleton<OcrWarmup>();
-    builder.Services.AddHostedService(sp => sp.GetRequiredService<OcrWarmup>());
-    healthChecks.AddCheck<OcrHealthCheck>("ocr", tags: [HealthReporting.Ready]);
-}
+    if (!string.IsNullOrWhiteSpace(documentOptions.DocumentServiceUrl))
+        c.BaseAddress = new Uri(documentOptions.DocumentServiceUrl.TrimEnd('/') + "/");
+    // Bounded by the request's own token instead, which carries the request timeout.
+    c.Timeout = Timeout.InfiniteTimeSpan;
+});
+builder.Services.AddSingleton<DocumentServiceClient>();
+builder.Services.AddSingleton<IDocumentClassifier>(sp => sp.GetRequiredService<DocumentServiceClient>());
+builder.Services.AddSingleton<IDocumentPreparer>(sp => sp.GetRequiredService<DocumentServiceClient>());
+healthChecks.AddCheck<DocumentServiceHealthCheck>("document-service", tags: [HealthReporting.Ready], timeout: TimeSpan.FromSeconds(5));
 
 const string DocumentsPolicy = "documents";
 const string ExtractionPolicy = "extraction";
@@ -220,7 +204,7 @@ app.MapPost("/api/documents/analyze", async (
     DocumentPipeline pipeline,
     ProblemMapping problems,
     IDocumentRouter router,
-    IOptions<DocumentAnalysisOptions> options,
+    IOptions<DocumentGatewayOptions> options,
     DocumentMetrics metrics,
     ILogger<Program> logger,
     HttpContext httpContext,
@@ -284,7 +268,7 @@ app.MapPost("/api/documents/extract", async (
     DocumentPipeline pipeline,
     ProblemMapping problems,
     IDocumentExtractor extractor,
-    IOptions<DocumentAnalysisOptions> options,
+    IOptions<DocumentGatewayOptions> options,
     DocumentMetrics metrics,
     HttpContext httpContext,
     CancellationToken ct) =>
@@ -348,7 +332,7 @@ app.Lifetime.ApplicationStarted.Register(() => app.Logger.LogInformation(
     "DocIntake API {Version} started in {Environment}: renderer {Renderer}, extraction {Extraction} (vision {Vision}, text {Text}), "
     + "{Analyses} analyses and {Extractions} extractions at once, telemetry export {Telemetry}",
     IntakeTelemetry.Version, app.Environment.EnvironmentName,
-    string.IsNullOrWhiteSpace(documentOptions.RendererUrl) ? "in-process" : documentOptions.RendererUrl,
+    documentOptions.DocumentServiceUrl,
     app.Services.GetRequiredService<ExtractionClients>().IsConfigured ? "configured" : "not configured",
     extractionOptions.VisionModel, extractionOptions.TextModel,
     documentOptions.EffectiveMaxConcurrentAnalyses, extractionOptions.MaxConcurrentExtractions,

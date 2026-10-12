@@ -7,7 +7,7 @@ using UglyToad.PdfPig;
 using UglyToad.PdfPig.AcroForms.Fields;
 using UglyToad.PdfPig.Tokens;
 
-namespace DocIntake.Api.Services.Documents.Pdf;
+namespace DocIntake.DocumentService.Pdf;
 
 /// <summary>
 /// Checks the cryptographic integrity of PDF signatures (adbe.pkcs7.detached / ETSI.CAdES.detached).

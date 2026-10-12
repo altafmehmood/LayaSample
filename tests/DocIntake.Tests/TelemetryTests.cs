@@ -21,8 +21,7 @@ public class TelemetryTests
             builder.ConfigureServices(s =>
             {
                 foreach (var d in s.Where(d => d.ServiceType == typeof(IHostedService)).ToList()) s.Remove(d);
-                s.RemoveAll<IOcrEngine>();
-                s.AddSingleton<IOcrEngine>(new FakeOcr());
+                s.UseDocumentService();
                 s.RemoveAll<ExtractionClients>();
                 s.AddSingleton(clients);
             });

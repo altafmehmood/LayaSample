@@ -6,16 +6,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="ClosedXML" />
-    <PackageReference Include="DocumentFormat.OpenXml" />
     <PackageReference Include="ElBruno.LocalLLMs.Decisions" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
-    <PackageReference Include="PdfPig" />
     <PackageReference Include="Scalar.AspNetCore" />
-    <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,10 +19,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Contracts and the remote client; the native renderer is used in-process only in development. -->
     <ProjectReference Include="..\DocIntake.Contracts\DocIntake.Contracts.csproj" />
     <ProjectReference Include="..\DocIntake.ServiceDefaults\DocIntake.ServiceDefaults.csproj" />
-    <ProjectReference Include="..\DocIntake.Rendering\DocIntake.Rendering.csproj" />
   </ItemGroup>
 
 </Project>

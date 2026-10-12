@@ -318,14 +318,12 @@ public class UsageTests
             builder.UseSetting("Auth:AdminKeys:0", AdminKey);
             // After appsettings.json (which names a default path), so it wins.
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?> { ["Usage:DatabasePath"] = databasePath ?? "" }));
-            builder.UseSetting("DocumentAnalysis:AllowInProcessRendering", "true");
             builder.ConfigureServices(s =>
             {
                 foreach (var d in s.Where(d => d.ServiceType == typeof(IHostedService)).ToList()) s.Remove(d);
                 // The writer is the one hosted service these tests need.
                 s.AddHostedService(sp => sp.GetRequiredService<UsageWriter>());
-                s.RemoveAll<IOcrEngine>();
-                s.AddSingleton<IOcrEngine>(new FakeOcr());
+                s.UseDocumentService();
                 s.RemoveAll<ExtractionClients>();
                 s.AddSingleton(new ExtractionClients(model, model));
             });

@@ -1,3 +1,5 @@
+using DocIntake.DocumentService;
+using DocIntake.ServiceDefaults;
 using DocIntake.Contracts;
 using DocIntake.Api.Services.Documents;
 using DocIntake.Rendering;
@@ -28,7 +30,7 @@ public class StreamingTests
         try
         {
             await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.Asynchronous);
-            var options = Options.Create(new DocumentAnalysisOptions { AllowInProcessRendering = true });
+            var options = Options.Create(new DocumentAnalysisOptions());
             var rasterizer = new NoRasterizer();
             var classifier = new DocumentClassifier(options, rasterizer);
             var preparer = new DocumentPreparer(options, classifier, rasterizer, NullLogger<DocumentPreparer>.Instance);

@@ -1,32 +1,13 @@
 using System.IO.Compression;
 using DocIntake.Contracts;
-using DocIntake.Api.Services.Documents.Pdf;
-using DocIntake.Api.Services.Security;
+using DocIntake.DocumentService.Pdf;
+using DocIntake.DocumentService.Inspection;
 using DocIntake.Rendering;
 using Microsoft.Extensions.Options;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Exceptions;
 
-namespace DocIntake.Api.Services.Documents;
-
-public interface IDocumentClassifier
-{
-    /// <summary>Classifies the document from its content (not its name or client-supplied content type).</summary>
-    /// <exception cref="IntakeFailureException">Unsupported, unreadable, encrypted or over a limit.</exception>
-    /// <exception cref="RendererUnavailableException">Images are inspected by the renderer, which is unreachable.</exception>
-    /// <exception cref="RenderingFailedException">The renderer failed while inspecting an image.</exception>
-    Task<DocumentClassification> ClassifyAsync(Stream stream, CancellationToken ct = default);
-}
-
-public static class DocumentRoutes
-{
-    public const string Form = "form-agent";
-    public const string Vision = "vision-agent";
-    public const string Text = "text-agent";
-    public const string Spreadsheet = "spreadsheet-agent";
-
-    public static readonly string[] All = [Form, Vision, Text, Spreadsheet];
-}
+namespace DocIntake.DocumentService;
 
 public sealed class DocumentClassifier(IOptions<DocumentAnalysisOptions> options, IPageRasterizer rasterizer) : IDocumentClassifier
 {

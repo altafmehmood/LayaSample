@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using DocIntake.Api.Services.Documents;
 using DocIntake.Contracts;
 using DocIntake.Rendering;
 using Microsoft.AspNetCore.Hosting;
@@ -10,8 +11,8 @@ using Microsoft.Extensions.Hosting;
 
 namespace DocIntake.Tests;
 
-/// <summary>The API configured with a renderer service, as deployed: no rendering in the API process.</summary>
-public class RemoteRenderingEndpointTests(RendererTests.RendererFactory renderer) : IClassFixture<RendererTests.RendererFactory>
+/// <summary>The gateway with a document service behind it, as deployed: the gateway reads no document itself.</summary>
+public class GatewayDocumentServiceTests(DefaultDocumentService documentService) : IClassFixture<DefaultDocumentService>
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -26,14 +27,14 @@ public class RemoteRenderingEndpointTests(RendererTests.RendererFactory renderer
             throw new HttpRequestException(error, $"simulated {error}");
     }
 
-    /// <summary>The API with RendererUrl set, its renderer calls going to <paramref name="handler"/>.</summary>
-    private static WebApplicationFactory<Program> Api(Func<HttpMessageHandler> handler) =>
+    /// <summary>The gateway with its document service calls going to <paramref name="handler"/>.</summary>
+    private static WebApplicationFactory<Program> Gateway(Func<HttpMessageHandler> handler) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(b => b
-            .UseSetting("DocumentAnalysis:RendererUrl", "http://renderer")
+            .UseSetting("DocumentAnalysis:DocumentServiceUrl", "http://document")
             .ConfigureServices(s =>
             {
                 foreach (var d in s.Where(d => d.ServiceType == typeof(IHostedService)).ToList()) s.Remove(d);
-                s.AddHttpClient(RemotePageRasterizer.HttpClientName).ConfigurePrimaryHttpMessageHandler(handler);
+                s.AddHttpClient(DocumentServiceClient.HttpClientName).ConfigurePrimaryHttpMessageHandler(handler);
             }));
 
     private static async Task<HttpResponseMessage> Post(HttpClient client, byte[] bytes, string fileName)
@@ -52,9 +53,9 @@ public class RemoteRenderingEndpointTests(RendererTests.RendererFactory renderer
 
     [Theory]
     [MemberData(nameof(Samples))]
-    public async Task Documents_are_rendered_by_the_renderer_service(string fileName, DocumentKind kind, PartRole[] roles)
+    public async Task Documents_are_analysed_by_the_document_service(string fileName, DocumentKind kind, PartRole[] roles)
     {
-        using var api = Api(() => renderer.Server.CreateHandler());
+        using var api = Gateway(() => documentService.Server.CreateHandler());
         byte[] bytes = fileName switch
         {
             "scan.pdf" => DocumentFixtures.BlankPdf(),
@@ -72,26 +73,28 @@ public class RemoteRenderingEndpointTests(RendererTests.RendererFactory renderer
     }
 
     [Fact]
-    public async Task Unreachable_renderer_fails_only_documents_that_need_it()
+    public async Task An_unreachable_document_service_fails_every_upload_but_not_feedback_analysis()
     {
-        using var api = Api(() => new ThrowingHandler(HttpRequestError.ConnectionError));
+        using var api = Gateway(() => new ThrowingHandler(HttpRequestError.ConnectionError));
         var client = api.CreateClient();
 
+        // Classification happens in the document service too, so a text PDF fails like a scan: unlike before the split.
         var scan = await Post(client, DocumentFixtures.BlankPdf(), "scan.pdf");
         var text = await Post(client, DocumentFixtures.TextPdf(), "text.pdf");
         var ready = await client.GetAsync("/health/ready", Ct);
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, scan.StatusCode);
         Assert.NotNull(scan.Headers.RetryAfter);
-        Assert.Equal(HttpStatusCode.OK, text.StatusCode);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, text.StatusCode);
+        Assert.NotNull(text.Headers.RetryAfter);
         using var health = JsonDocument.Parse(await ready.Content.ReadAsStringAsync(Ct));
-        Assert.Equal("Degraded", health.RootElement.GetProperty("checks").GetProperty("renderer").GetProperty("status").GetString());
+        Assert.Equal("Degraded", health.RootElement.GetProperty("checks").GetProperty("document-service").GetProperty("status").GetString());
     }
 
     [Fact]
-    public async Task Renderer_crashing_on_a_document_is_a_bad_gateway()
+    public async Task A_document_service_crashing_on_a_document_is_a_bad_gateway()
     {
-        using var api = Api(() => new ThrowingHandler(HttpRequestError.ResponseEnded));
+        using var api = Gateway(() => new ThrowingHandler(HttpRequestError.ResponseEnded));
 
         var res = await Post(api.CreateClient(), DocumentFixtures.BlankPdf(), "scan.pdf");
 
@@ -99,21 +102,21 @@ public class RemoteRenderingEndpointTests(RendererTests.RendererFactory renderer
     }
 
     [Fact]
-    public async Task Readiness_checks_the_renderer_instead_of_local_ocr()
+    public async Task Readiness_checks_the_document_service_and_the_gateway_has_no_ocr_of_its_own()
     {
-        using var api = Api(() => renderer.Server.CreateHandler());
+        using var api = Gateway(() => documentService.Server.CreateHandler());
 
         var res = await api.CreateClient().GetAsync("/health/ready", Ct);
 
         using var health = JsonDocument.Parse(await res.Content.ReadAsStringAsync(Ct));
         var checks = health.RootElement.GetProperty("checks");
-        Assert.True(checks.TryGetProperty("renderer", out var check));
+        Assert.True(checks.TryGetProperty("document-service", out var check));
         Assert.NotEqual("Unhealthy", check.GetProperty("status").GetString());
         Assert.False(checks.TryGetProperty("ocr", out _));
     }
 
     [Fact]
-    public void Production_without_a_renderer_refuses_to_start()
+    public void Production_without_a_document_service_refuses_to_start()
     {
         using var api = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b
             .UseEnvironment(Environments.Production)
@@ -123,6 +126,6 @@ public class RemoteRenderingEndpointTests(RendererTests.RendererFactory renderer
             }));
 
         var ex = Assert.ThrowsAny<Exception>(() => api.CreateClient());
-        Assert.Contains("RendererUrl", ex.ToString());
+        Assert.Contains("DocumentServiceUrl", ex.ToString());
     }
 }

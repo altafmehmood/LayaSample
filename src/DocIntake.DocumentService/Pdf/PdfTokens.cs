@@ -2,7 +2,7 @@ using System.IO.Compression;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Tokens;
 
-namespace DocIntake.Api.Services.Documents.Pdf;
+namespace DocIntake.DocumentService.Pdf;
 
 /// <summary>Helpers for reading low-level PDF objects that PdfPig does not expose through its high-level API.</summary>
 internal static class PdfTokens

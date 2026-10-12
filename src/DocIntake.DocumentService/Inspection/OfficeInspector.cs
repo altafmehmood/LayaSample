@@ -1,9 +1,8 @@
 using System.IO.Compression;
 using System.Xml;
 using DocIntake.Contracts;
-using DocIntake.Api.Services.Usage;
 
-namespace DocIntake.Api.Services.Security;
+namespace DocIntake.DocumentService.Inspection;
 
 /// <summary>
 /// Looks inside a .docx or .xlsx package (a zip) for what makes an Office file more than a document: macros, ActiveX

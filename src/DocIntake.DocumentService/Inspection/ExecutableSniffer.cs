@@ -1,4 +1,4 @@
-namespace DocIntake.Api.Services.Security;
+namespace DocIntake.DocumentService.Inspection;
 
 /// <summary>Recognises programs and scripts by their first bytes and their name, so one smuggled into a document is noticed.</summary>
 public static class ExecutableSniffer

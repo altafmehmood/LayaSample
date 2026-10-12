@@ -27,8 +27,6 @@ public class ApiKeyTests
                 builder.UseEnvironment(environment);
             for (var i = 0; i < keys.Length; i++)
                 builder.UseSetting($"Auth:ApiKeys:{i}", keys[i]);
-            // Production refuses to start without a renderer unless in-process rendering is allowed.
-            builder.UseSetting("DocumentAnalysis:AllowInProcessRendering", "true");
             // Production defaults to scanning uploads with a ClamAV daemon, which these tests do not run. Set after
             // appsettings.json, which names the default, so it wins.
             builder.ConfigureAppConfiguration((_, config) =>
@@ -36,8 +34,7 @@ public class ApiKeyTests
             builder.ConfigureServices(s =>
             {
                 foreach (var d in s.Where(d => d.ServiceType == typeof(IHostedService)).ToList()) s.Remove(d);
-                s.RemoveAll<IOcrEngine>();
-                s.AddSingleton<IOcrEngine>(new FakeOcr());
+                s.UseDocumentService();
                 s.RemoveAll<ExtractionClients>();
                 s.AddSingleton(new ExtractionClients(model, model));
             });
