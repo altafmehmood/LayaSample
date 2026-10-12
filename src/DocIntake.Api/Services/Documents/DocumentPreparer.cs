@@ -1,3 +1,4 @@
+using DocIntake.ServiceDefaults;
 using System.Diagnostics;
 using System.Text;
 using System.Xml;
@@ -5,7 +6,7 @@ using ClosedXML.Excel;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 using DocIntake.Api.Services.Documents.Pdf;
 using DocIntake.Rendering;
 using Microsoft.Extensions.Options;

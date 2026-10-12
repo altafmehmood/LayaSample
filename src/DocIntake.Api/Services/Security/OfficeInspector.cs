@@ -1,6 +1,6 @@
 using System.IO.Compression;
 using System.Xml;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 using DocIntake.Api.Services.Usage;
 
 namespace DocIntake.Api.Services.Security;

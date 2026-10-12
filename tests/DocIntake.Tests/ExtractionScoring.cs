@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 
 namespace DocIntake.Tests;
 

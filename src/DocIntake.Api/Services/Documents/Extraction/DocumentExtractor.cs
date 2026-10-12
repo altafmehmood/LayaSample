@@ -1,5 +1,6 @@
+using DocIntake.ServiceDefaults;
 using System.Diagnostics;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 using DocIntake.Api.Services.Security;
 using DocIntake.Api.Services.Usage;
 using DocIntake.Rendering;

@@ -1,9 +1,10 @@
+using DocIntake.ServiceDefaults;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Diagnostics;
 using System.Net;
 using Microsoft.Extensions.AI;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 using DocIntake.Rendering;
 using OpenAI;
 

@@ -1,6 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 using Microsoft.Extensions.AI;
 
 namespace DocIntake.Api.Services.Documents.Extraction;

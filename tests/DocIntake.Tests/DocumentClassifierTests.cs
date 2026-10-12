@@ -1,4 +1,4 @@
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 using DocIntake.Api.Services.Documents;
 using DocIntake.Rendering;
 using Microsoft.Extensions.Options;

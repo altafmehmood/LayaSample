@@ -1,8 +1,9 @@
+using DocIntake.ServiceDefaults;
 using System.Diagnostics;
 using System.Threading.RateLimiting;
 using ElBruno.LocalLLMs.Decisions;
 using DocIntake.Api;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 using DocIntake.Api.Services;
 using DocIntake.Api.Services.Documents;
 using DocIntake.Api.Services.Documents.Extraction;
@@ -18,7 +19,7 @@ using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddIntakeTelemetry("docintake-gateway", DocumentMetrics.MeterName);
+builder.AddIntakeTelemetry("docintake-gateway", DocumentMetrics.MeterName, RenderingMetrics.MeterName);
 
 builder.Services.AddLocalDecisions(o =>
 {

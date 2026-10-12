@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.AcroForms.Fields;
 using UglyToad.PdfPig.Tokens;

@@ -1,4 +1,4 @@
-namespace DocIntake.Api.Models;
+namespace DocIntake.Contracts;
 
 public sealed record AnalyzeRequest(string? Text);
 

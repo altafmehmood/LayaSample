@@ -1,4 +1,4 @@
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 using UglyToad.PdfPig.Content;
 using UglyToad.PdfPig.Tokens;
 

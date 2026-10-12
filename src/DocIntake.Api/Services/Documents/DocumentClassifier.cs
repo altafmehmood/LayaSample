@@ -1,5 +1,5 @@
 using System.IO.Compression;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 using DocIntake.Api.Services.Documents.Pdf;
 using DocIntake.Api.Services.Security;
 using DocIntake.Rendering;

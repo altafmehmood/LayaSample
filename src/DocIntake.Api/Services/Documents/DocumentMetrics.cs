@@ -1,5 +1,6 @@
+using DocIntake.ServiceDefaults;
 using System.Diagnostics.Metrics;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 
 namespace DocIntake.Api.Services.Documents;
 

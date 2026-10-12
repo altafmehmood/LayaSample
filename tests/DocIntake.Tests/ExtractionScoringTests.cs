@@ -1,5 +1,5 @@
 using System.Text.Json;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 
 namespace DocIntake.Tests;
 

@@ -1,7 +1,8 @@
+using DocIntake.ServiceDefaults;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 using DocIntake.Api.Services.Documents.Extraction;
 using DocIntake.Rendering;
 using Microsoft.AspNetCore.Mvc.Testing;
