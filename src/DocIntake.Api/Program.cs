@@ -1,8 +1,9 @@
+using DocIntake.ServiceDefaults;
 using System.Diagnostics;
 using System.Threading.RateLimiting;
 using ElBruno.LocalLLMs.Decisions;
 using DocIntake.Api;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 using DocIntake.Api.Services;
 using DocIntake.Api.Services.Documents;
 using DocIntake.Api.Services.Documents.Extraction;
@@ -18,7 +19,7 @@ using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddIntakeTelemetry("docintake-gateway", DocumentMetrics.MeterName);
+builder.AddIntakeTelemetry("docintake-gateway", DocumentMetrics.MeterName, RenderingMetrics.MeterName);
 
 builder.Services.AddLocalDecisions(o =>
 {
@@ -74,7 +75,7 @@ builder.Services.AddSingleton<IDocumentPreparer, DocumentPreparer>();
 builder.Services.AddSingleton<IDocumentRouter, DocumentRouter>();
 builder.Services.AddSingleton<DocumentMetrics>();
 builder.Services.AddSingleton<DocumentPipeline>();
-builder.Services.AddSingleton<DocumentProblems>();
+builder.Services.AddSingleton<ProblemMapping>();
 builder.Services.AddUsageTracking(builder.Configuration);
 builder.Services.AddExtraction(builder.Configuration);
 foreach (var route in DocumentRoutes.All)
@@ -174,7 +175,7 @@ app.MapScalarApiReference(); // /scalar/v1
 
 const int MaxTextLength = 4000;
 
-static IResult Problem(int status, string detail) => DocumentProblems.Problem(status, detail);
+static IResult Problem(int status, string detail) => ProblemMapping.Problem(status, detail);
 
 // What the upload turned out to be, on the request's own span.
 static void TagDocument(HttpContext context, DocumentClassification classification, PreparedDocument prepared)
@@ -217,7 +218,7 @@ app.MapPost("/api/documents/analyze", async (
     bool? dispatch,
     bool? includeData,
     DocumentPipeline pipeline,
-    DocumentProblems problems,
+    ProblemMapping problems,
     IDocumentRouter router,
     IOptions<DocumentAnalysisOptions> options,
     DocumentMetrics metrics,
@@ -254,7 +255,7 @@ app.MapPost("/api/documents/analyze", async (
             .ToList();
         return Results.Ok(new AnalyzeDocumentResponse(file.FileName, classification, parts, agent, run.Risks));
     }
-    catch (Exception ex) when (DocumentProblems.Handles(ex))
+    catch (Exception ex) when (ProblemMapping.Handles(ex))
     {
         return problems.ToResult(ex, file.Length, run.Classification, httpContext);
     }
@@ -281,12 +282,11 @@ app.MapPost("/api/documents/analyze", async (
 app.MapPost("/api/documents/extract", async (
     IFormFile? file,
     DocumentPipeline pipeline,
-    DocumentProblems problems,
+    ProblemMapping problems,
     IDocumentExtractor extractor,
     IOptions<DocumentAnalysisOptions> options,
     DocumentMetrics metrics,
     HttpContext httpContext,
-    ILogger<Program> logger,
     CancellationToken ct) =>
 {
     if (!extractor.IsConfigured)
@@ -315,25 +315,9 @@ app.MapPost("/api/documents/extract", async (
         metrics.RecordDocument(run.Classification!.Kind.ToString(), run.Prepared!.Strategy.ToString(), StatusCodes.Status200OK);
         return Results.Ok(response);
     }
-    catch (Exception ex) when (DocumentProblems.Handles(ex))
+    catch (Exception ex) when (ProblemMapping.Handles(ex))
     {
         return problems.ToResult(ex, file.Length, run.Classification, httpContext);
-    }
-    catch (ExtractionException ex)
-    {
-        // Not the exception itself: provider error text can echo parts of the API key or of the document.
-        var cause = ex.InnerException?.GetType().Name ?? "none";
-        Telemetry.TagRequest(httpContext, "intake.outcome", ex.IsMisconfiguration ? "provider_misconfigured" : "extraction_failed");
-        Telemetry.TagRequest(httpContext, "intake.failure.cause", cause);
-        Activity.Current?.RecordFailure(ex, "extraction");
-        if (ex.IsMisconfiguration)
-            logger.LogError("The extraction provider rejected our credentials ({Cause}); check the API key", cause);
-        else
-            logger.LogWarning("Extraction failed with {Status}: {Reason} ({Cause})", ex.StatusCode, ex.Message, cause);
-        metrics.RecordDocument(run.Classification?.Kind.ToString() ?? "unclassified", "none", ex.StatusCode);
-        if (ex.RetryAfterSeconds is { } seconds)
-            httpContext.Response.Headers.RetryAfter = seconds.ToString();
-        return Problem(ex.StatusCode, ex.Message);
     }
 })
 .DisableAntiforgery()

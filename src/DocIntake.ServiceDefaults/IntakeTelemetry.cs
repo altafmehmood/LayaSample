@@ -9,7 +9,7 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
-namespace DocIntake.Rendering;
+namespace DocIntake.ServiceDefaults;
 
 /// <summary>
 /// OpenTelemetry for both services. Instrumentation is always on, so trace context flows from the API to the renderer;
@@ -35,10 +35,10 @@ public static class IntakeTelemetry
     private static readonly string[] PlatformMeters =
     [
         "Microsoft.AspNetCore.Hosting", "Microsoft.AspNetCore.Server.Kestrel", "Microsoft.AspNetCore.RateLimiting",
-        "Microsoft.AspNetCore.Diagnostics", "Microsoft.AspNetCore.Routing", "System.Net.Http", "System.Net.NameResolution",
-        RenderingMetrics.MeterName
+        "Microsoft.AspNetCore.Diagnostics", "Microsoft.AspNetCore.Routing", "System.Net.Http", "System.Net.NameResolution"
     ];
 
+    /// <param name="meters">The service's own meters; the platform ones above are always added.</param>
     public static WebApplicationBuilder AddIntakeTelemetry(this WebApplicationBuilder builder, string serviceName, params string[] meters)
     {
         var otel = builder.Services.AddOpenTelemetry()

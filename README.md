@@ -86,6 +86,23 @@ One entry per day's work, newest first: what was added, the commands to try it a
 **(paid)** call the OpenAI API; **(opt-in)** tests do not run unless you ask. Ports: `dotnet run` listens on 5091, Docker
 Compose on 8080.
 
+### 2026-10-12
+
+**One failure type, one place that turns it into HTTP.** The code every service will share is now in two projects
+(`DocIntake.Contracts` and `DocIntake.ServiceDefaults`), and failures below the endpoints are an
+`IntakeFailureException` with a kind, not a status code. `ProblemMapping` turns each kind into the status, Retry-After,
+span outcome, log line and metric. Callers see no change; telemetry and log text change slightly (the new
+`intake.outcome` for a refused model answer is `rejected`, and `intake.failure.cause` is set for every failure). See
+[docs/docintake-architecture.md](docs/docintake-architecture.md), Phase 2.
+
+    dotnet run --project src/DocIntake.Api
+    curl -i -F "file=@docs/samples/unsupported/legacy.doc" localhost:5091/api/documents/analyze
+    curl -i -F "file=@docs/samples/unsupported/notes.txt" localhost:5091/api/documents/extract
+
+You should see `415` with the same problem body as before, from both endpoints. Neither command is paid: the files fail
+before any model call. With the OTLP user secrets set, the request span has `intake.outcome` = `rejected`. The failure
+paths against the real model provider (rate limit, bad key, timeout) were tested with a fake client only.
+
 ### 2026-10-11
 
 **Renamed LayaSample → DocIntake.** The project, solution, namespaces, Helm chart, local images and telemetry now use

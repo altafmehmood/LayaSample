@@ -41,6 +41,8 @@ FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG TARGETARCH
 WORKDIR /src
 COPY global.json Directory.Build.props Directory.Packages.props ./
+COPY src/DocIntake.Contracts/DocIntake.Contracts.csproj src/DocIntake.Contracts/packages.lock.json src/DocIntake.Contracts/
+COPY src/DocIntake.ServiceDefaults/DocIntake.ServiceDefaults.csproj src/DocIntake.ServiceDefaults/packages.lock.json src/DocIntake.ServiceDefaults/
 COPY src/DocIntake.Rendering/DocIntake.Rendering.csproj src/DocIntake.Rendering/packages.lock.json src/DocIntake.Rendering/
 COPY src/DocIntake.Renderer/DocIntake.Renderer.csproj src/DocIntake.Renderer/packages.lock.json src/DocIntake.Renderer/
 COPY src/DocIntake.Api/DocIntake.Api.csproj src/DocIntake.Api/packages.lock.json src/DocIntake.Api/

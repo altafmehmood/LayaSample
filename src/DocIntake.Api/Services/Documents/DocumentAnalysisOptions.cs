@@ -109,10 +109,3 @@ public sealed class DocumentAnalysisOptions : IValidatableObject
                 [nameof(RendererUrl), nameof(AllowInProcessRendering)]);
     }
 }
-
-/// <summary>A problem with the uploaded document that maps to a specific HTTP status.</summary>
-public sealed class DocumentException(string message, int statusCode, Exception? inner = null)
-    : Exception(message, inner)
-{
-    public int StatusCode { get; } = statusCode;
-}

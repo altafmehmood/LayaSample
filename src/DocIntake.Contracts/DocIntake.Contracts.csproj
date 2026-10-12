@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    What the services say to each other: documents, extraction results, risk findings and failures. Plain types with no
+    package and no web framework reference, so any service can use it without taking on another one's dependencies.
+  -->
+
+</Project>

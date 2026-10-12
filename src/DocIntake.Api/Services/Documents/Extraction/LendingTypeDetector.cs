@@ -1,6 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 
 namespace DocIntake.Api.Services.Documents.Extraction;
 

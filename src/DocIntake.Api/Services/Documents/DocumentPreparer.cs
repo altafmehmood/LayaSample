@@ -1,3 +1,4 @@
+using DocIntake.ServiceDefaults;
 using System.Diagnostics;
 using System.Text;
 using System.Xml;
@@ -5,7 +6,7 @@ using ClosedXML.Excel;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 using DocIntake.Api.Services.Documents.Pdf;
 using DocIntake.Rendering;
 using Microsoft.Extensions.Options;
@@ -19,7 +20,7 @@ public interface IDocumentPreparer
     /// Converts the document into the form the downstream agent should receive, using the strategy the classification
     /// chose (per page for PDFs).
     /// </summary>
-    /// <exception cref="DocumentException">The content is unreadable (422).</exception>
+    /// <exception cref="IntakeFailureException">The content is unreadable.</exception>
     /// <exception cref="OcrUnavailableException"/>
     /// <exception cref="RendererUnavailableException"/>
     /// <exception cref="RenderingFailedException"/>
@@ -58,9 +59,9 @@ public sealed class DocumentPreparer(
                 await PreparePartsAsync(stream, classification, budget, includeAttachments: true, ct));
         }
         // The container was valid enough to classify, but the libraries (or the renderer) reject its content.
-        catch (Exception ex) when (!IsServerProblem(ex) && ex is not DocumentException)
+        catch (Exception ex) when (!IsServerProblem(ex) && ex is not IntakeFailureException)
         {
-            throw new DocumentException("document content could not be read", StatusCodes.Status422UnprocessableEntity, ex);
+            throw new IntakeFailureException(FailureKind.Unreadable, "document content could not be read", inner: ex);
         }
     }
 
@@ -174,8 +175,7 @@ public sealed class DocumentPreparer(
         }
 
         if (strategy == PreparationStrategy.StructuredData && parts.Count == 0)
-            throw new DocumentException("PDF has no machine-readable data (form values, XFA datasets or embedded XML/JSON)",
-                StatusCodes.Status422UnprocessableEntity);
+            throw new IntakeFailureException(FailureKind.Unreadable, "PDF has no machine-readable data (form values, XFA datasets or embedded XML/JSON)");
         return parts;
     }
 
@@ -300,7 +300,7 @@ public sealed class DocumentPreparer(
         using var doc = WordprocessingDocument.Open(stream, isEditable: false);
         var sb = new StringBuilder();
         var body = doc.MainDocumentPart?.Document?.Body
-            ?? throw new DocumentException("Word document has no body", StatusCodes.Status422UnprocessableEntity);
+            ?? throw new IntakeFailureException(FailureKind.Unreadable, "Word document has no body");
         AppendBlocks(sb, body.ChildElements);
         return sb.ToString();
     }

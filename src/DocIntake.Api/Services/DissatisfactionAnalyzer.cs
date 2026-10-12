@@ -1,5 +1,5 @@
 using ElBruno.LocalLLMs.Decisions;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 
 namespace DocIntake.Api.Services;
 

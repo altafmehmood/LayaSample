@@ -24,6 +24,8 @@
 
   <ItemGroup>
     <!-- Contracts and the remote client; the native renderer is used in-process only in development. -->
+    <ProjectReference Include="..\DocIntake.Contracts\DocIntake.Contracts.csproj" />
+    <ProjectReference Include="..\DocIntake.ServiceDefaults\DocIntake.ServiceDefaults.csproj" />
     <ProjectReference Include="..\DocIntake.Rendering\DocIntake.Rendering.csproj" />
   </ItemGroup>
 

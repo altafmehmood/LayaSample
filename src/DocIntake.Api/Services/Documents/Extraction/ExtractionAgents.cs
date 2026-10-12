@@ -1,6 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 using Microsoft.Extensions.AI;
 
 namespace DocIntake.Api.Services.Documents.Extraction;
@@ -44,11 +44,11 @@ public abstract class ExtractionAgent<TRoot> : IExtractionAgent where TRoot : cl
             response.Usage?.CachedInputTokenCount ?? 0, response.Usage?.ReasoningTokenCount);
 
         if (response.FinishReason == ChatFinishReason.Length)
-            throw new ExtractionException(StatusCodes.Status502BadGateway, "the model's answer was cut off; try fewer pages") { Usage = usage };
+            throw new IntakeFailureException(FailureKind.DependencyFailed, "the model's answer was cut off; try fewer pages") { Usage = usage };
         if (response.FinishReason == ChatFinishReason.ContentFilter)
-            throw new ExtractionException(StatusCodes.Status422UnprocessableEntity, "the model declined to process this document") { Usage = usage };
+            throw new IntakeFailureException(FailureKind.Declined, "the model declined to process this document") { Usage = usage };
         if (!response.TryGetResult(out var root) || root is null)
-            throw new ExtractionException(StatusCodes.Status502BadGateway, "the model returned an unreadable answer") { Usage = usage };
+            throw new IntakeFailureException(FailureKind.DependencyFailed, "the model returned an unreadable answer") { Usage = usage };
 
         return new AgentOutput(ToResult(root), usage);
     }

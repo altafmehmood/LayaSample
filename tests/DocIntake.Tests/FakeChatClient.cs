@@ -1,7 +1,7 @@
 using System.ClientModel.Primitives;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 using Microsoft.Extensions.AI;
 
 namespace DocIntake.Tests;

@@ -1,5 +1,5 @@
 using System.IO.Compression;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 using DocIntake.Api.Services.Documents.Pdf;
 using DocIntake.Api.Services.Security;
 using DocIntake.Rendering;
@@ -12,7 +12,7 @@ namespace DocIntake.Api.Services.Documents;
 public interface IDocumentClassifier
 {
     /// <summary>Classifies the document from its content (not its name or client-supplied content type).</summary>
-    /// <exception cref="DocumentException">Unsupported (415) or unreadable/encrypted/oversized (422) document.</exception>
+    /// <exception cref="IntakeFailureException">Unsupported, unreadable, encrypted or over a limit.</exception>
     /// <exception cref="RendererUnavailableException">Images are inspected by the renderer, which is unreachable.</exception>
     /// <exception cref="RenderingFailedException">The renderer failed while inspecting an image.</exception>
     Task<DocumentClassification> ClassifyAsync(Stream stream, CancellationToken ct = default);
@@ -59,10 +59,9 @@ public sealed class DocumentClassifier(IOptions<DocumentAnalysisOptions> options
             DocumentSniffer.Xlsx => Office(stream, DocumentKind.Spreadsheet, mediaType, DocumentRoutes.Spreadsheet, "Excel workbook; convert sheets to markdown tables"),
             DocumentSniffer.Docx => Office(stream, DocumentKind.WordDocument, mediaType, DocumentRoutes.Text, "Word document; convert to markdown"),
             _ when DocumentSniffer.IsImage(mediaType) => await ClassifyImageAsync(stream, mediaType, ct),
-            DocumentSniffer.Ole => throw new DocumentException(
-                "legacy (.xls/.doc) or password-protected Office files are not supported; save as unprotected .xlsx/.docx",
-                StatusCodes.Status415UnsupportedMediaType),
-            _ => throw new DocumentException(Unsupported, StatusCodes.Status415UnsupportedMediaType)
+            DocumentSniffer.Ole => throw new IntakeFailureException(FailureKind.Unsupported,
+                "legacy (.xls/.doc) or password-protected Office files are not supported; save as unprotected .xlsx/.docx"),
+            _ => throw new IntakeFailureException(FailureKind.Unsupported, Unsupported)
         };
     }
 
@@ -74,8 +73,7 @@ public sealed class DocumentClassifier(IOptions<DocumentAnalysisOptions> options
             file.Position = 0;
             using var pdf = PdfDocument.Open(file);
             if (pdf.NumberOfPages > _options.MaxPdfPages)
-                throw new DocumentException($"PDF has {pdf.NumberOfPages} pages; at most {_options.MaxPdfPages} are supported",
-                    StatusCodes.Status422UnprocessableEntity);
+                throw new IntakeFailureException(FailureKind.OverLimit, $"PDF has {pdf.NumberOfPages} pages; at most {_options.MaxPdfPages} are supported");
             var inspection = new PdfInspection(pdf, file, _options);
 
             foreach (var detector in PdfDetectors) detector.InspectDocument(inspection);
@@ -92,12 +90,12 @@ public sealed class DocumentClassifier(IOptions<DocumentAnalysisOptions> options
         }
         catch (PdfDocumentEncryptedException ex)
         {
-            throw new DocumentException("PDF is password protected", StatusCodes.Status422UnprocessableEntity, ex);
+            throw new IntakeFailureException(FailureKind.Unreadable, "PDF is password protected", inner: ex);
         }
         // PdfPig surfaces malformed input as a wide range of exception types.
-        catch (Exception ex) when (ex is not (DocumentException or OperationCanceledException))
+        catch (Exception ex) when (ex is not (IntakeFailureException or OperationCanceledException))
         {
-            throw new DocumentException("PDF could not be read", StatusCodes.Status422UnprocessableEntity, ex);
+            throw new IntakeFailureException(FailureKind.Unreadable, "PDF could not be read", inner: ex);
         }
     }
 
@@ -111,10 +109,10 @@ public sealed class DocumentClassifier(IOptions<DocumentAnalysisOptions> options
         }
         catch (InvalidDataException ex)
         {
-            throw new DocumentException("image could not be read", StatusCodes.Status422UnprocessableEntity, ex);
+            throw new IntakeFailureException(FailureKind.Unreadable, "image could not be read", inner: ex);
         }
         if (pages.Count > _options.MaxImageFrames)
-            throw new DocumentException($"image has more than {_options.MaxImageFrames} pages", StatusCodes.Status422UnprocessableEntity);
+            throw new IntakeFailureException(FailureKind.OverLimit, $"image has more than {_options.MaxImageFrames} pages");
 
         // An image has no text layer: OCR is the only source of text.
         var strategy = _options.EnableOcr ? PreparationStrategy.Hybrid : PreparationStrategy.RenderToPng;
@@ -167,8 +165,7 @@ public sealed class DocumentClassifier(IOptions<DocumentAnalysisOptions> options
             {
                 // Compared as "size > max - total" so huge declared sizes cannot overflow past the check.
                 if (entry.Length > max - total)
-                    throw new DocumentException($"document expands to more than {max} bytes when unpacked",
-                        StatusCodes.Status422UnprocessableEntity);
+                    throw new IntakeFailureException(FailureKind.OverLimit, $"document expands to more than {max} bytes when unpacked");
                 total += entry.Length;
             }
         }

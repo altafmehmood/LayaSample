@@ -1,3 +1,4 @@
+using DocIntake.ServiceDefaults;
 using DocIntake.Rendering;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 

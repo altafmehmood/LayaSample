@@ -1,6 +1,6 @@
 using System.ComponentModel;
 
-namespace DocIntake.Api.Models;
+namespace DocIntake.Contracts;
 
 public enum LendingDocumentType { LoanApplication, Ucc1, Ucc3, LoanSecurityAgreement, Other }
 

@@ -77,12 +77,12 @@ public static class UsageEndpoints
             long? before, int? limit, string? format, CancellationToken ct) =>
         {
             if (!store.Enabled)
-                return DocumentProblems.Problem(StatusCodes.Status503ServiceUnavailable, "usage tracking is not configured");
+                return ProblemMapping.Problem(StatusCodes.Status503ServiceUnavailable, "usage tracking is not configured");
             if (Validate(from, to, format, http) is { } invalid)
                 return invalid;
             var take = limit ?? DefaultLimit;
             if (take < 1 || take > MaxLimit)
-                return DocumentProblems.Problem(StatusCodes.Status400BadRequest, $"limit must be between 1 and {MaxLimit}");
+                return ProblemMapping.Problem(StatusCodes.Status400BadRequest, $"limit must be between 1 and {MaxLimit}");
 
             // One more than asked for, to know whether there is a next page.
             var rows = await store.QueryAsync(Scope(http, new UsageQuery(from, to, apiKey, model, file, before, take + 1)), ct);
@@ -115,12 +115,12 @@ public static class UsageEndpoints
             string? groupBy, string? format, CancellationToken ct) =>
         {
             if (!store.Enabled)
-                return DocumentProblems.Problem(StatusCodes.Status503ServiceUnavailable, "usage tracking is not configured");
+                return ProblemMapping.Problem(StatusCodes.Status503ServiceUnavailable, "usage tracking is not configured");
             if (Validate(from, to, format, http) is { } invalid)
                 return invalid;
             var group = string.IsNullOrEmpty(groupBy) ? "day" : groupBy;
             if (!UsageStore.GroupBys.Contains(group))
-                return DocumentProblems.Problem(StatusCodes.Status400BadRequest, $"groupBy must be one of {string.Join(", ", UsageStore.GroupBys)}");
+                return ProblemMapping.Problem(StatusCodes.Status400BadRequest, $"groupBy must be one of {string.Join(", ", UsageStore.GroupBys)}");
 
             var groups = await store.SummaryAsync(Scope(http, new UsageQuery(from, to, apiKey, model, file, null, 0)), group, ct);
             var total = new UsageSummaryRow("total", groups.Sum(g => g.Calls), groups.Sum(g => g.InputTokens), groups.Sum(g => g.CachedInputTokens),
@@ -151,9 +151,9 @@ public static class UsageEndpoints
     private static IResult? Validate(DateTimeOffset? from, DateTimeOffset? to, string? format, HttpContext http)
     {
         if (from is { } f && to is { } t && t <= f)
-            return DocumentProblems.Problem(StatusCodes.Status400BadRequest, "to must be after from");
+            return ProblemMapping.Problem(StatusCodes.Status400BadRequest, "to must be after from");
         if (!string.IsNullOrEmpty(format) && !format.Equals("json", StringComparison.OrdinalIgnoreCase) && !format.Equals("csv", StringComparison.OrdinalIgnoreCase))
-            return DocumentProblems.Problem(StatusCodes.Status400BadRequest, "format must be json or csv");
+            return ProblemMapping.Problem(StatusCodes.Status400BadRequest, "format must be json or csv");
         return null;
     }
 

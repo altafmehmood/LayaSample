@@ -1,6 +1,7 @@
+using DocIntake.ServiceDefaults;
 using System.Net;
 using System.Net.Http.Json;
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 using DocIntake.Api.Services;
 using DocIntake.Rendering;
 using Microsoft.AspNetCore.Mvc.Testing;

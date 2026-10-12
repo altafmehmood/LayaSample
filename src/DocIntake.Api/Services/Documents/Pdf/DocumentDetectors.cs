@@ -1,4 +1,4 @@
-using DocIntake.Api.Models;
+using DocIntake.Contracts;
 using DocIntake.Api.Services.Security;
 using DocIntake.Api.Services.Usage;
 using UglyToad.PdfPig.AcroForms;

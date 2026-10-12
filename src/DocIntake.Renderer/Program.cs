@@ -1,3 +1,4 @@
+using DocIntake.ServiceDefaults;
 using System.Text.Json;
 using System.Threading.RateLimiting;
 using DocIntake.Rendering;
@@ -24,7 +25,7 @@ public sealed class RendererEntryPoint
     {
         var builder = WebApplication.CreateBuilder(args);
 
-        builder.AddIntakeTelemetry("docintake-document");
+        builder.AddIntakeTelemetry("docintake-document", RenderingMetrics.MeterName);
 
         builder.Services.AddProblemDetails();
         builder.Services.AddOptions<RenderingOptions>()
