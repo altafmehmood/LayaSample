@@ -4,7 +4,6 @@ using DocIntake.Contracts;
 using DocIntake.Api.Services;
 using DocIntake.Api.Services.Security;
 using DocIntake.Api.Services.Usage;
-using DocIntake.Rendering;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
 

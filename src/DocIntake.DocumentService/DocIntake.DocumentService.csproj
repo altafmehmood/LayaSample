@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    The only service that reads untrusted document bytes: PdfPig, the Office libraries, PDFium, ImageMagick and OCR. The
+    gateway never references any of them. Deploy it without network egress and with a read-only file system.
+  -->
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" />
+    <PackageReference Include="DocumentFormat.OpenXml" />
+    <PackageReference Include="PdfPig" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DocIntake.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DocIntake.Contracts\DocIntake.Contracts.csproj" />
+    <ProjectReference Include="..\DocIntake.ServiceDefaults\DocIntake.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\DocIntake.Rendering\DocIntake.Rendering.csproj" />
+  </ItemGroup>
+
+</Project>

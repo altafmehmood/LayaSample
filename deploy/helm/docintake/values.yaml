@@ -136,7 +136,7 @@ renderer:
   startupProbe: { periodSeconds: 10, failureThreshold: 60 }
   extraEnv: []
 
-# The renderer parses untrusted documents with native code: only the API may reach it, and it may reach nothing.
+# The renderer (the document service) reads every untrusted document: only the API may reach it, and it may reach nothing.
 networkPolicy:
   enabled: true
 

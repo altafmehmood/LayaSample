@@ -1,6 +1,7 @@
+using DocIntake.DocumentService;
 using DocIntake.Contracts;
 using DocIntake.Api.Services.Documents;
-using DocIntake.Api.Services.Documents.Pdf;
+using DocIntake.DocumentService.Pdf;
 
 namespace DocIntake.Tests;
 

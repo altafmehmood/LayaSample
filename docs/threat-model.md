@@ -9,6 +9,13 @@ It is a desk review: the code, charts and CI were read, and nothing here was att
 **covered** means a control exists in the code, not that it was proven to work. The garak red-team baseline in
 [`redteam/README.md`](../redteam/README.md) is still empty, so no claim about prompt injection is measured.
 
+**Update 2026-10-12:** the gateway no longer reads documents. Classification and preparation, with PdfPig and the Office
+libraries, moved into the document service (the old renderer), so finding 2.3 below is now mitigated: those parsers run only
+in the service that has no egress, and a test checks that the gateway's build contains none of them. The row is left as it
+was written; the text after "Update" says what changed. This is a design and test result, not an attack: nothing was run
+against the parsers. Finding 4.2 matters more now, because the document service sees every upload and still trusts any pod
+that reaches it.
+
 ## What is protected
 
 | Asset | Why it matters |
@@ -56,7 +63,7 @@ Status: **covered** (a control exists), **partial** (reduced but not closed), **
 |---|---|---|---|
 | 2.1 | **Malware** in an upload | Scanned with ClamAV before any parser; infected gets 422; no verdict gets 503 (fail closed) (`DocumentPipeline.cs:50-56,98-125`, `Security/SecurityOptions.cs:35-37`). ClamAV only knows known signatures | covered, with the limit that unknown malware passes |
 | 2.2 | **Scanner switched off.** `Provider: none` in `appsettings.Development.json`, or `FailMode: open` | Compose and Helm set clamd on; the default is clamd. A local `dotnet run` does not scan (found today when EICAR returned 415, not 422). Nothing stops a production deploy from setting `none` | partial |
-| 2.3 | **Elevation.** A crafted PDF, spreadsheet or Office file exploits a parser (PdfPig, ClosedXML, OpenXML) and runs code in the API process, which holds the OpenAI key and API keys | Parsers are managed code. The pod is non-root, read-only root filesystem, capabilities dropped, no service account token (`templates/_helpers.tpl:64-75`, `api-deployment.yaml:36`). The API pod can still reach OpenAI and the collector | partial |
+| 2.3 | **Elevation.** A crafted PDF, spreadsheet or Office file exploits a parser (PdfPig, ClosedXML, OpenXML) and runs code in the API process, which holds the OpenAI key and API keys | Parsers are managed code. The pod is non-root, read-only root filesystem, capabilities dropped, no service account token (`templates/_helpers.tpl:64-75`, `api-deployment.yaml:36`). The API pod can still reach OpenAI and the collector. **Update 2026-10-12:** PdfPig, ClosedXML and OpenXML now run in the document service, not the API; the gateway has none of them (`tests/DocIntake.Tests/ArchitectureTests.cs`) | mitigated by the split; the document service has no authentication of its own (4.2) |
 | 2.2b | **Elevation.** The same, against PDFium or ImageMagick | These run only in the renderer, which has no egress except the collector and DNS, accepts calls only from the API pod and has the same container hardening (`templates/networkpolicy.yaml:1-47`, `renderer-deployment.yaml:22-63`). The renderer has no authentication of its own, so any pod that reaches it is trusted (see 4.2) | partial |
 | 2.4 | **Denial of service.** Decompression bombs, huge page sizes, deep nesting | Page cap, bitmap cap, per-request timeout, spreadsheet row cap (`DocumentAnalysisOptions.cs`, `LocalPageRasterizer.cs:135-141`). No memory limit is set on the API pod by default | partial |
 | 2.5 | **Active content.** Macros, embedded executables, JavaScript, hidden text | Detected from the file's structure before rendering and refused with 422 by default (`Security/RiskScanner.cs:29-35`, `Security/OfficeInspector.cs`, `Security/ExecutableSniffer.cs`) | covered |

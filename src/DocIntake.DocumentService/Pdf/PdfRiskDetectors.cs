@@ -2,7 +2,7 @@ using DocIntake.Contracts;
 using UglyToad.PdfPig.Content;
 using UglyToad.PdfPig.Tokens;
 
-namespace DocIntake.Api.Services.Documents.Pdf;
+namespace DocIntake.DocumentService.Pdf;
 
 /// <summary>
 /// PDF actions that run code or a program, and embedded rich media. The service never runs any of it: PdfPig and PDFium

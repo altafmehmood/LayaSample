@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json;
 using DocIntake.Contracts;
 
 namespace DocIntake.Tests;
@@ -31,6 +32,10 @@ public class ArchitectureTests
     [Theory]
     [InlineData("src/DocIntake.Api/Services/Documents")]
     [InlineData("src/DocIntake.Api/Services/Security")]
+    [InlineData("src/DocIntake.DocumentService/Classification")]
+    [InlineData("src/DocIntake.DocumentService/Preparation")]
+    [InlineData("src/DocIntake.DocumentService/Pdf")]
+    [InlineData("src/DocIntake.DocumentService/Inspection")]
     public void The_services_below_the_endpoints_never_mention_http_status_codes(string folder)
     {
         var files = Directory.EnumerateFiles(Path.Combine(RepositoryRoot(), folder), "*.cs", SearchOption.AllDirectories)
@@ -38,5 +43,42 @@ public class ArchitectureTests
 
         Assert.NotEmpty(files);
         Assert.All(files, file => Assert.DoesNotContain("StatusCodes", File.ReadAllText(file)));
+    }
+
+    // The gateway never reads a document, so none of what reads one may be in its build: not a PDF, Office, image or OCR
+    // library, and not the rendering project that wraps them. The dependency manifest lists everything that is published.
+    // ONNX Runtime is deliberately not on the list: the Laya feedback model runs on it, in the gateway, until it moves to
+    // its own service (Phase 5).
+    [Fact]
+    public void The_gateway_carries_no_parser_and_no_native_library()
+    {
+        var manifests = Directory.EnumerateFiles(Path.Combine(RepositoryRoot(), "src/DocIntake.Api/bin"), "DocIntake.Api.deps.json", SearchOption.AllDirectories).ToList();
+        Assert.NotEmpty(manifests);
+
+        string[] forbidden =
+        [
+            "PdfPig", "ClosedXML", "DocumentFormat.OpenXml", "System.Security.Cryptography.Pkcs", "Magick.NET", "PDFtoImage",
+            "SkiaSharp", "RapidOcrNet", "DocIntake.Rendering", "DocIntake.DocumentService"
+        ];
+        foreach (var manifest in manifests)
+        {
+            using var json = JsonDocument.Parse(File.ReadAllText(manifest));
+            var libraries = json.RootElement.GetProperty("libraries").EnumerateObject().Select(l => l.Name).ToList();
+            Assert.Contains(libraries, l => l.StartsWith("DocIntake.Contracts/", StringComparison.Ordinal));
+            foreach (var name in forbidden)
+                Assert.DoesNotContain(libraries, l => l.StartsWith(name, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    [Fact]
+    public void The_document_service_is_where_the_parsers_are()
+    {
+        var manifests = Directory.EnumerateFiles(Path.Combine(RepositoryRoot(), "src/DocIntake.DocumentService/bin"), "DocIntake.DocumentService.deps.json", SearchOption.AllDirectories).ToList();
+        Assert.NotEmpty(manifests);
+
+        using var json = JsonDocument.Parse(File.ReadAllText(manifests[0]));
+        var libraries = json.RootElement.GetProperty("libraries").EnumerateObject().Select(l => l.Name).ToList();
+        foreach (var name in new[] { "PdfPig", "ClosedXML", "DocumentFormat.OpenXml", "Magick.NET", "PDFtoImage", "RapidOcrNet" })
+            Assert.Contains(libraries, l => l.StartsWith(name, StringComparison.OrdinalIgnoreCase));
     }
 }

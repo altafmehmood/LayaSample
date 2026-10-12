@@ -5,7 +5,6 @@ using System.Diagnostics;
 using System.Net;
 using Microsoft.Extensions.AI;
 using DocIntake.Contracts;
-using DocIntake.Rendering;
 using OpenAI;
 
 namespace DocIntake.Api.Services.Documents.Extraction;

@@ -1,6 +1,6 @@
 using System.IO.Compression;
 
-namespace DocIntake.Api.Services.Documents;
+namespace DocIntake.DocumentService;
 
 /// <summary>Identifies a file's media type from its content; names and client-supplied types are never trusted.</summary>
 public static class DocumentSniffer

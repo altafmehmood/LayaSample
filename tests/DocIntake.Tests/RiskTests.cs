@@ -1,3 +1,4 @@
+using DocIntake.DocumentService;
 using DocIntake.Api.Services;
 using System.IO.Compression;
 using System.Net;
@@ -99,7 +100,7 @@ public class RiskTests
     // --- the structure of a PDF ---
 
     private static DocumentClassifier Classifier() =>
-        new(Options.Create(new DocumentAnalysisOptions { AllowInProcessRendering = true }), new StreamingTests.NoRasterizer());
+        new(Options.Create(new DocumentAnalysisOptions()), new StreamingTests.NoRasterizer());
 
     private static IReadOnlyList<RiskFinding> RisksOf(byte[] file)
     {
@@ -368,8 +369,7 @@ public class RiskTests
             builder.ConfigureServices(s =>
             {
                 foreach (var d in s.Where(d => d.ServiceType == typeof(IHostedService)).ToList()) s.Remove(d);
-                s.RemoveAll<IOcrEngine>();
-                s.AddSingleton<IOcrEngine>(new FakeOcr());
+                s.UseDocumentService();
                 s.RemoveAll<ExtractionClients>();
                 s.AddSingleton(new ExtractionClients(model, model));
             });

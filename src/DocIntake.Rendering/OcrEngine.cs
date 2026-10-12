@@ -1,3 +1,4 @@
+using DocIntake.Contracts;
 using Microsoft.Extensions.Options;
 using RapidOcrNet;
 using SkiaSharp;

@@ -176,8 +176,8 @@ public class ProblemMappingTests
     [Theory]
     [InlineData(typeof(OcrUnavailableException), 503, "ocr_unavailable", null, "OCR is unavailable; retry later")]
     [InlineData(typeof(MalwareScannerUnavailableException), 503, "scanner_unavailable", "10", "document scanning is unavailable; retry later")]
-    [InlineData(typeof(RendererUnavailableException), 503, "renderer_unavailable", "10", "document rendering is unavailable; retry later")]
-    [InlineData(typeof(RenderingFailedException), 502, "render_failed", null, "document could not be rendered")]
+    [InlineData(typeof(RendererUnavailableException), 503, "renderer_unavailable", "10", "document processing is unavailable; retry later")]
+    [InlineData(typeof(RenderingFailedException), 502, "render_failed", null, "document could not be processed")]
     public void The_rendering_and_scanner_failures_keep_their_answers(Type type, int status, string outcome, string? retryAfter, string detail)
     {
         var call = Start();

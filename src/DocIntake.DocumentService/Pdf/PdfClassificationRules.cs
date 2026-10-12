@@ -1,6 +1,6 @@
 using DocIntake.Contracts;
 
-namespace DocIntake.Api.Services.Documents.Pdf;
+namespace DocIntake.DocumentService.Pdf;
 
 /// <summary>Turns detector signals into per-page and document-level decisions. Pure, so it is unit-testable without PDFs.</summary>
 public static class PdfClassificationRules

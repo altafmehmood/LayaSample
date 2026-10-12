@@ -1,11 +1,12 @@
-# The API plus the isolated renderer.
+# The gateway (api) plus the isolated document service (renderer).
 #
 #   docker compose up --build                                   # http://localhost:8080
 #   OCR_MODEL=PPOCRv6Medium docker compose up --build           # multilingual OCR
 #
-# Only the renderer parses PDFs and images with native code (PDFium, ImageMagick, OCR). It sits on an internal
-# network with no route out, a read-only file system, no Linux capabilities and its own memory/CPU/process limits,
-# so a malicious document that crashes or takes over a parser can neither reach the network nor touch the API.
+# Only the document service reads documents: it classifies and prepares every upload with PdfPig, the Office libraries,
+# PDFium, ImageMagick and OCR. It sits on an internal network with no route out, a read-only file system, no Linux
+# capabilities and its own memory/CPU/process limits, so a malicious document that crashes or takes over a parser can
+# neither reach the network nor touch the gateway.
 
 name: docintake
 
@@ -18,7 +19,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      DocumentAnalysis__RendererUrl: http://renderer:8080
+      DocumentAnalysis__DocumentServiceUrl: http://renderer:8080
       # Enables POST /api/documents/extract; empty leaves it answering 503.
       Extraction__ApiKey: ${OPENAI_API_KEY:-}
       # Callers must send this as X-Api-Key to /api/documents/extract; empty makes extraction answer 503.
@@ -75,7 +76,7 @@ services:
         OCR_MODEL: ${OCR_MODEL:-PPOCRv5Latin}
     image: docintake-renderer
     environment:
-      # Set with the collector profile; the renderer can reach nothing else.
+      # Set with the collector profile; the document service can reach nothing else.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${DOCINTAKE_OTLP_ENDPOINT:-}
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
     networks: [internal]
@@ -88,7 +89,7 @@ services:
     mem_limit: 2g
     cpus: 4
     pids_limit: 512
-    # A document that crashes the renderer fails its own request (502 from the API); the renderer comes straight back.
+    # A document that crashes the document service fails its own request (502 from the API); the service comes straight back.
     restart: always
 
   # docker compose --profile telemetry up   with DOCINTAKE_OTLP_ENDPOINT=http://collector:4318 and HONEYCOMB_API_KEY=<ingest key>
@@ -113,5 +114,5 @@ volumes:
 networks:
   public: {}
   internal:
-    # No outbound access from this network: the renderer can only answer the API.
+    # No outbound access from this network: the document service can only answer the gateway.
     internal: true

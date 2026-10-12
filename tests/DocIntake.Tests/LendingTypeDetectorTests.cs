@@ -1,3 +1,4 @@
+using DocIntake.DocumentService;
 using System.Text.Json;
 using DocIntake.Contracts;
 using DocIntake.Api.Services.Documents;

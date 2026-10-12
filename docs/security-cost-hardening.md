@@ -9,6 +9,14 @@ it, and what it does not do. The README has the short versions: the Features tab
 `DOCINTAKE_API_KEY` and `DOCINTAKE_ON_FINDING`. Kubernetes names (`laya-otel`, `laya-clamav`, namespace `laya`) are
 unchanged. See [docintake-architecture.md](docintake-architecture.md).
 
+**Update 2026-10-12 (document service):** classification and preparation now run in the document service, so where this
+page says "the renderer", "the classifier" or "the preparer" they are one service that the gateway calls twice per upload
+(`POST /documents/classify`, then `/prepare`). `RemotePageRasterizer`, `/render` and `/inspect` are gone; the gateway's
+`DocumentServiceClient` streams the upload (`StreamContent` over `LeaveOpenStream`) and the service reads it from the form
+file. The order is unchanged: scan, classify, structure findings (refused before anything is prepared, so before rendering),
+prepare, text findings. The streaming and memory limits on this page describe the gateway and the service separately now:
+the gateway still never holds the document in memory, and the service reads it from the spooled form file.
+
 ## Why
 
 - Two extractions on DOKS showed about $3 on the OpenAI dashboard and nothing in the repository could explain it. (The cause

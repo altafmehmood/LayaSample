@@ -6,7 +6,7 @@ All files are generated, so there are no third-party licensing questions. Most c
 
 ## Trying them
 
-1. Start the API: `dotnet run --project src/DocIntake.Api` (listens on http://localhost:5091).
+1. Start the document service (`dotnet run --project src/DocIntake.DocumentService`, http://localhost:5092) and the API (`dotnet run --project src/DocIntake.Api`, http://localhost:5091). Uploads are read by the document service, so both must run.
 2. Send the samples using one of these:
    - [`samples.http`](samples.http) in VS Code (REST Client extension), Visual Studio or Rider.
    - Scalar at http://localhost:5091/scalar/v1.
