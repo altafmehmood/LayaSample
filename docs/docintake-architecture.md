@@ -33,6 +33,100 @@ Target, in later phases:
 | `docintake-extraction` | The model agents. The only service with internet access and the model key. |
 | `docintake-decisions` | The Laya model |
 
+## Phase 6: the slim gateway (2026-10-13)
+
+**What it does.** No new service and no deployment change: this phase tidies the gateway so that what it does is easy to see.
+`Program.cs` went from 378 lines to **83**, all wiring. The endpoints, the upload checks, the rate limits, the OpenAPI setup and
+the service clients each have their own file, the gateway answers failures in one place that is a real exception handler, and it
+no longer looks for findings: the services find, the gateway decides.
+
+**What moved where.**
+
+| New file (`DocIntake.Api`) | What it holds |
+|---|---|
+| `Endpoints/DocumentEndpoints.cs`, `FeedbackEndpoints.cs`, `HealthEndpoints.cs` | The handlers and their OpenAPI metadata. A handler does the work and throws when it fails. `UsageEndpoints` was already its own file |
+| `Endpoints/UploadFilters.cs` | `UploadValidationFilter` (a file is there: 400; not too big: 413; then tags the span, records the queue wait and starts the request's `DocumentRequest`) and `RequireExtractionFilter` (asks the extraction service first) |
+| `RateLimiting.cs`, `OpenApiSetup.cs`, `ServiceClients.cs` | The rate-limit policies, the OpenAPI document, and the options, HTTP client, typed client and readiness check for each of the three services |
+| `Services/Documents/DocumentRequest.cs` | What the failure handler needs to know about an upload that has started |
+| `Services/Security/RiskPolicy.cs` | Was `RiskScanner`: records findings and decides, never detects |
+
+**Failures are answered by an exception handler.** `ProblemMapping` now implements `IExceptionHandler` (the plan from Phase 2, which
+had deferred it). Endpoints and filters throw; the handler maps the failure to the status, `Retry-After`, the outcome and kind on the
+span, the log line and, for an upload, the document metric. It knows an upload's size and kind from the `DocumentRequest` the upload
+filter put on the request; any other failure (feedback, the extraction pre-check) is answered without them. Anything it does not know
+(a bug, a cancelled request) is left to the default handler, so a real 500 is still logged as one.
+
+**The services find, the gateway decides.** Finding instruction-like text in what the model will read moved from the gateway to the
+document service (`TextRisks`), next to where the structure findings already were. `POST /documents/prepare` now answers a
+`PrepareResponse(Document, Risks)`, the same shape as `ClassifyResponse`. The gateway's `RiskPolicy` has three methods,
+`EnforceStructure`, `EnforceText` and `EnforceAnswer`, each taking findings; it uses no detection rule, and a test checks that
+`InjectionPatterns` is not referenced anywhere in the gateway.
+
+**Behaviour changes.**
+- **A rolling deploy needs the gateway and the document service replaced together.** `/documents/prepare` changed shape (a bare
+  document before, `{document, risks}` now), so an old gateway reading a new service, or a new gateway reading an old one, gets an
+  answer it cannot use and returns a 502 until both are on the new version. The same `helm upgrade` replaces both, so expect a short
+  burst of 502s on document requests during the rollout.
+- A feedback failure's outcome on the span and in the log is **`feedback_failed`**, not `extraction_failed`. That label was written
+  for failed model calls and the decisions service reused the same failure kinds in Phase 5; a real run of this phase showed it.
+- A failure of the extraction pre-check (the service unreachable) is no longer counted in the document metric
+  `intake.document.analyzed` and has no document kind, because no document was involved. The status, `Retry-After` and text are unchanged.
+- The order of the checks is unchanged: an unconfigured extraction answers 503 **before** the upload is validated (a request with no
+  file at all gets 503, not 400), and a configured one validates before any work.
+- Nothing else a caller or an operator sees changes: same routes, statuses, bodies, headers, log levels (a bad file is Information, a
+  failing provider Warning) and span attributes. I checked the log levels against a real run: the exception middleware does **not**
+  log handled failures as errors.
+
+**Deviations from the plan.**
+- The plan's Phase 6 also listed the gateway's readiness as `Degraded` when a dependency is down. That was already done, one service
+  at a time, in Phases 3 to 5.
+- `DocumentPipeline` still takes an `IFormFile`; it was not changed to a plain upload type.
+
+**Key files.** `src/DocIntake.Api/Program.cs`, `Endpoints/*`, `Services/ProblemMapping.cs`, `Services/Security/RiskPolicy.cs`;
+`src/DocIntake.DocumentService/TextRisks.cs`; `src/DocIntake.Contracts/DocumentModels.cs` (`PrepareResponse`).
+
+**How to try it.** Nothing new to run: `dotnet run` the services as before. A PDF whose attachment says "ignore all previous
+instructions" is refused with 422 `document rejected: it contains instructions addressed to an AI model` by both
+`/api/documents/analyze` and `/extract` (with `Security:OnFinding=flag` it is reported in `risks` instead).
+
+**What it does not do.** It does not change what any endpoint accepts or answers, and it adds no deployment.
+
+**Tests.** 485 tests, 479 passed and 6 skipped (the opt-in ones from Phase 1). Every existing endpoint test passes through the new
+filters and handler unchanged. New or changed:
+- `ProblemMappingTests` (40): the handler answers what it knows and leaves a bug and a cancellation to the default; an upload gets
+  its size and kind in the log and a non-document request does not; **a feedback failure is `feedback_failed`**, with the test
+  mimicking the middleware (no endpoint on the context, the original on the exception feature) after the first version of the fix
+  passed its unit test and failed in a real run.
+- `DocumentServiceTests`: findings about the text arrive with the prepared document, are not in its JSON, and are not acted on by the service.
+- `GatewayExtractionTests`: an unconfigured extraction is 503 before validation (no file at all), a configured one is 400 and nothing is called.
+- `RiskTests`: detection is tested on `TextRisks`, the decision on `RiskPolicy`.
+- `ArchitectureTests`: `Program.cs` has no endpoints, limiter or OpenAPI setup and is under 100 lines; nothing under `Endpoints` has a
+  `catch` clause (I planted one and the test failed); the gateway never references `InjectionPatterns`.
+
+### Verified (2026-10-13)
+
+- `dotnet build`, `dotnet test` (above), the licence check (no package changed).
+- **The real stack as separate processes** (document, extraction and gateway; the extraction service pointed at a local fake of the
+  provider): a fax PDF extracts (200); no file is 400 `file is required`; a PDF with an injection phrase in an attachment is 422 on
+  both endpoints; a text file is 415; with the decisions service down feedback is 503 with `Retry-After`; the provider was asked once,
+  only for the fax PDF.
+- The gateway and document service images build (377 MB and 538 MB, unchanged in size).
+- **Log levels:** no Error or Critical line for any of those; a bad file logs at Information and the unreachable service at Warning.
+- **Honeycomb** (the gateway's spans): the hostile PDF is `422 / rejected / TextPdf`, the text file `415 / rejected / unclassified`,
+  and the feedback failure `feedback_failed`.
+
+### Not verified
+
+- A deploy to Kubernetes, and the rolling-deploy burst of 502s described above.
+- `docker compose up` (no compose or Dockerfile change was made; the two affected images were built, below).
+
+### Before deploying (Phase 6)
+
+- [ ] The gateway and the document service change their wire contract together: expect a short burst of 502s on document requests
+      during the rollout (the same `helm upgrade` replaces both).
+- [ ] A trigger or board on `intake.outcome` = `extraction_failed` for `/api/feedback/analyze` will see `feedback_failed` instead.
+- [ ] Nothing to do with images, packages, secrets or values.
+
 ## Phase 5: the decisions service (2026-10-12)
 
 **What it does.** Laya, the local model that scores hotel-guest feedback, moved out of the gateway into

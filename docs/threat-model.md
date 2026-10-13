@@ -27,6 +27,11 @@ library at all (ONNX Runtime was the last one; a test checks its build). The dec
 gateway and may reach nothing but the telemetry collector, because its model is in the image. It has no authentication of its
 own (the same open item 4.2). The feedback text it receives is not recorded in logs or usage.
 
+**Update 2026-10-13 (slim gateway):** the rules for what counts as an instruction-like text are no longer in the gateway at all:
+the document service finds them in what it prepares and the extraction service finds them in the answer, and the gateway only applies
+the policy (`Security:OnFinding`). Where rows 2.5 and 3.1 name `RiskScanner`, read `RiskPolicy` for the decision and the services'
+`TextRisks` and `AnswerRisks` for the detection. Nothing a request can do changed.
+
 ## What is protected
 
 | Asset | Why it matters |

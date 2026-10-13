@@ -30,11 +30,13 @@ public sealed class DocumentServiceClient(IHttpClientFactory httpClientFactory) 
         return answer.Classification with { Risks = answer.Risks };
     }
 
-    public Task<PreparedDocument> PrepareAsync(Stream stream, DocumentClassification classification, CancellationToken ct = default)
+    public async Task<PreparedDocument> PrepareAsync(Stream stream, DocumentClassification classification, CancellationToken ct = default)
     {
         var form = Form(stream);
         form.Add(new StringContent(JsonSerializer.Serialize(classification, IntakeJson.Options), Encoding.UTF8), "classification");
-        return PostAsync<PreparedDocument>("documents/prepare", form, ct);
+        var answer = await PostAsync<PrepareResponse>("documents/prepare", form, ct);
+        // The findings travel next to the document (it does not serialise them), and belong on it again here.
+        return answer.Document with { Risks = answer.Risks };
     }
 
     /// <summary>Is the service up and are its models loaded? Returns its readiness status, or null when unreachable.</summary>

@@ -104,7 +104,18 @@ public enum PartRole { PageImage, PageText, OcrText, StructuredData }
 /// <summary>One piece of prepared content. <see cref="Source"/> names the attachment it came from (null = the uploaded document).</summary>
 public sealed record PreparedPart(PartRole Role, string MediaType, int? Page, string? Text, byte[]? Data, string? Source = null);
 
-public sealed record PreparedDocument(PreparationStrategy Strategy, IReadOnlyList<PreparedPart> Parts);
+public sealed record PreparedDocument(PreparationStrategy Strategy, IReadOnlyList<PreparedPart> Parts)
+{
+    /// <summary>
+    /// Instruction-like text found in what the model will read (text layer, OCR, form values, attachments). Not serialised with
+    /// the document: the document service sends it next to it in a <see cref="PrepareResponse"/>, and the gateway decides.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<RiskFinding> Risks { get; init; } = [];
+}
+
+/// <summary>What the document service answers to a prepare request: the document, and the findings about its text.</summary>
+public sealed record PrepareResponse(PreparedDocument Document, IReadOnlyList<RiskFinding> Risks);
 
 /// <param name="DataBase64">Binary content; System.Text.Json writes a byte array as base64 straight into the response,
 /// so no intermediate base64 string (~2.7x the PNG size) is built.</param>

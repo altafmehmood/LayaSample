@@ -19,7 +19,7 @@ public interface IDocumentExtractor
 /// gateway records them as usage (it alone knows who asked and what was uploaded), then applies the risk policy to what
 /// the service found in the answer. The service never sees the caller or the file's name.
 /// </summary>
-public sealed class DocumentExtractor(ExtractionServiceClient client, IUsageRecorder recorder, RiskScanner riskScanner) : IDocumentExtractor
+public sealed class DocumentExtractor(ExtractionServiceClient client, IUsageRecorder recorder, RiskPolicy riskPolicy) : IDocumentExtractor
 {
     public Task<bool> IsConfiguredAsync(CancellationToken ct) => client.IsConfiguredAsync(ct);
 
@@ -41,7 +41,7 @@ public sealed class DocumentExtractor(ExtractionServiceClient client, IUsageReco
         // Before the policy: a refused answer was still paid for.
         Record(context, answer.Calls);
         // An instruction that got through the prompt can be echoed into the answer; refuse it (or flag it) here.
-        riskScanner.EnforceAnswer(answer.AnswerRisks);
+        riskPolicy.EnforceAnswer(answer.AnswerRisks);
 
         return new ExtractDocumentResponse(fileName, answer.DocumentType, answer.DetectedBy, answer.Agent, answer.Model, answer.Extraction,
             answer.Usage, answer.Warnings, answer.AnswerRisks);

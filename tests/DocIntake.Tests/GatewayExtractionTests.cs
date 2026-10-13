@@ -143,6 +143,36 @@ public class GatewayExtractionTests
     }
 
     [Fact]
+    public async Task An_unconfigured_extraction_answers_503_before_the_upload_is_validated()
+    {
+        using var extractionService = new ExtractionServiceFactory(new ExtractionClients(null, null));
+        using var api = Gateway(() => extractionService.Server.CreateHandler());
+        using var form = new MultipartFormDataContent { { new StringContent("not a file"), "other" } };
+
+        // No file at all: validating first would answer 400. The service is asked first, so it is 503.
+        var response = await api.CreateClient().PostAsync("/api/documents/extract", form, Ct);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Contains("extraction is not configured", await response.Content.ReadAsStringAsync(Ct));
+    }
+
+    [Fact]
+    public async Task A_configured_extraction_validates_the_upload_before_any_work()
+    {
+        var fake = Model();
+        using var extractionService = new ExtractionServiceFactory(new ExtractionClients(fake, fake));
+        var extraction = new RecordingHandler(new TraceContextHandler(extractionService.Server.CreateHandler()));
+        using var api = Gateway(() => extraction);
+        using var form = new MultipartFormDataContent { { new StringContent("not a file"), "other" } };
+
+        var response = await api.CreateClient().PostAsync("/api/documents/extract", form, Ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("file is required", await response.Content.ReadAsStringAsync(Ct));
+        Assert.Empty(fake.Calls);
+    }
+
+    [Fact]
     public async Task The_extraction_request_carries_neither_the_files_name_nor_the_caller()
     {
         const string key = "a-long-random-key-for-this-test-0123456789";

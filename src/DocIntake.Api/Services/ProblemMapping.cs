@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Diagnostics;
 using System.Diagnostics;
 using DocIntake.Contracts;
 using DocIntake.ServiceDefaults;
@@ -11,8 +12,24 @@ namespace DocIntake.Api.Services;
 /// the log level and the document metric. Everything below the endpoints throws <see cref="IntakeFailureException"/> (or
 /// one of the rendering and scanner exceptions) and knows nothing of status codes.
 /// </summary>
-public sealed class ProblemMapping(ILogger<ProblemMapping> logger, DocumentMetrics metrics)
+public sealed class ProblemMapping(ILogger<ProblemMapping> logger, DocumentMetrics metrics) : IExceptionHandler
 {
+    /// <summary>
+    /// The app's exception handler: endpoints and filters just throw. A failure of an upload that has started says how big it
+    /// was and what it turned out to be (the document metric, the kind in the log); any other failure (feedback, the
+    /// extraction pre-check) is answered without them. Anything this does not know is left to the default handler.
+    /// </summary>
+    public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
+    {
+        if (!Handles(exception))
+            return false;
+        var result = httpContext.TryGetDocumentRequest() is { } request
+            ? ToResult(exception, request.Bytes, request.Run.Classification, httpContext)
+            : ToServiceResult(exception, httpContext);
+        await result.ExecuteAsync(httpContext);
+        return true;
+    }
+
     public static bool Handles(Exception ex) =>
         ex is IntakeFailureException or OcrUnavailableException or RendererUnavailableException or RenderingFailedException
             or MalwareScannerUnavailableException;
@@ -71,6 +88,11 @@ public sealed class ProblemMapping(ILogger<ProblemMapping> logger, DocumentMetri
     public IResult ToServiceResult(Exception ex, HttpContext httpContext)
     {
         var failure = Describe(ex);
+        // "extraction_failed" is what a failed model call is called; the same kinds also describe the decisions service.
+        // The exception middleware clears the request's endpoint before it calls a handler; the feature keeps the original.
+        var endpoint = httpContext.Features.Get<IExceptionHandlerFeature>()?.Endpoint ?? httpContext.GetEndpoint();
+        if (failure.Outcome == "extraction_failed" && endpoint?.Metadata.GetMetadata<EndpointNameMetadata>()?.EndpointName == "AnalyzeFeedback")
+            failure = failure with { Outcome = "feedback_failed" };
         var cause = ex.InnerException?.GetType().Name ?? "none";
 
         Telemetry.TagRequest(httpContext, "intake.outcome", failure.Outcome);

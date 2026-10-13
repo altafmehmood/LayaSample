@@ -29,7 +29,7 @@ public sealed class DocumentRun(DocumentMetrics metrics)
 
 /// <summary>Classify an upload and prepare it. Shared by every endpoint that works on an uploaded document.</summary>
 public sealed class DocumentPipeline(IDocumentClassifier classifier, IDocumentPreparer preparer, IMalwareScanner scanner,
-    RiskScanner riskScanner, IOptions<SecurityOptions> security, DocumentMetrics metrics, ILogger<DocumentPipeline> logger)
+    RiskPolicy riskPolicy, IOptions<SecurityOptions> security, DocumentMetrics metrics, ILogger<DocumentPipeline> logger)
 {
     public DocumentRun NewRun() => new(metrics);
 
@@ -67,7 +67,7 @@ public sealed class DocumentPipeline(IDocumentClassifier classifier, IDocumentPr
             metrics.RecordUpload(run.Classification.Kind.ToString(), file.Length, run.Classification.PageCount);
             // Before anything is rendered or read: a file with active content or hidden text is turned away here (with
             // OnFinding=reject) without going to the renderer.
-            run.Risks.AddRange(riskScanner.CheckStructure(run.Classification));
+            run.Risks.AddRange(riskPolicy.EnforceStructure(run.Classification.Risks));
         }
         run.Lap("classify");
         using (var span = Telemetry.Source.StartActivity("intake.prepare"))
@@ -81,8 +81,8 @@ public sealed class DocumentPipeline(IDocumentClassifier classifier, IDocumentPr
                 span.RecordFailure(ex);
                 throw;
             }
-            // The text the model will read, OCR included, checked for instructions addressed to it.
-            run.Risks.AddRange(riskScanner.CheckText(run.Prepared));
+            // What the document service found in the text the model will read, OCR included: instructions addressed to it.
+            run.Risks.AddRange(riskPolicy.EnforceText(run.Prepared.Risks));
             span?.SetTag("intake.prepare.parts", run.Prepared.Parts.Count);
             span?.SetTag("intake.prepare.part_roles", string.Join(",", run.Prepared.Parts.GroupBy(p => p.Role).Select(g => $"{g.Key}={g.Count()}")));
             span?.SetTag("intake.prepare.image_bytes", run.Prepared.Parts.Where(p => p.Role == PartRole.PageImage).Sum(p => (long)(p.Data?.Length ?? 0)));

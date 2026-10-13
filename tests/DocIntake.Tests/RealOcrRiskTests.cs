@@ -33,7 +33,7 @@ public class RealOcrRiskTests
         var rasterizer = new LocalPageRasterizer(ocr, Options.Create(new RenderingOptions()));
         var classifier = new DocumentClassifier(options, rasterizer);
         var preparer = new DocumentPreparer(options, classifier, rasterizer, NullLogger<DocumentPreparer>.Instance);
-        var scanner = new RiskScanner(Options.Create(new SecurityOptions { OnFinding = "flag" }), new DocumentMetrics(new NoMeters()), NullLogger<RiskScanner>.Instance);
+        var scanner = new RiskPolicy(Options.Create(new SecurityOptions { OnFinding = "flag" }), new DocumentMetrics(new NoMeters()), NullLogger<RiskPolicy>.Instance);
 
         var files = Directory.EnumerateFiles(LendingTypeDetectorTests.CorpusDirectory(), "*.pdf")
             .Where(f => f.EndsWith("-scan.pdf") || f.EndsWith("-fax.pdf")).ToList();
@@ -47,7 +47,7 @@ public class RealOcrRiskTests
             var classification = await classifier.ClassifyAsync(stream, ct);
             var prepared = await preparer.PrepareAsync(stream, classification, ct);
             characters += prepared.Parts.Where(p => p.Role == PartRole.OcrText).Sum(p => p.Text?.Length ?? 0);
-            offenders.AddRange(scanner.CheckStructure(classification).Concat(scanner.CheckText(prepared))
+            offenders.AddRange(scanner.EnforceStructure(classification.Risks).Concat(scanner.EnforceText(TextRisks.Find(prepared)))
                 .Where(f => f.Severity == RiskSeverity.Block).Select(f => $"{Path.GetFileName(file)}: {f.Kind} {f.Detail}"));
         }
 
