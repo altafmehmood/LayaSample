@@ -39,16 +39,23 @@ public sealed class DocumentServiceClient(IHttpClientFactory httpClientFactory) 
         return answer.Document with { Risks = answer.Risks };
     }
 
+    private static readonly TimeSpan ReadinessTimeout = TimeSpan.FromMilliseconds(750);
+
     /// <summary>Is the service up and are its models loaded? Returns its readiness status, or null when unreachable.</summary>
     public async Task<string?> GetReadinessAsync(CancellationToken ct = default)
     {
+        // A Service with no ready pods behind it makes connects hang rather than fail, and the probe that called us gives up after
+        // a second: bound the wait so "down" is answered as Degraded instead of hanging the gateway's own readiness.
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(ReadinessTimeout);
+        ct = timeout.Token;
         try
         {
             using var response = await httpClientFactory.CreateClient(HttpClientName).GetAsync("health/ready", ct);
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
             return doc.RootElement.TryGetProperty("status", out var status) ? status.GetString() : null;
         }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException or IOException)
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or IOException or OperationCanceledException)
         {
             return null;
         }
