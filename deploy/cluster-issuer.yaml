@@ -16,8 +16,8 @@ spec:
           gatewayHTTPRoute:
             parentRefs:
               - kind: Gateway
-                name: laya
-                namespace: laya
+                name: docintake
+                namespace: docintake
 ---
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -34,5 +34,5 @@ spec:
           gatewayHTTPRoute:
             parentRefs:
               - kind: Gateway
-                name: laya
-                namespace: laya
+                name: docintake
+                namespace: docintake

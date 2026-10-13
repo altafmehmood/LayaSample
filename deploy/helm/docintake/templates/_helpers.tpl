@@ -16,7 +16,7 @@
 {{- end -}}
 {{- end -}}
 
-{{/* Selector labels. Takes a dict: root (the chart context) and component (api | renderer). */}}
+{{/* Selector labels. Takes a dict: root (the chart context) and component (api | document). */}}
 {{- define "docintake.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "docintake.name" .root }}
 app.kubernetes.io/instance: {{ .root.Release.Name }}

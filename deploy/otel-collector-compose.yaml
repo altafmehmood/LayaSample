@@ -1,4 +1,4 @@
-# Collector for docker-compose (profile "telemetry"): the renderer's network has no route out, so it sends here and
+# Collector for docker-compose (profile "telemetry"): the document service's network has no route out, so it sends here and
 # only this container forwards to Honeycomb. See README.md, "Telemetry".
 receivers:
   otlp:

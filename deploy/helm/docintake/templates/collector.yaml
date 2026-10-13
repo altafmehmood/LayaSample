@@ -1,7 +1,7 @@
 {{- if .Values.telemetry.collector.enabled }}
 {{- $name := printf "%s-otel-collector" (include "docintake.fullname" .) }}
-# Receives OTLP from the API and the renderer inside the cluster and forwards it to the backend. It is the only pod
-# that holds the backend key and the only one allowed to reach the internet, so the renderer's isolation stays intact.
+# Receives OTLP from the services inside the cluster and forwards it to the backend. It is the only pod
+# that holds the backend key and the only one allowed to reach the internet, so the document service's isolation stays intact.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -76,7 +76,7 @@ spec:
     {{- include "docintake.selectorLabels" (dict "root" . "component" "otel-collector") | nindent 4 }}
 {{- if .Values.networkPolicy.enabled }}
 ---
-# Telemetry in from the API and the renderer; out only to the backend (HTTPS) and DNS.
+# Telemetry in from the services; out only to the backend (HTTPS) and DNS.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -95,7 +95,7 @@ spec:
               {{- include "docintake.selectorLabels" (dict "root" . "component" "api") | nindent 14 }}
         - podSelector:
             matchLabels:
-              {{- include "docintake.selectorLabels" (dict "root" . "component" "renderer") | nindent 14 }}
+              {{- include "docintake.selectorLabels" (dict "root" . "component" "document") | nindent 14 }}
         - podSelector:
             matchLabels:
               {{- include "docintake.selectorLabels" (dict "root" . "component" "extraction") | nindent 14 }}

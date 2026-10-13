@@ -60,7 +60,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        target: [api, renderer, extraction, decisions]
+        target: [api, document, extraction, decisions]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -77,7 +77,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/laya-sample-${{ matrix.target }}
+          images: ghcr.io/${{ github.repository_owner }}/docintake-${{ matrix.target }}
           tags: |
             type=sha
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
@@ -117,7 +117,7 @@ jobs:
           for values in deploy/helm/docintake/ci/*.yaml; do
             echo "::group::$values"
             helm lint deploy/helm/docintake -f "$values"
-            helm template laya deploy/helm/docintake -f "$values" | ./kubeconform -strict -summary -kubernetes-version 1.33.0 \
+            helm template docintake deploy/helm/docintake -f "$values" | ./kubeconform -strict -summary -kubernetes-version 1.33.0 \
               -schema-location default \
               -schema-location "https://raw.githubusercontent.com/datreeio/CRDs-catalog/${CRD_SCHEMAS_COMMIT}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
             echo "::endgroup::"
@@ -153,23 +153,24 @@ jobs:
             echo "OPENAI_API_KEY is not set; extraction will answer 503"
             exit 0
           fi
-          kubectl create namespace laya --dry-run=client -o yaml | kubectl apply -f -
-          kubectl -n laya create secret generic laya-llm --from-literal=api-key="$OPENAI_API_KEY" --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace docintake --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n docintake create secret generic docintake-llm --from-literal=api-key="$OPENAI_API_KEY" --dry-run=client -o yaml | kubectl apply -f -
           echo "KEY_CHECKSUM=$(printf %s "$OPENAI_API_KEY" | sha256sum | cut -c1-16)" >> "$GITHUB_ENV"
 
       # Callers of POST /api/documents/extract must send this as X-Api-Key. Without the GitHub secret the deploy still
       # works, but extraction answers 503 (it fails closed) until the secret is added.
       - name: Store the API access key
         env:
-          LAYA_API_KEY: ${{ secrets.LAYA_API_KEY }}
+          # LAYA_API_KEY is the old secret name; it is used until DOCINTAKE_API_KEY is added.
+          DOCINTAKE_API_KEY: ${{ secrets.DOCINTAKE_API_KEY || secrets.LAYA_API_KEY }}
         run: |
-          if [ -z "$LAYA_API_KEY" ]; then
-            echo "::warning::LAYA_API_KEY is not set; /api/documents/extract will answer 503"
+          if [ -z "$DOCINTAKE_API_KEY" ]; then
+            echo "::warning::DOCINTAKE_API_KEY is not set; /api/documents/extract will answer 503"
             exit 0
           fi
-          kubectl create namespace laya --dry-run=client -o yaml | kubectl apply -f -
-          kubectl -n laya create secret generic laya-api-key --from-literal=api-key="$LAYA_API_KEY" --dry-run=client -o yaml | kubectl apply -f -
-          echo "AUTH_KEY_CHECKSUM=$(printf %s "$LAYA_API_KEY" | sha256sum | cut -c1-16)" >> "$GITHUB_ENV"
+          kubectl create namespace docintake --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n docintake create secret generic docintake-api-key --from-literal=api-key="$DOCINTAKE_API_KEY" --dry-run=client -o yaml | kubectl apply -f -
+          echo "AUTH_KEY_CHECKSUM=$(printf %s "$DOCINTAKE_API_KEY" | sha256sum | cut -c1-16)" >> "$GITHUB_ENV"
 
       # Telemetry goes to Honeycomb through the in-cluster collector, which alone holds the ingest key. Without the GitHub
       # secret the deploy still works, but nothing is exported. `headers` is what the API would use without the collector.
@@ -181,8 +182,8 @@ jobs:
             echo "::warning::HONEYCOMB_API_KEY is not set; telemetry will not be exported"
             exit 0
           fi
-          kubectl create namespace laya --dry-run=client -o yaml | kubectl apply -f -
-          kubectl -n laya create secret generic laya-otel \
+          kubectl create namespace docintake --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n docintake create secret generic docintake-otel \
             --from-literal=api-key="$HONEYCOMB_API_KEY" \
             --from-literal=headers="x-honeycomb-team=$HONEYCOMB_API_KEY" \
             --dry-run=client -o yaml | kubectl apply -f -
@@ -193,8 +194,8 @@ jobs:
           # Get the commit SHA short form
           COMMIT_SHA=$(git rev-parse --short HEAD)
 
-          helm upgrade --install laya deploy/helm/docintake \
-            --namespace laya \
+          helm upgrade --install docintake deploy/helm/docintake \
+            --namespace docintake \
             --create-namespace \
             --values deploy/values-prod.yaml \
             --set image.tag=sha-${COMMIT_SHA} \
@@ -206,12 +207,12 @@ jobs:
 
       - name: Verify deployment
         run: |
-          kubectl rollout status deploy/laya-api -n laya --timeout=5m
-          kubectl rollout status deploy/laya-renderer -n laya --timeout=5m
-          kubectl rollout status deploy/laya-extraction -n laya --timeout=5m
-          kubectl rollout status deploy/laya-decisions -n laya --timeout=15m
-          kubectl get gateway -n laya -o wide
-          kubectl get pods -n laya
+          kubectl rollout status deploy/docintake-api -n docintake --timeout=5m
+          kubectl rollout status deploy/docintake-document -n docintake --timeout=5m
+          kubectl rollout status deploy/docintake-extraction -n docintake --timeout=5m
+          kubectl rollout status deploy/docintake-decisions -n docintake --timeout=15m
+          kubectl get gateway -n docintake -o wide
+          kubectl get pods -n docintake
 
   # Manual only: scores the real model against the lending corpus manifest. Needs the OPENAI_API_KEY secret.
   extraction-eval:
