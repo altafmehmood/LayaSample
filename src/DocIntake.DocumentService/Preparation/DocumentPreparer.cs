@@ -128,9 +128,15 @@ public sealed class DocumentPreparer(
         }
 
         if (pages.Count > slots.Count)
-            logger.LogWarning("Page budget of {Max} renders reached: {Skipped} of {Pages} page(s) are not in the result",
-                _options.MaxPages, pages.Count - slots.Count, pages.Count);
-        Activity.Current?.SetTag("intake.prepare.slots", string.Join(",", slots.GroupBy(s => s.Strategy).Select(g => $"{g.Key}={g.Count()}")));
+            {
+            logger.PageBudgetReached(_options.MaxPages, pages.Count - slots.Count, pages.Count);
+            Activity.Current?.AddEvent(new ActivityEvent("intake.prepare.page_budget_exhausted", tags: new ActivityTagsCollection
+            {
+                ["intake.prepare.max_pages"] = _options.MaxPages, ["intake.prepare.pages_skipped"] = pages.Count - slots.Count
+            }));
+        }
+        foreach (var group in slots.GroupBy(s => s.Strategy))
+            Activity.Current?.SetTag($"intake.prepare.slots.{group.Key.ToString().ToLowerInvariant()}", group.Count());
         var rendered = (await RenderAsync(file, DocumentSniffer.Pdf, requests, ct)).ToDictionary(p => p.Number);
         var parts = new List<PreparedPart>();
         foreach (var (page, pageStrategy, markdown) in slots)
@@ -186,8 +192,7 @@ public sealed class DocumentPreparer(
             var pages = await rasterizer.RenderAsync(new RenderJob(document, mediaType, requests), ct);
             span?.SetTag("intake.render.output_bytes", pages.Sum(p => (long)p.Png.Length));
             span?.SetTag("intake.render.ocr_characters", pages.Sum(p => p.OcrText?.Length ?? 0));
-            logger.LogInformation("Rendered {Pages} of {Requested} requested page(s) of a {Bytes}-byte {MediaType} document ({Ocr} with OCR)",
-                pages.Count, requests.Count, document.Length, mediaType, requests.Count(r => r.Ocr));
+            logger.PagesRendered(pages.Count, requests.Count, document.Length, mediaType, requests.Count(r => r.Ocr));
             return pages;
         }
         catch (Exception ex)
@@ -225,7 +230,8 @@ public sealed class DocumentPreparer(
         // That includes one that crashes the renderer, but not an unreachable renderer or missing OCR models.
         catch (Exception ex) when (ex is RenderingFailedException || !IsServerProblem(ex))
         {
-            logger.LogWarning(ex, "Embedded file {Attachment} could not be prepared and was skipped", name);
+            logger.AttachmentSkipped(ex, Path.GetExtension(name) is { Length: > 0 and <= 10 } extension ? extension : "unknown");
+            Activity.Current?.AddEvent(new ActivityEvent("intake.prepare.attachment_skipped"));
             return [];
         }
     }

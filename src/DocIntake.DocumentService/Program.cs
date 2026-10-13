@@ -65,7 +65,7 @@ public sealed class DocumentServiceEntryPoint
                 RenderingMetrics.Rejections.Add(1);
                 System.Diagnostics.Activity.Current?.SetTag("intake.rejected", "rate_limit");
                 context.HttpContext.RequestServices.GetRequiredService<ILogger<DocumentServiceEntryPoint>>()
-                    .LogWarning("Document request rejected: every slot and queue place is taken");
+                    .RateLimited();
                 context.HttpContext.Response.Headers.RetryAfter = "10";
                 return context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsService>().WriteAsync(new ProblemDetailsContext
                 {
@@ -103,8 +103,7 @@ public sealed class DocumentServiceEntryPoint
                 // The form file is already on disk past 64 KB (ASP.NET spools it); read from that stream, never a copy in memory.
                 await using var stream = file.OpenReadStream();
                 var classification = await classifier.ClassifyAsync(stream, ct);
-                logger.LogInformation("Classified a {Bytes}-byte upload as {Kind}: {Strategy}, {Pages} page(s)", file.Length,
-                    classification.Kind, classification.Strategy, classification.PageCount);
+                logger.Classified(file.Length, classification.Kind, classification.Strategy, classification.PageCount);
                 return Results.Json(new ClassifyResponse(classification, classification.Risks), IntakeJson.Options);
             }
             catch (Exception ex) when (ServiceProblems.FromException(ex) is { } problem)
@@ -137,8 +136,7 @@ public sealed class DocumentServiceEntryPoint
             {
                 await using var stream = file.OpenReadStream();
                 var prepared = await preparer.PrepareAsync(stream, classified, ct);
-                logger.LogInformation("Prepared a {Bytes}-byte {Kind} document: {Strategy}, {Parts} part(s)", file.Length,
-                    classified.Kind, prepared.Strategy, prepared.Parts.Count);
+                logger.Prepared(file.Length, classified.Kind, prepared.Strategy, prepared.Parts.Count);
                 // Findings about the text travel next to the document; the gateway decides what they mean.
                 return Results.Json(new PrepareResponse(prepared, TextRisks.Find(prepared)), IntakeJson.Options);
             }
@@ -158,9 +156,9 @@ public sealed class DocumentServiceEntryPoint
     private static void Log(ILogger logger, Exception ex, long bytes)
     {
         if (ex is IntakeFailureException f)
-            logger.LogInformation(f.InnerException, "Refused a {Bytes}-byte upload ({Kind}): {Reason}", bytes, f.Kind, f.Message);
+            logger.UploadRefused(f.InnerException, bytes, f.Kind, f.Message);
         else
-            logger.LogError(ex, "Could not handle a {Bytes}-byte upload", bytes);
+            logger.UploadFailed(ex, bytes);
     }
 
     private static IResult Problem(int status, string detail) => Results.Problem(detail: detail, statusCode: status);

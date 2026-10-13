@@ -18,6 +18,11 @@ data:
         check_interval: 5s
         limit_mib: 160
         spike_limit_mib: 40
+      # Adds host.name (and anything in OTEL_RESOURCE_ATTRIBUTES of the collector) to data that lacks it; the services' own
+      # attributes win (override: false).
+      resourcedetection:
+        detectors: [env, system]
+        override: false
       batch: {}
     exporters:
       otlphttp:
@@ -31,7 +36,7 @@ data:
         metrics:
           level: none
       pipelines:
-        traces: { receivers: [otlp], processors: [memory_limiter, batch], exporters: [otlphttp] }
-        metrics: { receivers: [otlp], processors: [memory_limiter, batch], exporters: [otlphttp] }
-        logs: { receivers: [otlp], processors: [memory_limiter, batch], exporters: [otlphttp] }
+        traces: { receivers: [otlp], processors: [memory_limiter, resourcedetection, batch], exporters: [otlphttp] }
+        metrics: { receivers: [otlp], processors: [memory_limiter, resourcedetection, batch], exporters: [otlphttp] }
+        logs: { receivers: [otlp], processors: [memory_limiter, resourcedetection, batch], exporters: [otlphttp] }
 {{- end }}

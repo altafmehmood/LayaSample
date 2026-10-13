@@ -57,13 +57,23 @@ public sealed class DocumentPipeline(IDocumentClassifier classifier, IDocumentPr
 
         using (var span = Telemetry.Source.StartActivity("intake.classify"))
         {
-            run.Classification = await classifier.ClassifyAsync(stream, ct);
+            try
+            {
+                run.Classification = await classifier.ClassifyAsync(stream, ct);
+            }
+            catch (Exception ex)
+            {
+                span.RecordFailure(ex);
+                throw;
+            }
             span?.SetTag("intake.document.kind", run.Classification.Kind.ToString());
             span?.SetTag("intake.document.pages", run.Classification.PageCount);
             span?.SetTag("intake.document.strategy", run.Classification.Strategy.ToString());
             span?.SetTag("intake.document.route", run.Classification.Route);
             span?.SetTag("intake.document.is_xfa", run.Classification.IsXfa);
-            span?.SetTag("intake.document.page_contents", string.Join(",", run.Classification.Pages.GroupBy(p => p.Content).Select(g => $"{g.Key}={g.Count()}")));
+            // One number per kind of page, so "documents with fax pages" can be asked of the data.
+            foreach (var group in run.Classification.Pages.GroupBy(p => p.Content))
+                span?.SetTag($"intake.document.pages.{group.Key.ToString().ToLowerInvariant()}", group.Count());
             metrics.RecordUpload(run.Classification.Kind.ToString(), file.Length, run.Classification.PageCount);
             // Before anything is rendered or read: a file with active content or hidden text is turned away here (with
             // OnFinding=reject) without going to the renderer.
@@ -84,14 +94,23 @@ public sealed class DocumentPipeline(IDocumentClassifier classifier, IDocumentPr
             // What the document service found in the text the model will read, OCR included: instructions addressed to it.
             run.Risks.AddRange(riskPolicy.EnforceText(run.Prepared.Risks));
             span?.SetTag("intake.prepare.parts", run.Prepared.Parts.Count);
-            span?.SetTag("intake.prepare.part_roles", string.Join(",", run.Prepared.Parts.GroupBy(p => p.Role).Select(g => $"{g.Key}={g.Count()}")));
+            foreach (var group in run.Prepared.Parts.GroupBy(p => p.Role))
+                span?.SetTag($"intake.prepare.parts.{group.Key.ToString().ToLowerInvariant()}", group.Count());
             span?.SetTag("intake.prepare.image_bytes", run.Prepared.Parts.Where(p => p.Role == PartRole.PageImage).Sum(p => (long)(p.Data?.Length ?? 0)));
         }
         run.Lap("prepare");
         if (run.Risks.Count > 0)
         {
-            Activity.Current?.SetTag("intake.risk.count", run.Risks.Count);
-            Activity.Current?.SetTag("intake.risk.kinds", string.Join(",", run.Risks.Select(r => $"{r.Kind}:{r.Severity}").Distinct()));
+            var request = Activity.Current;
+            request?.SetTag("intake.risk.count", run.Risks.Count);
+            request?.SetTag("intake.risk.count.block", run.Risks.Count(r => r.Severity == RiskSeverity.Block));
+            request?.SetTag("intake.risk.count.info", run.Risks.Count(r => r.Severity == RiskSeverity.Info));
+            // Kinds and pages only: the detail names what was found, but never repeats the document's text.
+            foreach (var risk in run.Risks)
+                request?.AddEvent(new ActivityEvent("intake.risk.finding", tags: new ActivityTagsCollection
+                {
+                    ["intake.risk.kind"] = risk.Kind, ["intake.risk.severity"] = risk.Severity.ToString(), ["intake.risk.page"] = risk.Page
+                }));
         }
     }
 
@@ -103,11 +122,12 @@ public sealed class DocumentPipeline(IDocumentClassifier classifier, IDocumentPr
         var result = scan.Outcome.ToString().ToLowerInvariant();
         metrics.RecordScan(result, Stopwatch.GetElapsedTime(started));
         span?.SetTag("intake.scan.result", result);
+        span?.AddEvent(new ActivityEvent("intake.scan.verdict", tags: new ActivityTagsCollection { ["intake.scan.result"] = result }));
         switch (scan.Outcome)
         {
             case ScanOutcome.Infected:
                 span?.SetTag("intake.scan.signature", scan.Signature);
-                logger.LogWarning("Malware found in a {Bytes}-byte upload: {Signature}", bytes, scan.Signature);
+                logger.MalwareFound(bytes, scan.Signature);
                 // The signature stays in the log and the trace; the response only says the document was refused.
                 throw new IntakeFailureException(FailureKind.Malicious, "document rejected: malware detected",
                     inner: new InvalidDataException($"scanner signature {scan.Signature}"));
@@ -115,7 +135,7 @@ public sealed class DocumentPipeline(IDocumentClassifier classifier, IDocumentPr
                 span?.SetStatus(ActivityStatusCode.Error, "no verdict");
                 throw new MalwareScannerUnavailableException(scan.Error ?? "the scanner gave no verdict");
             case ScanOutcome.Unavailable:
-                logger.LogWarning("Accepting a {Bytes}-byte upload without a malware verdict (FailMode is open): {Reason}", bytes, scan.Error);
+                logger.AcceptedWithoutVerdict(bytes, scan.Error);
                 break;
         }
     }

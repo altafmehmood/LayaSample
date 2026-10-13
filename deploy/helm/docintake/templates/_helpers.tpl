@@ -80,7 +80,7 @@ capabilities:
 {{- printf "http://%s-otel-collector:4318" (include "docintake.fullname" .) -}}
 {{- end -}}
 
-{{/* Env shared by both services: where telemetry goes and which pod it came from. Takes the chart context. */}}
+{{/* Env shared by every service: where telemetry goes and which pod it came from. Takes the chart context. */}}
 {{- define "docintake.telemetryEnv" -}}
 - name: POD_NAME
   valueFrom:
@@ -88,8 +88,11 @@ capabilities:
 - name: POD_NAMESPACE
   valueFrom:
     fieldRef: { fieldPath: metadata.namespace }
+- name: NODE_NAME
+  valueFrom:
+    fieldRef: { fieldPath: spec.nodeName }
 - name: OTEL_RESOURCE_ATTRIBUTES
-  value: {{ printf "k8s.pod.name=$(POD_NAME),k8s.namespace.name=$(POD_NAMESPACE),intake.image.tag=%s" .Values.image.tag | quote }}
+  value: {{ printf "k8s.pod.name=$(POD_NAME),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME),intake.image.tag=%s" .Values.image.tag | quote }}
 {{- if .Values.telemetry.collector.enabled }}
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ include "docintake.collectorEndpoint" . | quote }}

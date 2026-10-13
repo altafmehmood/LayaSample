@@ -19,7 +19,7 @@ public sealed class LocalPageRasterizer(IOcrEngine ocr, IOptions<RenderingOption
     {
         ct.ThrowIfCancellationRequested();
         RequireSeekable(image);
-        using var span = IntakeTelemetry.Source.StartActivity("renderer.inspect");
+        using var span = IntakeTelemetry.Source.StartActivity("document.inspect");
         span?.SetTag("intake.render.media_type", mediaType);
         span?.SetTag("intake.render.input_bytes", image.Length);
         try
@@ -40,12 +40,12 @@ public sealed class LocalPageRasterizer(IOcrEngine ocr, IOptions<RenderingOption
         if (!MediaTypes.IsRenderable(job.MediaType)) throw new InvalidDataException($"{job.MediaType} cannot be rendered");
         RequireSeekable(job.Document);
 
-        using var span = IntakeTelemetry.Source.StartActivity("renderer.render");
+        using var span = IntakeTelemetry.Source.StartActivity("document.render");
         span?.SetTag("intake.render.media_type", job.MediaType);
         span?.SetTag("intake.render.input_bytes", job.Document.Length);
         span?.SetTag("intake.render.pages_requested", job.Pages.Count);
         span?.SetTag("intake.render.pages_ocr", job.Pages.Count(p => p.Ocr));
-        var mediaTag = new KeyValuePair<string, object?>("media_type", job.MediaType);
+        var mediaTag = new KeyValuePair<string, object?>("intake.document.media_type", job.MediaType);
         var started = Stopwatch.GetTimestamp();
         RenderingMetrics.JobsInFlight.Add(1);
         var outcome = "ok";
@@ -56,7 +56,7 @@ public sealed class LocalPageRasterizer(IOcrEngine ocr, IOptions<RenderingOption
             foreach (var page in job.Pages)
             {
                 ct.ThrowIfCancellationRequested();
-                using var pageSpan = IntakeTelemetry.Source.StartActivity("renderer.page");
+                using var pageSpan = IntakeTelemetry.Source.StartActivity("document.render.page");
                 pageSpan?.SetTag("intake.render.page", page.Number);
                 pageSpan?.SetTag("intake.render.dpi", page.Dpi ?? DefaultPdfDpi);
                 pageSpan?.SetTag("intake.render.grayscale", page.Grayscale);
@@ -74,7 +74,7 @@ public sealed class LocalPageRasterizer(IOcrEngine ocr, IOptions<RenderingOption
                 var ranOcr = page.Ocr && options.Value.EnableOcr;
                 if (ranOcr)
                 {
-                    using var ocrSpan = IntakeTelemetry.Source.StartActivity("renderer.ocr");
+                    using var ocrSpan = IntakeTelemetry.Source.StartActivity("document.render.ocr");
                     ocrSpan?.SetTag("intake.render.page", page.Number);
                     var ocrStarted = Stopwatch.GetTimestamp();
                     try
@@ -93,7 +93,7 @@ public sealed class LocalPageRasterizer(IOcrEngine ocr, IOptions<RenderingOption
                     ocrSpan?.SetTag("intake.ocr.characters", text.Length);
                     RenderingMetrics.OcrCharacters.Add(text.Length);
                 }
-                RenderingMetrics.PagesRendered.Add(1, mediaTag, new KeyValuePair<string, object?>("ocr", ranOcr));
+                RenderingMetrics.PagesRendered.Add(1, mediaTag, new KeyValuePair<string, object?>("intake.ocr.used", ranOcr));
                 outputBytes += png.Length;
                 pages.Add(new RenderedPage(page.Number, png, text.Length == 0 ? null : text));
             }
@@ -111,7 +111,7 @@ public sealed class LocalPageRasterizer(IOcrEngine ocr, IOptions<RenderingOption
         {
             RenderingMetrics.JobsInFlight.Add(-1);
             RenderingMetrics.RenderDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, mediaTag,
-                new KeyValuePair<string, object?>("outcome", outcome));
+                new KeyValuePair<string, object?>("intake.outcome", outcome));
         }
     }
 

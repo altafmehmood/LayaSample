@@ -20,7 +20,7 @@ public sealed class OcrWarmup(IOcrEngine ocr, IOptions<RenderingOptions> options
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!Enabled) return;
-        using var span = IntakeTelemetry.Source.StartActivity("ocr.model.load");
+        using var span = IntakeTelemetry.Source.StartActivity("document.ocr.model.load");
         span?.SetTag("intake.ocr.model", options.Value.OcrModel.ToString());
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
         var outcome = "ready";
@@ -29,20 +29,19 @@ public sealed class OcrWarmup(IOcrEngine ocr, IOptions<RenderingOptions> options
             // Model loading is synchronous; keep it off the startup path.
             await Task.Run(ocr.EnsureLoaded, stoppingToken);
             _state = WarmupState.Ready;
-            logger.LogInformation("OCR models ready ({Model}) in {ElapsedMs:F0} ms.", options.Value.OcrModel,
-                System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            logger.OcrReady(options.Value.OcrModel, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
         }
         catch (OcrUnavailableException ex)
         {
             _state = WarmupState.Failed;
             outcome = "failed";
             span.RecordFailure(ex);
-            logger.LogError(ex, "OCR models failed to load; documents that need OCR get 503.");
+            logger.OcrFailed(ex);
         }
         finally
         {
             RenderingMetrics.ModelLoadDuration.Record(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalSeconds,
-                new KeyValuePair<string, object?>("outcome", outcome));
+                new KeyValuePair<string, object?>("intake.outcome", outcome));
         }
     }
 }

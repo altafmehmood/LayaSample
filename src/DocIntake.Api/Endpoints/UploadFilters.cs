@@ -25,7 +25,9 @@ internal sealed class UploadValidationFilter(string endpoint) : IEndpointFilter
             return ProblemMapping.Problem(StatusCodes.Status413PayloadTooLarge, $"file must be at most {maxBytes} bytes");
 
         Telemetry.TagRequest(http, "intake.file.bytes", file.Length);
-        services.GetRequiredService<DocumentMetrics>().RecordQueueWait(endpoint, Telemetry.RequestAge(http));
+        var queueWait = Telemetry.RequestAge(http);
+        Telemetry.TagRequest(http, "intake.request.queue_wait_ms", (long)queueWait.TotalMilliseconds);
+        services.GetRequiredService<DocumentMetrics>().RecordQueueWait(endpoint, queueWait);
         http.Items[DocumentRequest.ItemKey] = new DocumentRequest(file.Length, services.GetRequiredService<DocumentPipeline>().NewRun());
         return await next(context);
     }

@@ -47,7 +47,7 @@ public sealed class ExtractionServiceEntryPoint
             o.OnRejected = (context, _) =>
             {
                 context.HttpContext.RequestServices.GetRequiredService<ILogger<ExtractionServiceEntryPoint>>()
-                    .LogWarning("Extraction request rejected: every slot and queue place is taken");
+                    .RateLimited();
                 context.HttpContext.Response.Headers.RetryAfter = "10";
                 return context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsService>().WriteAsync(new ProblemDetailsContext
                 {
@@ -88,8 +88,7 @@ public sealed class ExtractionServiceEntryPoint
             catch (IntakeFailureException ex)
             {
                 // Not the exception itself: provider error text can echo parts of the API key or of the document.
-                logger.LogWarning("Extraction failed with {Kind}: {Reason} (cause {Cause}, {Calls} model call(s))",
-                    ex.Kind, ex.Message, ex.InnerException?.GetType().Name ?? "none", ex.Calls.Count);
+                logger.ExtractionFailed(ex.Kind, ex.Message, ex.InnerException?.GetType().Name ?? "none", ex.Calls.Count);
                 return ServiceProblems.FromException(ex)!;
             }
         })

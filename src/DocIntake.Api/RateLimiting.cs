@@ -43,8 +43,7 @@ internal static class RateLimiting
                 Telemetry.TagRequest(context.HttpContext, "intake.outcome", "rate_limited");
                 Telemetry.TagRequest(context.HttpContext, "intake.ratelimit.policy", policy);
                 services.GetRequiredService<ILoggerFactory>().CreateLogger("DocIntake.RateLimiting")
-                    .LogWarning("Rejected {Path}: every {Policy} slot and queue place is taken (waited {WaitedMs:F0} ms)",
-                        context.HttpContext.Request.Path.Value, policy, Telemetry.RequestAge(context.HttpContext).TotalMilliseconds);
+                    .RateLimited(context.HttpContext.Request.Path.Value, policy, Telemetry.RequestAge(context.HttpContext).TotalMilliseconds);
                 context.HttpContext.Response.Headers.RetryAfter = "10";
                 return context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsService>().WriteAsync(new ProblemDetailsContext
                 {

@@ -225,7 +225,7 @@ kubectl -n laya create secret generic laya-otel \
 pod. The API and the renderer send OTLP to it inside the cluster; it alone holds the key (the `api-key` entry) and has
 egress to the backend (HTTPS and DNS only). The renderer's NetworkPolicy then allows exactly two things beyond the API's
 requests: the collector on port 4318 and DNS to kube-dns. Its isolation from the internet is unchanged, and its spans
-(`renderer.render`, `renderer.page`, `renderer.ocr`) join the API's trace. Check the collector pod is up with
+(`document.render`, `document.render.page`, `document.render.ocr`) join the API's trace. Check the collector pod is up with
 `kubectl -n laya get pods -l app.kubernetes.io/component=otel-collector`.
 
 **Without it** the API exports directly using the `headers` entry and the renderer exports nothing; its work shows as

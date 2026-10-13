@@ -33,7 +33,7 @@ public sealed class UsageWriter : BackgroundService, IUsageRecorder
         if (!_queue.Writer.TryWrite(record))
         {
             _metrics.RecordUsageWriteFailure(1);
-            _logger.LogError("Usage queue is full or closed; dropped a record for {Model}", record.Model);
+            _logger.UsageDropped(record.Model);
         }
     }
 
@@ -61,7 +61,7 @@ public sealed class UsageWriter : BackgroundService, IUsageRecorder
         catch (Exception ex)
         {
             _metrics.RecordUsageWriteFailure(batch.Count);
-            _logger.LogError(ex, "Could not store {Count} usage record(s)", batch.Count);
+            _logger.UsageNotStored(ex, batch.Count);
         }
     }
 

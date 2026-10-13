@@ -1,3 +1,4 @@
+using DocIntake.ServiceDefaults;
 using System.Diagnostics.Metrics;
 using DocIntake.Contracts;
 
@@ -29,7 +30,7 @@ public sealed class ExtractionMetrics
         _tokens = meter.CreateCounter<long>("intake.extraction.tokens", "{token}",
             "Model tokens used by extraction calls, by model and direction (input, cached, reasoning, output). Cached tokens are part of input, reasoning ones part of output.");
         _extractionDuration = meter.CreateHistogram<double>("intake.extraction.duration", "s",
-            "One extraction (all model calls for a document), by agent, model and outcome.");
+            "One extraction (all model calls for a document), by agent, model and outcome.", tags: null, advice: IntakeBuckets.Seconds);
         _extractionsInFlight = meter.CreateUpDownCounter<long>("intake.extraction.inflight", "{extraction}",
             "Extractions running now.");
         _llmRetries = meter.CreateCounter<long>("intake.llm.retries", "{retry}",
@@ -45,30 +46,30 @@ public sealed class ExtractionMetrics
 
     public void RecordExtractionRun(string agent, string model, TimeSpan elapsed, string outcome) =>
         _extractionDuration.Record(elapsed.TotalSeconds,
-            new KeyValuePair<string, object?>("agent", agent),
-            new KeyValuePair<string, object?>("model", model),
-            new KeyValuePair<string, object?>("outcome", outcome));
+            new KeyValuePair<string, object?>("intake.extraction.agent", agent),
+            new KeyValuePair<string, object?>("gen_ai.request.model", model),
+            new KeyValuePair<string, object?>("intake.outcome", outcome));
 
     public void ExtractionStarted() => _extractionsInFlight.Add(1);
     public void ExtractionFinished() => _extractionsInFlight.Add(-1);
 
     public void RecordLlmRetry(string reason) =>
-        _llmRetries.Add(1, new KeyValuePair<string, object?>("reason", reason));
+        _llmRetries.Add(1, new KeyValuePair<string, object?>("intake.llm.retry_reason", reason));
 
     public void RecordFields(string agent, int found, int total)
     {
-        _extractionFields.Add(found, new KeyValuePair<string, object?>("agent", agent), new KeyValuePair<string, object?>("found", true));
-        _extractionFields.Add(total - found, new KeyValuePair<string, object?>("agent", agent), new KeyValuePair<string, object?>("found", false));
+        _extractionFields.Add(found, new KeyValuePair<string, object?>("intake.extraction.agent", agent), new KeyValuePair<string, object?>("intake.extraction.field_found", true));
+        _extractionFields.Add(total - found, new KeyValuePair<string, object?>("intake.extraction.agent", agent), new KeyValuePair<string, object?>("intake.extraction.field_found", false));
     }
 
     public void RecordWarnings(string agent, int count) =>
-        _extractionWarnings.Add(count, new KeyValuePair<string, object?>("agent", agent));
+        _extractionWarnings.Add(count, new KeyValuePair<string, object?>("intake.extraction.agent", agent));
 
     public void RecordExtraction(string agent, string documentType, string model) =>
         _extractions.Add(1,
-            new KeyValuePair<string, object?>("agent", agent),
+            new KeyValuePair<string, object?>("intake.extraction.agent", agent),
             new KeyValuePair<string, object?>("document_type", documentType),
-            new KeyValuePair<string, object?>("model", model));
+            new KeyValuePair<string, object?>("gen_ai.request.model", model));
 
     /// <summary>One model call, so a generic-agent retry on another model is attributed to the right model and price.</summary>
     public void RecordLlmCall(string model, ExtractionUsage usage, decimal? costUsd)
@@ -76,15 +77,15 @@ public sealed class ExtractionMetrics
         void Add(string direction, long tokens)
         {
             if (tokens > 0)
-                _tokens.Add(tokens, new KeyValuePair<string, object?>("model", model), new KeyValuePair<string, object?>("direction", direction));
+                _tokens.Add(tokens, new KeyValuePair<string, object?>("gen_ai.request.model", model), new KeyValuePair<string, object?>("intake.token.direction", direction));
         }
         Add("input", usage.InputTokens);
         Add("cached", usage.CachedInputTokens);
         Add("reasoning", usage.ReasoningTokens ?? 0);
         Add("output", usage.OutputTokens);
         if (costUsd is { } cost)
-            _llmCost.Add((double)cost, new KeyValuePair<string, object?>("model", model));
+            _llmCost.Add((double)cost, new KeyValuePair<string, object?>("gen_ai.request.model", model));
         else
-            _usageUnpriced.Add(1, new KeyValuePair<string, object?>("model", model));
+            _usageUnpriced.Add(1, new KeyValuePair<string, object?>("gen_ai.request.model", model));
     }
 }
