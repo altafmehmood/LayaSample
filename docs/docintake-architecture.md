@@ -33,6 +33,77 @@ Target, in later phases:
 | `docintake-extraction` | The model agents. The only service with internet access and the model key. |
 | `docintake-decisions` | The Laya model |
 
+## Phase 7: deployment cutover to the `docintake` names (2026-10-13)
+
+**Why.** Phases 1 to 6 left the live cluster on the old names (namespace and release `laya`, `laya-*` Secrets and claim, the
+`laya-sample-*` images, the `/laya` path, a component called `renderer`), because Kubernetes selector labels and the names
+of a running release are immutable. The user chose the full cutover, so the repository now creates everything under
+`docintake`, and moving the live traffic is a documented manual runbook.
+
+### What it does
+
+- **Renames in the chart, CI, Compose and Dockerfile** (no application code changed):
+
+  | Before | After |
+  |---|---|
+  | namespace and release `laya`, `nameOverride: laya-sample` | namespace and release `docintake` (no overrides in `values-prod.yaml`) |
+  | `laya-api`, `laya-renderer`, `laya-extraction`, `laya-decisions`, `laya-clamav`, `laya-otel-collector` | `docintake-api`, `docintake-document`, `docintake-extraction`, `docintake-decisions`, `docintake-clamav`, `docintake-otel-collector` |
+  | Secrets `laya-api-key`, `laya-llm`, `laya-otel`; claim `laya-usage` | `docintake-api-key`, `docintake-llm`, `docintake-otel`; `docintake-usage` |
+  | Gateway and load balancer `laya`; certificate Secret `laya-tls` | `docintake`; `docintake-tls` |
+  | values key `renderer`, templates `renderer-*.yaml`, Dockerfile target and Compose service `renderer` | `document`, `document-*.yaml`, `document` |
+  | images `ghcr.io/<owner>/laya-sample-{api,renderer,extraction,decisions}` | `ghcr.io/<owner>/docintake-{api,document,extraction,decisions}` |
+  | public path `/laya` | `/docintake`; `/laya` still routed (`gateway.legacyPathPrefixes`) |
+  | GitHub secret `LAYA_API_KEY` | `DOCINTAKE_API_KEY` (CI falls back to the old one) |
+
+- **A second release beside the old one.** The deploy job installs release `docintake` in namespace `docintake` and does not
+  touch the `laya` release, so the old stack keeps serving until it is removed by hand.
+- **`gateway.legacyPathPrefixes`** (chart value, schema-validated): extra path prefixes on the same HTTPRoute rule, so callers
+  on `https://api.mehmood.us/laya/...` keep working after DNS moves.
+- **The cutover runbook** in [deploy/README.md](../deploy/README.md#cutting-over-from-the-laya-names): make room on the node,
+  merge, make four GHCR packages public, check the new stack with `curl --resolve`, carry over the TLS Secret, move DNS, copy the
+  usage database, remove the old stack. Rollback is pointing DNS back.
+
+Key files: `deploy/helm/docintake/**`, `deploy/values-prod.yaml`, `deploy/cluster-issuer.yaml`, `.github/workflows/ci.yml`,
+`Dockerfile`, `docker-compose.yml`.
+
+### Settings
+
+`gateway.legacyPathPrefixes` (default empty; `[/laya]` in `values-prod.yaml`). `gateway.pathPrefix` is now `/docintake` in prod.
+
+### How to try it
+
+    helm lint deploy/helm/docintake -f deploy/helm/docintake/ci/values.yaml
+    helm template docintake deploy/helm/docintake -f deploy/values-prod.yaml --set image.tag=sha-abc1234 | grep -n 'name: docintake\|value: "/'
+    docker compose config -q
+
+### What it does not do
+
+- It does not move traffic, the certificate or the usage history for you; those are runbook steps.
+- It does not rename telemetry: `service.name` is still `docintake-gateway` and so on, and the `renderer.*` span names are
+  Phase 9.
+- It does not rename the GitHub repository (the user's job) or delete the old `laya` namespace, GHCR packages or secret.
+- Two full stacks do not fit one small node; the runbook starts with resizing the node pool.
+
+### Tests
+
+No new test. The 485 existing tests pass unchanged (6 opt-in skipped); the architecture tests that read the chart (the model key
+is not in the gateway's Deployment) still pass against the renamed templates.
+
+### Verified, and not
+
+- Verified: `dotnet build`, the full test run, `helm lint` for the three CI values files, `helm template` with
+  `values-prod.yaml` (names, both path prefixes, the PVC and Gateway names), `docker compose config`.
+- **Not verified:** `kubeconform` (not installed here; CI runs it), the Docker image builds under the new target names, a real
+  deploy, the certificate copy, the usage-database copy, and DNS. The runbook commands were written, not run.
+
+### Before deploying
+
+- [ ] Resize the node pool (or accept downtime by scaling `laya` to zero first).
+- [ ] Add the `DOCINTAKE_API_KEY` GitHub secret (optional; the old name is used until then).
+- [ ] After the first push, make the four `docintake-*` GHCR packages public, or the pods stay in `ImagePullBackOff`.
+- [ ] Update any Honeycomb trigger, board or script that mentions the `laya` namespace, `laya-*` pod names or `/laya`.
+- [ ] Follow the runbook; remove the old stack only after the usage totals match.
+
 ## Phase 6: the slim gateway (2026-10-13)
 
 **What it does.** No new service and no deployment change: this phase tidies the gateway so that what it does is easy to see.

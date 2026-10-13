@@ -2,9 +2,9 @@
 image:
   tag: sha-0000000
 gateway:
-  hostname: laya.example.com
+  hostname: docintake.example.com
 api:
   auth:
-    existingSecret: laya-api-key
+    existingSecret: docintake-api-key
 extraction:
-  existingSecret: laya-llm
+  existingSecret: docintake-llm

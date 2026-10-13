@@ -4,7 +4,7 @@
   "required": [
     "image",
     "api",
-    "renderer",
+    "document",
     "extraction",
     "decisions",
     "gateway"
@@ -126,7 +126,7 @@
         }
       }
     },
-    "renderer": {
+    "document": {
       "type": "object",
       "properties": {
         "replicas": {
@@ -265,6 +265,13 @@
         },
         "create": {
           "type": "boolean"
+        },
+        "legacyPathPrefixes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^/"
+          }
         },
         "requestTimeout": {
           "type": "string",

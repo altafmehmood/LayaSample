@@ -1,15 +1,12 @@
-fullnameOverride: laya
-# The chart was renamed docintake on 2026-10-11, but the running release's selector labels (app.kubernetes.io/name) are
-# immutable, so they keep the old chart name until the services cutover replaces these Deployments
-# (docs/docintake-architecture.md). Namespace, release, secrets and image names are unchanged for the same reason.
-nameOverride: laya-sample
-
+# Release `docintake` in namespace `docintake`: the Deployments, Services, Gateway, PVC and Secrets all take the release name
+# (docintake-api, docintake-document, docintake-extraction, docintake-decisions, docintake-usage, ...).
+# The cutover from the old `laya` release is in deploy/README.md ("Cutting over from the laya names").
 image:
   tag: sha-000000002  # will be overridden by CI with actual commit SHA
 
 telemetry:
   endpoint: https://api.honeycomb.io
-  existingSecret: laya-otel
+  existingSecret: docintake-otel
   collector:
     enabled: true
 
@@ -21,15 +18,17 @@ malware:
 gateway:
   create: true
   hostname: api.mehmood.us
-  pathPrefix: /laya
-  loadBalancerName: laya
+  pathPrefix: /docintake
+  # Callers still on https://api.mehmood.us/laya keep working until they move.
+  legacyPathPrefixes: [/laya]
+  loadBalancerName: docintake
   tls:
     clusterIssuer: letsencrypt-prod
 
 api:
   replicas: 1
   auth:
-    existingSecret: laya-api-key
+    existingSecret: docintake-api-key
   usage:
     persistence:
       enabled: true
@@ -46,7 +45,7 @@ api:
     maxQueuedAnalyses: 5
     requestTimeoutSeconds: 300
 
-renderer:
+document:
   replicas: 1
   resources:
     requests:
@@ -61,7 +60,7 @@ renderer:
 
 extraction:
   replicas: 1
-  existingSecret: laya-llm
+  existingSecret: docintake-llm
   resources:
     requests:
       cpu: 50m

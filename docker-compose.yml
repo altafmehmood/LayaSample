@@ -1,4 +1,4 @@
-# The gateway (api), the isolated document service (renderer), the extraction service and the decisions service (Laya).
+# The gateway (api), the isolated document service (document), the extraction service and the decisions service (Laya).
 #
 #   docker compose up --build                                   # http://localhost:8080
 #   OCR_MODEL=PPOCRv6Medium docker compose up --build           # multilingual OCR
@@ -25,7 +25,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      DocumentAnalysis__DocumentServiceUrl: http://renderer:8080
+      DocumentAnalysis__DocumentServiceUrl: http://document:8080
       # Where the extraction service is. It holds the provider key; without one it answers 503 and so does the gateway.
       Extraction__ServiceUrl: http://extraction:8080
       # Where Laya is. Feedback analysis answers 503 until its model has loaded.
@@ -58,7 +58,7 @@ services:
 
   # Scans every upload for malware. The first start downloads the signature database (a few minutes), after which it
   # reports healthy and the API starts. On the public network only: it needs the internet for signature updates, and the
-  # renderer, which is on the internal network alone, must not be able to reach it. No memory or CPU limits, by choice:
+  # the document service, which is on the internal network alone, must not be able to reach it. No memory or CPU limits, by choice:
   # about 1 GiB at rest, and ClamAV's documentation advises 3-4 GiB for when a signature update reloads.
   # Published on loopback so `CLAMD_HOST=localhost dotnet run --project tests/DocIntake.Tests -- -trait "Category=Integration"`
   # can scan with it.
@@ -78,7 +78,7 @@ services:
     restart: unless-stopped
 
   # Turns a prepared document into structured data. On the public network only: it needs the internet to reach the model
-  # provider, and nothing it receives is ever executed or parsed here. Hardened like the renderer, but with egress.
+  # provider, and nothing it receives is ever executed or parsed here. Hardened like the document service, but with egress.
   extraction:
     build:
       context: .
@@ -102,7 +102,7 @@ services:
     restart: unless-stopped
 
   # Laya, the local model that scores hotel-guest feedback. On the internal network (no route out): the model is baked into
-  # the image. Hardened like the renderer.
+  # the image. Hardened like the document service.
   decisions:
     build:
       context: .
@@ -123,13 +123,13 @@ services:
     pids_limit: 256
     restart: unless-stopped
 
-  renderer:
+  document:
     build:
       context: .
-      target: renderer
+      target: document
       args:
         OCR_MODEL: ${OCR_MODEL:-PPOCRv5Latin}
-    image: docintake-renderer
+    image: docintake-document
     environment:
       # Set with the collector profile; the document service can reach nothing else.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${DOCINTAKE_OTLP_ENDPOINT:-}
@@ -156,7 +156,7 @@ services:
       - ./deploy/otel-collector-compose.yaml:/etc/otelcol/config.yaml:ro
     environment:
       HONEYCOMB_API_KEY: ${HONEYCOMB_API_KEY:-}
-    # On the internal network to receive from the renderer, and on the public one to receive from the extraction service and reach the backend.
+    # On the internal network to receive from the document service, and on the public one to receive from the extraction service and reach the backend.
     networks: [public, internal]
     restart: unless-stopped
 

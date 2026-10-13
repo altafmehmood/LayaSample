@@ -1,4 +1,4 @@
-# One replica each, one document at a time, short queues. The API, the renderer, the extraction and the decisions service alone fit a 1 vCPU / 2 GB node, but the
+# One replica each, one document at a time, short queues. The API, the document service, the extraction and the decisions service alone fit a 1 vCPU / 2 GB node, but the
 # ClamAV pod (malware.clamd, on by default) needs about 4 GB more: use a node with 8 GB, or turn it off.
 # See deploy/README.md. Settings under `config` map to DocumentAnalysis__* environment variables.
 
@@ -14,8 +14,7 @@ image:
 imagePullSecrets: []
 
 api:
-  # Still the pre-rename GHCR package names, which CI pushes; they move with the services cutover (docs/docintake-architecture.md).
-  image: laya-sample-api
+  image: docintake-api
   replicas: 1
   config:
     # Documents analysed at once, and requests allowed to wait for a slot (further ones get 503 + Retry-After).
@@ -33,7 +32,7 @@ api:
   # Access key for POST /api/documents/extract, which spends model-provider money. Callers send it as `X-Api-Key`.
   auth:
     # Secret holding the key(s), created outside Helm so they never land in the release history:
-    #   kubectl -n <ns> create secret generic laya-api-key --from-literal=api-key="$(openssl rand -base64 32)"
+    #   kubectl -n <ns> create secret generic docintake-api-key --from-literal=api-key="$(openssl rand -base64 32)"
     # Empty, or no usable key: extraction answers 503 (it fails closed).
     existingSecret: ""
     # Entries of that Secret to accept. To rotate: add the new key under a second entry (e.g. api-key-next), list both,
@@ -61,14 +60,14 @@ api:
   extraEnv: []
 
 # OpenTelemetry export (traces, metrics, logs) over OTLP. Empty endpoint: nothing is exported.
-# With `collector.enabled` the API and the renderer send to a collector pod in the cluster, which alone holds the key and
-# reaches the backend; the renderer's NetworkPolicy then allows only that collector (and DNS). Without it the API exports
-# directly and the renderer exports nothing, because opening egress for it would weaken its isolation.
+# With `collector.enabled` the services send to a collector pod in the cluster, which alone holds the key and
+# reaches the backend; the document service's NetworkPolicy then allows only that collector (and DNS). Without it the API exports
+# directly and the document service exports nothing, because opening egress for it would weaken its isolation.
 telemetry:
   # e.g. https://api.honeycomb.io (OTLP over HTTP).
   endpoint: ""
   # Secret holding the OTLP headers, under `headersKey`, as `x-honeycomb-team=<ingest key>`. Create it outside Helm:
-  #   kubectl -n <ns> create secret generic laya-otel --from-literal=headers="x-honeycomb-team=<ingest key>"
+  #   kubectl -n <ns> create secret generic docintake-otel --from-literal=headers="x-honeycomb-team=<ingest key>"
   # A missing Secret leaves the pod starting with no headers (the backend then rejects the data) instead of failing.
   existingSecret: ""
   headersKey: headers
@@ -104,8 +103,8 @@ malware:
     # node needs that much free. With no requests the pod is BestEffort, so under memory pressure it is evicted first and,
     # while it is down, uploads answer 503.
 
-renderer:
-  image: laya-sample-renderer
+document:
+  image: docintake-document
   replicas: 1
   config:
     maxConcurrentJobs: 1
@@ -121,10 +120,9 @@ renderer:
 
 # The decisions service: Laya, the local model that scores hotel-guest feedback (POST /api/feedback/analyze is answered by the
 # gateway, which calls this). It carries the 850 MB model and needs no network. A new GHCR package starts private on GitHub:
-# make laya-sample-decisions public after CI first pushes it (deploy/README.md).
+# make docintake-decisions public after CI first pushes it (deploy/README.md).
 decisions:
-  # Still the pre-rename GHCR package names, which CI pushes; they move with the services cutover (docs/docintake-architecture.md).
-  image: laya-sample-decisions
+  image: docintake-decisions
   replicas: 1
   resources:
     requests: { cpu: 100m, memory: 256Mi }
@@ -136,13 +134,12 @@ decisions:
 # The extraction service (POST /api/documents/extract is answered by the gateway, which calls this). The only pod that holds the
 # model provider's API key and reaches the internet. Document pages are sent to the model provider, so they leave the cluster.
 extraction:
-  # Still the pre-rename GHCR package names, which CI pushes; they move with the services cutover (docs/docintake-architecture.md).
-  # A new package starts private on GitHub: make laya-sample-extraction public after CI first pushes it (deploy/README.md).
-  image: laya-sample-extraction
+  # A new package starts private on GitHub: make docintake-extraction public after CI first pushes it (deploy/README.md).
+  image: docintake-extraction
   replicas: 1
   # Secret holding the provider API key, under `secretKey`. Empty, or the Secret missing: extraction answers 503.
   # Create it outside Helm so the key never lands in the release history:
-  #   kubectl -n <ns> create secret generic laya-llm --from-literal=api-key=...
+  #   kubectl -n <ns> create secret generic docintake-llm --from-literal=api-key=...
   existingSecret: ""
   secretKey: api-key
   # Short hash of the key (never the key), set by CI so pods restart when the key is rotated.
@@ -161,7 +158,7 @@ extraction:
   startupProbe: { periodSeconds: 5, failureThreshold: 24 }
   extraEnv: []
 
-# The renderer (the document service) reads every untrusted document: only the API may reach it, and it may reach nothing.
+# The document service reads every untrusted document: only the API may reach it, and it may reach nothing.
 # The extraction service may be reached only by the API and may reach only the internet on 443 (the model provider), DNS and
 # the collector. The decisions service may be reached only by the API and may reach nothing but the collector.
 networkPolicy:
@@ -192,7 +189,10 @@ gateway:
     secretName: ""
     # ClusterIssuer cert-manager uses for the HTTPS listener (deploy/cluster-issuer.yaml). Empty: bring your own Secret.
     clusterIssuer: letsencrypt-prod
-  # Path the API is published under, e.g. /laya. The prefix is stripped before the request reaches the API.
+  # Path the API is published under, e.g. /docintake. The prefix is stripped before the request reaches the API.
   pathPrefix: /
+  # Other prefixes that reach the same API during a rename, e.g. [/laya] while callers move to the new prefix. Remove once
+  # nobody calls them (watch the request counts by path in Honeycomb).
+  legacyPathPrefixes: []
   # Longer than the API's request timeout (api.config.requestTimeoutSeconds), so the API answers before the gateway cuts in.
   requestTimeout: 330s
