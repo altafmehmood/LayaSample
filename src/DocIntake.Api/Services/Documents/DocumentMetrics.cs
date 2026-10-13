@@ -28,56 +28,56 @@ public sealed class DocumentMetrics
     {
         var meter = meterFactory.Create(MeterName);
         _stageDuration = meter.CreateHistogram<double>("intake.document.stage.duration", "s",
-            "Time spent in one analysis stage (classify, prepare, route).");
+            "Time spent in one analysis stage (classify, prepare, route).", tags: null, advice: IntakeBuckets.Seconds);
         _documents = meter.CreateCounter<long>("intake.document.analyzed", "{document}",
             "Documents analysed, by kind, applied strategy and outcome (HTTP status).");
         _authRejections = meter.CreateCounter<long>("intake.auth.rejections", "{request}",
             "Requests rejected for a missing, invalid or unconfigured API key.");
-        _documentBytes = meter.CreateHistogram<long>("intake.document.size", "By", "Size of uploaded documents, by kind.");
-        _documentPages = meter.CreateHistogram<int>("intake.document.pages", "{page}", "Pages in uploaded documents, by kind.");
+        _documentBytes = meter.CreateHistogram<long>("intake.document.size", "By", "Size of uploaded documents, by kind.", tags: null, advice: IntakeBuckets.Bytes);
+        _documentPages = meter.CreateHistogram<int>("intake.document.pages", "{page}", "Pages in uploaded documents, by kind.", tags: null, advice: IntakeBuckets.Pages);
         _queueWait = meter.CreateHistogram<double>("intake.request.queue.wait", "s",
-            "Time from the request starting to its handler running: upload plus waiting for a rate-limit slot.");
+            "Time from the request starting to its handler running: upload plus waiting for a rate-limit slot.", tags: null, advice: IntakeBuckets.Seconds);
         _rateLimited = meter.CreateCounter<long>("intake.ratelimit.rejections", "{request}",
             "Requests turned away with 503 because every slot and queue place was taken, by policy.");
         _risks = meter.CreateCounter<long>("intake.risk.findings", "{finding}", "Findings about uploads and answers (active content, macros, hidden text, prompt injection), by kind and severity.");
         _scans = meter.CreateCounter<long>("intake.scan.results", "{upload}", "Uploads scanned for malware, by result (clean, infected, unavailable).");
-        _scanDuration = meter.CreateHistogram<double>("intake.scan.duration", "s", "Time the malware scanner took per upload, by result.");
+        _scanDuration = meter.CreateHistogram<double>("intake.scan.duration", "s", "Time the malware scanner took per upload, by result.", tags: null, advice: IntakeBuckets.Seconds);
         _usageWriteFailures = meter.CreateCounter<long>("intake.usage.write_failures", "{record}",
             "Usage records that could not be stored (store failure or full queue).");
     }
 
     public void RecordUpload(string kind, long bytes, int pages)
     {
-        _documentBytes.Record(bytes, new KeyValuePair<string, object?>("kind", kind));
-        _documentPages.Record(pages, new KeyValuePair<string, object?>("kind", kind));
+        _documentBytes.Record(bytes, new KeyValuePair<string, object?>("intake.document.kind", kind));
+        _documentPages.Record(pages, new KeyValuePair<string, object?>("intake.document.kind", kind));
     }
 
     public void RecordQueueWait(string endpoint, TimeSpan wait) =>
-        _queueWait.Record(wait.TotalSeconds, new KeyValuePair<string, object?>("endpoint", endpoint));
+        _queueWait.Record(wait.TotalSeconds, new KeyValuePair<string, object?>("intake.endpoint", endpoint));
 
     public void RecordRateLimited(string policy) =>
-        _rateLimited.Add(1, new KeyValuePair<string, object?>("policy", policy));
+        _rateLimited.Add(1, new KeyValuePair<string, object?>("intake.ratelimit.policy", policy));
 
     public void RecordStage(string stage, TimeSpan elapsed) =>
-        _stageDuration.Record(elapsed.TotalSeconds, new KeyValuePair<string, object?>("stage", stage));
+        _stageDuration.Record(elapsed.TotalSeconds, new KeyValuePair<string, object?>("intake.stage", stage));
 
     public void RecordDocument(string kind, string strategy, int status) =>
         _documents.Add(1,
-            new KeyValuePair<string, object?>("kind", kind),
-            new KeyValuePair<string, object?>("strategy", strategy),
-            new KeyValuePair<string, object?>("status", status));
+            new KeyValuePair<string, object?>("intake.document.kind", kind),
+            new KeyValuePair<string, object?>("intake.document.strategy", strategy),
+            new KeyValuePair<string, object?>("http.response.status_code", status));
 
     public void RecordRisk(string kind, string severity) =>
-        _risks.Add(1, new KeyValuePair<string, object?>("kind", kind), new KeyValuePair<string, object?>("severity", severity));
+        _risks.Add(1, new KeyValuePair<string, object?>("intake.risk.kind", kind), new KeyValuePair<string, object?>("intake.risk.severity", severity));
 
     public void RecordScan(string result, TimeSpan elapsed)
     {
-        _scans.Add(1, new KeyValuePair<string, object?>("result", result));
-        _scanDuration.Record(elapsed.TotalSeconds, new KeyValuePair<string, object?>("result", result));
+        _scans.Add(1, new KeyValuePair<string, object?>("intake.scan.result", result));
+        _scanDuration.Record(elapsed.TotalSeconds, new KeyValuePair<string, object?>("intake.scan.result", result));
     }
 
     public void RecordUsageWriteFailure(int records) => _usageWriteFailures.Add(records);
 
     public void RecordAuthRejection(string reason) =>
-        _authRejections.Add(1, new KeyValuePair<string, object?>("reason", reason));
+        _authRejections.Add(1, new KeyValuePair<string, object?>("intake.auth.reason", reason));
 }

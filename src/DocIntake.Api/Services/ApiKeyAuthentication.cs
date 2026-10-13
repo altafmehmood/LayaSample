@@ -133,7 +133,7 @@ public sealed class ApiKeyMiddleware(
         metrics.RecordAuthRejection(reason);
         Telemetry.TagRequest(context, "intake.auth.rejected", reason);
         Telemetry.TagRequest(context, "intake.outcome", "auth_" + reason);
-        logger.LogWarning("Rejected a request to {Path}: API key {Reason}", context.Request.Path.Value, reason);
+        logger.ApiKeyRejected(context.Request.Path.Value, reason);
         if (status == StatusCodes.Status401Unauthorized)
             context.Response.Headers.WWWAuthenticate = "ApiKey";
         await Results.Problem(detail: detail, statusCode: status).ExecuteAsync(context);

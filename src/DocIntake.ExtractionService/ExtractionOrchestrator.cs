@@ -42,7 +42,7 @@ public sealed class ExtractionOrchestrator(
     /// <exception cref="IntakeFailureException">The extraction failed; its <see cref="IntakeFailureException.Calls"/> are the model calls made.</exception>
     public async Task<ExtractAnswer> ExtractAsync(ExtractRequest request, CancellationToken ct)
     {
-        using var span = Telemetry.Source.StartActivity("intake.extraction");
+        using var span = Telemetry.Source.StartActivity("intake.extraction.run");
         var started = Stopwatch.GetTimestamp();
         metrics.ExtractionStarted();
         var calls = new List<ModelCall>();
@@ -93,8 +93,8 @@ public sealed class ExtractionOrchestrator(
 
         if (detected != LendingDocumentType.Other && ExtractionValidator.IsMostlyEmpty(output.Result))
         {
-            logger.LogInformation("{Agent} found almost nothing; retrying with the generic agent", agent.Name);
-            span?.AddEvent(new ActivityEvent("generic-agent-retry", tags: new ActivityTagsCollection { ["intake.extraction.first_agent"] = agent.Name }));
+            logger.GenericRetry(agent.Name);
+            span?.AddEvent(new ActivityEvent("intake.extraction.generic_retry", tags: new ActivityTagsCollection { ["intake.extraction.first_agent"] = agent.Name }));
             span?.SetTag("intake.extraction.generic_retry", true);
             var generic = _agents[LendingDocumentType.Other];
             var retryWarnings = new List<string>();
@@ -130,10 +130,13 @@ public sealed class ExtractionOrchestrator(
         if (output.Usage.ReasoningTokens is { } reasoning) span?.SetTag("intake.extraction.reasoning_tokens", reasoning);
         if (output.Usage.CostUsd is { } cost) span?.SetTag("intake.extraction.cost_usd", (double)cost);
         if (warnings.Count > 0)
-            logger.LogWarning("Extraction of {Type} finished with {Count} warning(s): {Warnings}", output.Result.DocumentType, warnings.Count, warnings);
+        {
+            logger.ExtractionWarnings(output.Result.DocumentType, warnings.Count, warnings);
+            foreach (var warning in warnings)
+                span?.AddEvent(new ActivityEvent("intake.extraction.warning", tags: new ActivityTagsCollection { ["intake.extraction.warning.text"] = warning }));
+        }
         // Counts and kinds only, never names, values or quotes: all of them can be personal data.
-        logger.LogInformation("Extracted {Type} with {Agent} ({Model}): {Found}/{Total} fields, {In} in / {Out} out tokens",
-            output.Result.DocumentType, agent.Name, model, found, allFields.Count, output.Usage.InputTokens, output.Usage.OutputTokens);
+        logger.Extracted(output.Result.DocumentType, agent.Name, model, found, allFields.Count, output.Usage.InputTokens, output.Usage.OutputTokens);
 
         return new ExtractAnswer(output.Result.DocumentType, agent.Type == LendingDocumentType.Other ? "model" : "keywords",
             agent.Name, model, output.Result, output.Usage, warnings, answerRisks, calls);
@@ -147,7 +150,7 @@ public sealed class ExtractionOrchestrator(
         var client = request.UsesImages ? clients.Vision! : clients.Text!;
         var model = request.UsesImages ? opts.VisionModel : opts.TextModel;
         var images = request.Messages.SelectMany(m => m.Contents).OfType<DataContent>().Count();
-        using var span = Telemetry.Source.StartActivity("intake.extract");
+        using var span = Telemetry.Source.StartActivity("intake.extraction.attempt");
         // This is a technology demonstrator, so prompts and answers are recorded to debug extraction quality. Page
         // images are not (megabytes of base64): only their count and size. Do not carry this over to real documents.
         span?.SetTag("intake.prompt.system", Telemetry.Truncate(agent.SystemPrompt));
@@ -168,9 +171,7 @@ public sealed class ExtractionOrchestrator(
             var priced = pricing.Price(model, output.Usage.InputTokens, output.Usage.CachedInputTokens, output.Usage.OutputTokens);
             output = output with { Usage = output.Usage with { CostUsd = priced?.CostUsd } };
             Record(output.Usage, priced, "ok");
-            span?.SetTag("intake.extraction.input_tokens", output.Usage.InputTokens);
-            span?.SetTag("intake.extraction.output_tokens", output.Usage.OutputTokens);
-            span?.SetTag("intake.extraction.cached_tokens", output.Usage.CachedInputTokens);
+            // Tokens are on the gen_ai chat span beneath this one (gen_ai.usage.*) and totalled on the run span.
             if (output.Usage.CostUsd is { } cost) span?.SetTag("intake.extraction.cost_usd", (double)cost);
             span?.SetTag("intake.extraction.result", Telemetry.Truncate(System.Text.Json.JsonSerializer.Serialize(output.Result, ResultJson)));
             return (output, model);
@@ -178,20 +179,22 @@ public sealed class ExtractionOrchestrator(
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             Record(null, null, "timeout");
-            span?.SetStatus(ActivityStatusCode.Error, "timed out");
-            throw new IntakeFailureException(FailureKind.Timeout, "the extraction service timed out");
+            var timedOut = new IntakeFailureException(FailureKind.Timeout, "the extraction service timed out");
+            span.RecordFailure(timedOut);
+            throw timedOut;
         }
         catch (IntakeFailureException ex)
         {
             // The agent refused the answer (cut off, filtered, unreadable), but the provider billed the call.
             var priced = ex.Usage is { } billed ? pricing.Price(model, billed.InputTokens, billed.CachedInputTokens, billed.OutputTokens) : null;
             Record(ex.Usage is null ? null : ex.Usage with { CostUsd = priced?.CostUsd }, priced, "http_" + ServiceProblems.StatusOf(ex.Kind));
+            span.RecordFailure(ex);
             throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException && errors.Map(ex) is { } mapped)
         {
             Record(null, null, "http_" + ServiceProblems.StatusOf(mapped.Kind));
-            span?.SetStatus(ActivityStatusCode.Error, mapped.Message);
+            span.RecordFailure(mapped);
             throw mapped;
         }
         catch (OperationCanceledException)
@@ -209,8 +212,7 @@ public sealed class ExtractionOrchestrator(
         if (usage is not null)
             metrics.RecordLlmCall(model, usage, priced?.CostUsd);
         // Counts only: never names, values or quotes.
-        logger.LogInformation("Model call {Outcome} on {Model} (attempt {Attempt}): {In} in ({Cached} cached) / {Out} out tokens, cost {Cost}",
-            outcome, model, attempt, usage?.InputTokens, usage?.CachedInputTokens, usage?.OutputTokens,
+        logger.ModelCall(outcome, model, attempt, usage?.InputTokens, usage?.CachedInputTokens, usage?.OutputTokens,
             priced is null ? "unknown" : priced.CostUsd.ToString("0.000000", System.Globalization.CultureInfo.InvariantCulture));
         calls.Add(new ModelCall(DateTimeOffset.UtcNow, agentName, model, attempt, images, usage, priced?.PriceKey, outcome, (long)elapsed.TotalMilliseconds));
     }

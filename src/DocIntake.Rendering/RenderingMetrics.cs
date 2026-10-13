@@ -1,3 +1,4 @@
+using DocIntake.ServiceDefaults;
 using System.Diagnostics.Metrics;
 
 namespace DocIntake.Rendering;
@@ -10,11 +11,11 @@ public static class RenderingMetrics
     private static readonly Meter Meter = new(MeterName);
 
     public static readonly Histogram<double> RenderDuration = Meter.CreateHistogram<double>("intake.render.duration", "s",
-        "Time to render one job (all its pages), by media type and outcome.");
+        "Time to render one job (all its pages), by media type and outcome.", tags: null, advice: IntakeBuckets.Seconds);
     public static readonly Histogram<double> PageDuration = Meter.CreateHistogram<double>("intake.render.page.duration", "s",
-        "Time to rasterise one page, excluding OCR.");
+        "Time to rasterise one page, excluding OCR.", tags: null, advice: IntakeBuckets.Seconds);
     public static readonly Histogram<double> OcrDuration = Meter.CreateHistogram<double>("intake.ocr.duration", "s",
-        "Time spent in OCR for one page, including waiting for the engine.");
+        "Time spent in OCR for one page, including waiting for the engine.", tags: null, advice: IntakeBuckets.Seconds);
     public static readonly Counter<long> PagesRendered = Meter.CreateCounter<long>("intake.render.pages", "{page}",
         "Pages rendered, by media type and whether OCR ran.");
     public static readonly Counter<long> OcrCharacters = Meter.CreateCounter<long>("intake.ocr.characters", "{character}",
@@ -24,5 +25,5 @@ public static class RenderingMetrics
     public static readonly Counter<long> Rejections = Meter.CreateCounter<long>("intake.render.rejections", "{request}",
         "Render requests turned away because every slot and queue place was taken.");
     public static readonly Histogram<double> ModelLoadDuration = Meter.CreateHistogram<double>("intake.ocr.model.load.duration", "s",
-        "Time to load the OCR models at startup, by outcome.");
+        "Time to load the OCR models at startup, by outcome.", tags: null, advice: IntakeBuckets.Seconds);
 }

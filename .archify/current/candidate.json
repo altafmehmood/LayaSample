@@ -2,8 +2,8 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "LayaSample Document Extraction",
-    "subtitle": "Request path, upload scanning, trust boundaries, usage and telemetry at 6fe4128",
+    "title": "DocIntake Document Extraction",
+    "subtitle": "Request path, scanning, the gateway and its three services, the model key, usage and telemetry at dd7e520",
     "output": ".archify/current/laya-architecture.html",
     "visual_preset": "blueprint",
     "quality_profile": "showcase",
@@ -11,85 +11,492 @@
       "url": "https://github.com/altafmehmood/LayaSample.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "6fe4128f79ee86a886a5a6414400c079018892d4"
+      "revision": "dd7e52019eeb68d82a52681b8c439c8a26ceafb4"
     }
   },
   "components": [
-    { "id": "caller", "type": "external", "label": "API caller", "sublabel": "X-Api-Key + file", "pos": [38, 300], "size": [126, 60] },
-    { "id": "gateway", "type": "cloud", "label": "Cilium Gateway", "sublabel": "HTTPS, /laya prefix", "pos": [230, 300], "size": [128, 60],
-      "sources": [{ "path": "deploy/helm/laya-sample/templates/gateway.yaml", "line": 11, "end_line": 11, "label": "Gateway" }] },
-    { "id": "api", "type": "backend", "label": "Laya API", "sublabel": "scan, classify, extract", "pos": [430, 290], "size": [136, 84],
+    {
+      "id": "caller",
+      "type": "external",
+      "label": "API caller",
+      "sublabel": "X-Api-Key + file",
+      "pos": [
+        38,
+        300
+      ],
+      "size": [
+        126,
+        60
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "cloud",
+      "label": "Ingress (Cilium)",
+      "sublabel": "Gateway API, /laya prefix",
+      "pos": [
+        230,
+        300
+      ],
+      "size": [
+        128,
+        60
+      ],
       "sources": [
-        { "path": "src/LayaSample.Api/Program.cs", "line": 281, "end_line": 340, "label": "extract endpoint" },
-        { "path": "src/LayaSample.Api/Services/ApiKeyAuthentication.cs", "line": 70, "end_line": 70, "label": "API key middleware" },
-        { "path": "src/LayaSample.Api/Services/Documents/DocumentPipeline.cs", "line": 50, "end_line": 56, "label": "scan before parse" }
-      ] },
-    { "id": "clamav", "type": "security", "label": "ClamAV", "sublabel": "clamd, infected = 422", "pos": [430, 100], "size": [136, 62],
+        {
+          "path": "deploy/helm/docintake/templates/gateway.yaml",
+          "line": 11,
+          "end_line": 11,
+          "label": "Gateway"
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "DocIntake gateway",
+      "sublabel": "scan, policy, usage; no model",
+      "pos": [
+        430,
+        290
+      ],
+      "size": [
+        136,
+        84
+      ],
       "sources": [
-        { "path": "src/LayaSample.Api/Services/Security/MalwareScanner.cs", "line": 54, "end_line": 58, "label": "INSTREAM scanner" },
-        { "path": "deploy/helm/laya-sample/templates/clamav.yaml", "line": 6, "end_line": 6, "label": "clamav Deployment" }
-      ] },
-    { "id": "parsers", "type": "backend", "label": "In-process parsers", "sublabel": "PdfPig, ClosedXML, OpenXML", "pos": [680, 100], "size": [136, 62],
+        {
+          "path": "src/DocIntake.Api/Endpoints/DocumentEndpoints.cs",
+          "line": 44,
+          "end_line": 50,
+          "label": "extract endpoint and its filters"
+        },
+        {
+          "path": "src/DocIntake.Api/Services/Documents/DocumentPipeline.cs",
+          "line": 50,
+          "end_line": 55,
+          "label": "scan before parse"
+        },
+        {
+          "path": "src/DocIntake.Api/Services/Documents/Extraction/DocumentExtractor.cs",
+          "line": 56,
+          "end_line": 56,
+          "label": "usage from the calls"
+        }
+      ]
+    },
+    {
+      "id": "clamav",
+      "type": "security",
+      "label": "ClamAV",
+      "sublabel": "clamd, infected = 422",
+      "pos": [
+        430,
+        100
+      ],
+      "size": [
+        136,
+        62
+      ],
       "sources": [
-        { "path": "src/LayaSample.Api/Services/Documents/DocumentClassifier.cs", "line": 69, "end_line": 69, "label": "PDF classify" },
-        { "path": "src/LayaSample.Api/Services/Documents/DocumentPreparer.cs", "line": 276, "end_line": 283, "label": "Office parse" }
-      ] },
-    { "id": "renderer", "type": "backend", "label": "Renderer", "sublabel": "PDFium + ImageMagick", "pos": [430, 480], "size": [136, 62],
+        {
+          "path": "src/DocIntake.Api/Services/Security/MalwareScanner.cs",
+          "line": 55,
+          "end_line": 59,
+          "label": "INSTREAM scanner"
+        },
+        {
+          "path": "deploy/helm/docintake/templates/clamav.yaml",
+          "line": 6,
+          "end_line": 6,
+          "label": "clamav Deployment"
+        }
+      ]
+    },
+    {
+      "id": "renderer",
+      "type": "backend",
+      "label": "Document service",
+      "sublabel": "classify, prepare, render",
+      "pos": [
+        430,
+        480
+      ],
+      "size": [
+        136,
+        84
+      ],
       "sources": [
-        { "path": "src/LayaSample.Renderer/Program.cs", "line": 106, "end_line": 106, "label": "POST /render" },
-        { "path": "src/LayaSample.Rendering/LocalPageRasterizer.cs", "line": 135, "end_line": 141, "label": "PDF page to image" }
-      ] },
-    { "id": "ocr", "type": "backend", "label": "RapidOCR", "sublabel": "PaddleOCR models, ONNX", "pos": [430, 650], "size": [136, 62],
-      "sources": [{ "path": "src/LayaSample.Rendering/OcrEngine.cs", "line": 34, "end_line": 40, "label": "RapidOcrEngine" }] },
-    { "id": "openai", "type": "external", "label": "OpenAI", "sublabel": "vision + text chat models", "pos": [1170, 300], "size": [136, 62],
-      "sources": [{ "path": "src/LayaSample.Api/Services/Documents/Extraction/ExtractionClients.cs", "line": 91, "end_line": 95, "label": "chat clients" }] },
-    { "id": "usage", "type": "database", "label": "Usage history", "sublabel": "SQLite on a PVC", "pos": [940, 480], "size": [136, 62],
+        {
+          "path": "src/DocIntake.DocumentService/Program.cs",
+          "line": 96,
+          "end_line": 96,
+          "label": "POST /documents/classify"
+        },
+        {
+          "path": "src/DocIntake.DocumentService/Classification/DocumentClassifier.cs",
+          "line": 49,
+          "end_line": 49,
+          "label": "PDF classify"
+        },
+        {
+          "path": "src/DocIntake.Rendering/LocalPageRasterizer.cs",
+          "line": 136,
+          "end_line": 142,
+          "label": "PDF page to image"
+        }
+      ]
+    },
+    {
+      "id": "ocr",
+      "type": "backend",
+      "label": "RapidOCR",
+      "sublabel": "PaddleOCR models, ONNX",
+      "pos": [
+        430,
+        650
+      ],
+      "size": [
+        136,
+        62
+      ],
       "sources": [
-        { "path": "src/LayaSample.Api/Services/Usage/UsageStore.cs", "line": 19, "end_line": 19, "label": "UsageStore" },
-        { "path": "deploy/helm/laya-sample/templates/api-pvc.yaml", "line": 5, "end_line": 5, "label": "PersistentVolumeClaim" }
-      ] },
-    { "id": "collector", "type": "backend", "label": "OTel collector", "sublabel": "in cluster, holds ingest key", "pos": [680, 650], "size": [136, 62],
-      "sources": [{ "path": "deploy/helm/laya-sample/templates/collector.yaml", "line": 6, "end_line": 6, "label": "collector Deployment" }] },
-    { "id": "honeycomb", "type": "external", "label": "Honeycomb", "sublabel": "OTLP/HTTP", "pos": [1170, 650], "size": [126, 60],
-      "sources": [{ "path": "deploy/helm/laya-sample/templates/collector-config.yaml", "line": 24, "end_line": 24, "label": "exporter endpoint" }] },
-    { "id": "ci", "type": "external", "label": "GitHub Actions", "sublabel": "deploy on main", "pos": [38, 110], "size": [126, 60],
-      "sources": [{ "path": ".github/workflows/ci.yml", "line": 127, "end_line": 127, "label": "deploy job" }] }
+        {
+          "path": "src/DocIntake.Rendering/OcrEngine.cs",
+          "line": 34,
+          "end_line": 40,
+          "label": "RapidOcrEngine"
+        }
+      ]
+    },
+    {
+      "id": "openai",
+      "type": "external",
+      "label": "OpenAI",
+      "sublabel": "vision + text chat models",
+      "pos": [
+        1170,
+        300
+      ],
+      "size": [
+        136,
+        62
+      ],
+      "sources": [
+        {
+          "path": "src/DocIntake.ExtractionService/ExtractionClients.cs",
+          "line": 78,
+          "end_line": 82,
+          "label": "chat clients"
+        }
+      ]
+    },
+    {
+      "id": "usage",
+      "type": "database",
+      "label": "Usage history",
+      "sublabel": "SQLite on a PVC",
+      "pos": [
+        940,
+        480
+      ],
+      "size": [
+        136,
+        62
+      ],
+      "sources": [
+        {
+          "path": "src/DocIntake.Api/Services/Usage/UsageStore.cs",
+          "line": 19,
+          "end_line": 19,
+          "label": "UsageStore"
+        },
+        {
+          "path": "deploy/helm/docintake/templates/api-pvc.yaml",
+          "line": 5,
+          "end_line": 5,
+          "label": "PersistentVolumeClaim"
+        }
+      ]
+    },
+    {
+      "id": "collector",
+      "type": "backend",
+      "label": "OTel collector",
+      "sublabel": "in cluster, holds ingest key",
+      "pos": [
+        680,
+        650
+      ],
+      "size": [
+        136,
+        62
+      ],
+      "sources": [
+        {
+          "path": "deploy/helm/docintake/templates/collector.yaml",
+          "line": 6,
+          "end_line": 6,
+          "label": "collector Deployment"
+        }
+      ]
+    },
+    {
+      "id": "honeycomb",
+      "type": "external",
+      "label": "Honeycomb",
+      "sublabel": "OTLP/HTTP",
+      "pos": [
+        1170,
+        650
+      ],
+      "size": [
+        126,
+        60
+      ],
+      "sources": [
+        {
+          "path": "deploy/helm/docintake/templates/collector-config.yaml",
+          "line": 29,
+          "end_line": 29,
+          "label": "exporter endpoint"
+        }
+      ]
+    },
+    {
+      "id": "ci",
+      "type": "external",
+      "label": "GitHub Actions",
+      "sublabel": "deploy on main",
+      "pos": [
+        38,
+        110
+      ],
+      "size": [
+        126,
+        60
+      ],
+      "sources": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "line": 127,
+          "end_line": 127,
+          "label": "deploy job"
+        }
+      ]
+    },
+    {
+      "id": "extraction",
+      "type": "backend",
+      "label": "Extraction service",
+      "sublabel": "holds the model key",
+      "pos": [
+        800,
+        300
+      ],
+      "size": [
+        136,
+        62
+      ],
+      "sources": [
+        {
+          "path": "src/DocIntake.ExtractionService/Program.cs",
+          "line": 79,
+          "end_line": 79,
+          "label": "POST /extract"
+        },
+        {
+          "path": "src/DocIntake.ExtractionService/ExtractionOrchestrator.cs",
+          "line": 15,
+          "end_line": 15,
+          "label": "orchestrator"
+        }
+      ]
+    },
+    {
+      "id": "decisions",
+      "type": "backend",
+      "label": "Decisions service",
+      "sublabel": "Laya feedback model",
+      "pos": [
+        680,
+        100
+      ],
+      "size": [
+        136,
+        62
+      ],
+      "sources": [
+        {
+          "path": "src/DocIntake.DecisionsService/Program.cs",
+          "line": 56,
+          "end_line": 56,
+          "label": "POST /decisions/feedback"
+        },
+        {
+          "path": "src/DocIntake.DecisionsService/ModelWarmup.cs",
+          "line": 17,
+          "end_line": 17,
+          "label": "model warm-up"
+        }
+      ]
+    }
   ],
   "boundaries": [
-    { "kind": "region", "label": "DigitalOcean DOKS / namespace laya", "wraps": ["gateway", "api", "clamav", "parsers", "renderer", "ocr", "usage", "collector"], "pad": 20 },
-    { "kind": "security-group", "label": "renderer NetworkPolicy: API in, collector out", "wraps": ["renderer", "ocr"], "pad": 14 }
+    {
+      "kind": "region",
+      "label": "DigitalOcean DOKS / namespace laya",
+      "wraps": [
+        "gateway",
+        "api",
+        "clamav",
+        "renderer",
+        "ocr",
+        "usage",
+        "collector",
+        "extraction",
+        "decisions"
+      ],
+      "pad": 20
+    },
+    {
+      "kind": "security-group",
+      "label": "document service NetworkPolicy: gateway in, collector out",
+      "wraps": [
+        "renderer",
+        "ocr"
+      ],
+      "pad": 14
+    }
   ],
   "connections": [
-    { "from": "caller", "to": "gateway", "label": "HTTPS POST", "variant": "emphasis" },
-    { "from": "gateway", "to": "api", "label": "HTTP :8080", "variant": "emphasis" },
-    { "from": "api", "to": "clamav", "label": "INSTREAM scan first", "variant": "security" },
-    { "from": "api", "to": "parsers", "label": "then parse", "variant": "dashed", "fromSide": "right", "toSide": "bottom" },
-    { "from": "api", "to": "openai", "label": "pages + OCR text", "variant": "security" },
-    { "from": "api", "to": "usage", "label": "tokens + cost", "variant": "dashed", "fromSide": "right", "toSide": "left", "route": "orthogonal-h" },
-    { "from": "api", "to": "renderer", "label": "POST /render", "variant": "security" },
-    { "from": "renderer", "to": "ocr", "label": "OCR per page" },
-    { "from": "api", "to": "collector", "label": "OTLP/HTTP", "variant": "dashed", "fromSide": "bottom", "toSide": "left" },
-    { "from": "renderer", "to": "collector", "label": "OTLP/HTTP :4318", "variant": "dashed", "fromSide": "right", "toSide": "top" },
-    { "from": "collector", "to": "honeycomb", "label": "x-honeycomb-team", "variant": "security" },
-    { "from": "ci", "to": "api", "label": "helm upgrade", "variant": "dashed" }
+    {
+      "from": "caller",
+      "to": "gateway",
+      "label": "HTTPS POST",
+      "variant": "emphasis"
+    },
+    {
+      "from": "gateway",
+      "to": "api",
+      "label": "HTTP :8080",
+      "variant": "emphasis"
+    },
+    {
+      "from": "api",
+      "to": "clamav",
+      "label": "INSTREAM scan first",
+      "variant": "security"
+    },
+    {
+      "from": "api",
+      "to": "usage",
+      "label": "model calls recorded",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "orthogonal-h"
+    },
+    {
+      "from": "api",
+      "to": "renderer",
+      "label": "classify, then prepare",
+      "variant": "security"
+    },
+    {
+      "from": "renderer",
+      "to": "ocr",
+      "label": "OCR per page"
+    },
+    {
+      "from": "api",
+      "to": "collector",
+      "label": "OTLP/HTTP",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "from": "renderer",
+      "to": "collector",
+      "label": "OTLP/HTTP :4318",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "top"
+    },
+    {
+      "from": "collector",
+      "to": "honeycomb",
+      "label": "x-honeycomb-team",
+      "variant": "security"
+    },
+    {
+      "from": "ci",
+      "to": "api",
+      "label": "helm upgrade",
+      "variant": "dashed"
+    },
+    {
+      "from": "api",
+      "to": "extraction",
+      "label": "POST /extract",
+      "variant": "security"
+    },
+    {
+      "from": "extraction",
+      "to": "openai",
+      "label": "pages + OCR text",
+      "variant": "security"
+    },
+    {
+      "from": "api",
+      "to": "decisions",
+      "label": "feedback",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "bottom"
+    }
   ],
   "cards": [
-    { "dot": "cyan", "title": "Request Path", "items": [
-      "Gateway terminates HTTPS and forwards /laya to the API (httproute.yaml:26)",
-      "The API key is checked before the extract handler runs (Program.cs:340)",
-      "The model receives page images with each page's OCR text (ExtractionMessageBuilder.cs:43-54)" ] },
-    { "dot": "rose", "title": "Trust Boundaries", "items": [
-      "Every upload is streamed to ClamAV before any parser reads it; an infection is refused with 422 (DocumentPipeline.cs:50-56)",
-      "PDFium and ImageMagick run only in the renderer (LocalPageRasterizer.cs:135-141)",
-      "PdfPig, ClosedXML and OpenXML parse untrusted files inside the API process (DocumentClassifier.cs:69, DocumentPreparer.cs:276-283)",
-      "Renderer egress is limited to the collector and DNS (networkpolicy.yaml:24-47)" ] },
-    { "dot": "emerald", "title": "Usage and Telemetry", "items": [
-      "Each model call is queued and written to a SQLite file; GET /api/usage serves it as JSON or CSV (UsageStore.cs:19, UsageEndpoints.cs:75)",
-      "The collector alone holds the Honeycomb ingest key (collector-config.yaml:24)",
-      "Production is not yet verified: the collector image and Honeycomb ingestion are untested" ] },
-    { "dot": "amber", "title": "Not Shown", "items": [
-      "Local dotnet run turns scanning off in appsettings.Development.json; Compose and Helm turn it on",
-      "The analyze route dispatches to stub agents, not real downstream agents (Program.cs:215)",
-      "The manual garak red-team harness and its CI job are not part of the runtime (redteam/)" ] }
+    {
+      "dot": "cyan",
+      "title": "Request Path",
+      "items": [
+        "Ingress terminates HTTPS and forwards /laya to the gateway (httproute.yaml:26)",
+        "The API key is checked before the extract handler runs (DocumentEndpoints.cs:49)",
+        "Failures are thrown, not caught in the endpoints: one exception handler answers them (ProblemMapping.cs:22, ArchitectureTests.cs:172)",
+        "The service sends back the model calls it made; the gateway records each as usage (DocumentExtractor.cs:56)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Trust Boundaries",
+      "items": [
+        "Every upload is streamed to ClamAV before any parser reads it; an infection is refused with 422 (DocumentPipeline.cs:50-55)",
+        "Parsers run only in the document service, which has no egress (DocumentClassifier.cs:49, LocalPageRasterizer.cs:136-142)",
+        "Only the extraction service holds the model key and reaches the internet; a test checks the gateway never mentions it (ArchitectureTests.cs:122)",
+        "The gateway runs no model and carries no native library; a test checks its build (ArchitectureTests.cs:57)",
+        "The three services accept calls only from the gateway; the decisions and document services may reach nothing (networkpolicy.yaml:6-128)"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Usage and Telemetry",
+      "items": [
+        "Each model call is queued and written to a SQLite file; GET /api/usage serves it as JSON or CSV (UsageStore.cs:19, UsageEndpoints.cs:75)",
+        "The collector alone holds the Honeycomb ingest key (collector-config.yaml:29)",
+        "Production is not yet verified: the collector image and Honeycomb ingestion are untested"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Not Shown",
+      "items": [
+        "Local dotnet run turns scanning off in appsettings.Development.json (line 13); Compose and Helm turn it on",
+        "The analyze route dispatches to stub agents, not real downstream agents (Program.cs:34)",
+        "The decisions service's telemetry and the other services' links to the collector are not all drawn",
+        "The manual garak red-team harness and its CI job are not part of the runtime (redteam/)"
+      ]
+    }
   ]
 }

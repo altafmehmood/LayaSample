@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using DocIntake.Contracts;
 
 namespace DocIntake.Api.Services.Documents;
@@ -24,6 +25,8 @@ public sealed class DocumentRouter(IEnumerable<IDocumentAgent> agents) : IDocume
         span?.SetTag("intake.route", classification.Route);
         var found = _agents.TryGetValue(classification.Route, out var agent);
         span?.SetTag("intake.route.agent_registered", found);
+        if (!found)
+            span?.AddEvent(new ActivityEvent("intake.route.unrouted"));
         return found
             ? agent!.HandleAsync(classification, document, ct)
             : Task.FromResult(new AgentResult(classification.Route, "unrouted", "no agent registered for this route"));

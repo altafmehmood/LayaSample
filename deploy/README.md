@@ -225,7 +225,7 @@ kubectl -n docintake create secret generic docintake-otel \
 pod. The API and the renderer send OTLP to it inside the cluster; it alone holds the key (the `api-key` entry) and has
 egress to the backend (HTTPS and DNS only). The renderer's NetworkPolicy then allows exactly two things beyond the API's
 requests: the collector on port 4318 and DNS to kube-dns. Its isolation from the internet is unchanged, and its spans
-(`renderer.render`, `renderer.page`, `renderer.ocr`) join the API's trace. Check the collector pod is up with
+(`document.render`, `document.render.page`, `document.render.ocr`) join the API's trace. Check the collector pod is up with
 `kubectl -n docintake get pods -l app.kubernetes.io/component=otel-collector`.
 
 **Without it** the API exports directly using the `headers` entry and the renderer exports nothing; its work shows as
@@ -237,66 +237,20 @@ and answers; page images are recorded only as sizes), and the calls to the rende
 answers are captured because this is a demonstrator; remove that (`intake.prompt.*` and `intake.extraction.result` in
 `DocumentExtractor`) before real documents flow through.
 
-## Cutting over from the `laya` names
+## First deploy after the move to the `docintake` names
 
-Until the cutover, the live cluster uses the old names: namespace and release `laya`, services `laya-api`, `laya-renderer`, ...,
-Secrets `laya-api-key`, `laya-llm`, `laya-otel`, claim `laya-usage`, Gateway and load balancer `laya`, URL prefix `/laya`,
-images `ghcr.io/<owner>/laya-sample-*`. The chart and CI now create everything under **`docintake`** (the document
-service replaces `renderer`, images are `docintake-api`, `-document`, `-extraction`, `-decisions`). Because selector labels
-and names are immutable, this is a **second release in a second namespace** that runs beside the old one, and then you move
-traffic. The old stack is not touched by CI, so it keeps serving until you remove it.
+The live cluster used to run as namespace and release `laya`. That namespace was deleted, so the first deploy of the `docintake`
+names starts from nothing (the usage history in the old `laya-usage` claim went with it). Everything is created by the CI deploy
+job; you do four things by hand:
 
-Do these in order. Nothing here is automatic past step 2.
-
-1. **Make room.** Two full stacks do not fit the node (ClamAV alone needs about 4 GB, and the decisions pod loads an
-   850 MB model). Resize the DigitalOcean node pool to at least twice what runs now, until step 8, or accept downtime by
-   scaling the old release to zero before step 2.
-2. **Merge.** CI pushes the four new images, applies the cert-manager issuers (they now point at Gateway `docintake` in
-   namespace `docintake`), creates the namespace and the three Secrets from the GitHub secrets (`DOCINTAKE_API_KEY`, or
-   the old `LAYA_API_KEY` if you have not added it yet; `OPENAI_API_KEY`; `HONEYCOMB_API_KEY`) and installs release `docintake`.
-3. **Make the four new GHCR packages public** (profile, Packages, each of `docintake-api`, `docintake-document`,
+1. After the `docker` job's first push, make the four packages public (profile, Packages, `docintake-api`, `docintake-document`,
    `docintake-extraction`, `docintake-decisions`, Package settings, Change visibility). A package that is new to GitHub starts
-   private, and the pods stay in `ImagePullBackOff` until it is public; the deploy job waits 10 minutes, so either do this at
-   once or re-run the deploy job afterwards.
-4. **Check the new stack before moving anything.** `kubectl -n docintake get pods` shows every pod Ready, and
-   `kubectl get gateway docintake -n docintake` shows a new ADDRESS (a new load balancer, a new IP).
-   Try it with the host header, which skips DNS:
-   `curl -k --resolve api.mehmood.us:443:<new address> https://api.mehmood.us/docintake/health/ready`.
-5. **Carry over the TLS certificate** so HTTPS works the moment DNS moves, instead of after Let's Encrypt has validated the
-   new Gateway:
-   ```sh
-   kubectl get secret laya-tls -n laya -o yaml \
-     | sed -e 's/namespace: laya/namespace: docintake/' -e 's/name: laya-tls/name: docintake-tls/' \
-           -e '/resourceVersion:/d' -e '/uid:/d' -e '/creationTimestamp:/d' | kubectl apply -f -
-   ```
-   cert-manager sees a valid certificate for the host and keeps it; it renews it later from the new Gateway. Skip this step and
-   there is a few minutes of HTTPS errors after step 6.
-6. **Point DNS** (`api.mehmood.us`, A record) at the new address. Old callers keep working: the new route also answers the old
-   prefix (`gateway.legacyPathPrefixes: [/laya]` in `values-prod.yaml`), so `https://api.mehmood.us/laya/...` and
-   `.../docintake/...` reach the same API. Wait for the record's TTL to pass.
-7. **Move the usage history**, after traffic has stopped reaching the old pod, so nothing is written in between:
-   ```sh
-   for f in usage.db usage.db-wal usage.db-shm; do
-     kubectl -n laya exec deploy/laya-api -- cat /data/$f 2>/dev/null > /tmp/$f || true
-   done
-   POD=$(kubectl -n docintake get pod -l app.kubernetes.io/component=api -o name | head -1)
-   for f in usage.db usage.db-wal usage.db-shm; do [ -s /tmp/$f ] && kubectl -n docintake cp /tmp/$f ${POD#pod/}:/data/$f; done
-   kubectl -n docintake rollout restart deploy/docintake-api
-   ```
-   Then check `GET /api/usage/summary` shows the old totals. Until then the new database is empty; keep the old claim until you have.
-8. **Remove the old stack** once step 7 checks out and the node pool can shrink:
-   `helm uninstall laya -n laya`, then `kubectl delete namespace laya` (this also deletes `laya-usage`: do it last). Delete the
-   old GHCR packages (`laya-sample-*`) and the `LAYA_API_KEY` GitHub secret whenever you like. Later, once nobody calls
-   `/laya`, remove `legacyPathPrefixes` from `values-prod.yaml`.
+   private and the pods stay in `ImagePullBackOff`; the deploy job waits 10 minutes, so re-run it once they are public.
+2. Point the DNS A record (`api.mehmood.us`) at the new load balancer: `kubectl get gateway docintake -n docintake`.
+3. Wait for the certificate: `kubectl get certificate -n docintake -w` (needs the DNS record and port 80).
+4. Check: `kubectl get pods -n docintake`, then `curl https://api.mehmood.us/docintake/health/ready`. The old `/laya` path is not served.
 
-**Rollback** before step 8: point DNS back at the old address. The old stack was never changed. The ClusterIssuer solver now
-names the new Gateway, so a certificate **renewal** for the old one would fail until you re-apply the old issuer
-(`kubectl apply` with `name: laya` / `namespace: laya`); certificates last 90 days, so this is only a concern if you stay on
-the old stack for weeks.
-
-**What breaks, for how long:** with steps 4 to 6 in this order, nothing breaks for callers except the short DNS propagation
-window (both stacks answer, since both run). Anything that scraped the old Kubernetes names (dashboards on the `laya`
-namespace, `kubectl` aliases) must be updated; telemetry `service.name` values did not change in this step.
+The GitHub secret `LAYA_API_KEY` is used until you add `DOCINTAKE_API_KEY`. The old `laya-sample-*` GHCR packages can be deleted.
 
 ## Upgrade, roll back, remove
 

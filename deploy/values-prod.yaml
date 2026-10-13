@@ -19,8 +19,6 @@ gateway:
   create: true
   hostname: api.mehmood.us
   pathPrefix: /docintake
-  # Callers still on https://api.mehmood.us/laya keep working until they move.
-  legacyPathPrefixes: [/laya]
   loadBalancerName: docintake
   tls:
     clusterIssuer: letsencrypt-prod

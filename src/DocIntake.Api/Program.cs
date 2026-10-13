@@ -56,6 +56,7 @@ app.UseExceptionHandler(new ExceptionHandlerOptions
 app.UseStatusCodePages();
 // Before the timeout and the rate limiter, so a rejected caller never has its body read or takes a slot.
 app.UseMiddleware<ApiKeyMiddleware>();
+app.UseMiddleware<RequestScopeMiddleware>();
 // Timeouts run first so time spent queued for an analysis slot counts against the request.
 app.UseRequestTimeouts();
 app.UseRateLimiter();
@@ -68,9 +69,7 @@ app.MapDocumentEndpoints(documentOptions);
 app.MapUsageEndpoints();
 
 // One line that says how this instance was configured, so a trace can be read against it. No secrets.
-app.Lifetime.ApplicationStarted.Register(() => app.Logger.LogInformation(
-    "DocIntake API {Version} started in {Environment}: document service {DocumentService}, extraction service {Extraction}, decisions service {Decisions}, "
-    + "{Analyses} analyses and {Extractions} extractions at once, telemetry export {Telemetry}",
+app.Lifetime.ApplicationStarted.Register(() => app.Logger.Started(
     IntakeTelemetry.Version, app.Environment.EnvironmentName,
     documentOptions.DocumentServiceUrl,
     string.IsNullOrWhiteSpace(extractionOptions.ServiceUrl) ? "not configured" : extractionOptions.ServiceUrl,

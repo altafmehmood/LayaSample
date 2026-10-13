@@ -266,13 +266,6 @@
         "create": {
           "type": "boolean"
         },
-        "legacyPathPrefixes": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^/"
-          }
-        },
         "requestTimeout": {
           "type": "string",
           "pattern": "^[0-9]+(ms|s|m|h)$"

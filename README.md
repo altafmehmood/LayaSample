@@ -18,7 +18,7 @@ OpenAI vision and text models.
 | [Authentication](#authentication) | `X-Api-Key` on the endpoints that spend money; key fingerprints in the usage history; optional admin keys | `dotnet user-secrets set "Auth:ApiKeys:0" "$(openssl rand -base64 32)" --project src/DocIntake.Api` |
 | [Extraction service](#architecture) | The only process with the model provider's key and internet access. It reports every model call; the gateway records them as usage, so a failed or refused call is still counted | `dotnet run --project src/DocIntake.ExtractionService`, or `docker compose up --build` with `OPENAI_API_KEY` |
 | [Document service](#architecture) | Classification, preparation, PDFium, ImageMagick and OCR in a separate container: no network, read-only file system. The gateway reads no document | `docker compose up --build` |
-| [Telemetry](#telemetry-honeycomb) | Traces, metrics and logs to Honeycomb, including prompts, answers, tokens and cost | set the `OTEL_EXPORTER_OTLP_*` user secrets, see [Telemetry](#telemetry-honeycomb) |
+| [Telemetry](#telemetry-honeycomb) | Traces, metrics and logs to Honeycomb, including prompts, answers, tokens and cost; every log line has an EventId and the trace id (JSON in production) | set the `OTEL_EXPORTER_OTLP_*` user secrets, see [Telemetry](#telemetry-honeycomb) |
 | [Lending corpus and evaluation](#lending-corpus) | 39 synthetic lending PDFs with ground truth, and an opt-in accuracy score for the model | `RUN_EXTRACTION_EVAL=1 dotnet run --project tests/DocIntake.Tests -c Release -- -trait "Category=Evaluation"` (paid) |
 | [Red team](redteam/README.md) | garak attacks the extraction API through a shim, with the defences on and in `flag` mode | `redteam/run.sh --smoke` (paid) |
 | [Kubernetes deploy](#kubernetes) | Helm chart and CI deploy to DOKS: Gateway API, TLS, ClamAV, usage PVC, collector | see [deploy/README.md](deploy/README.md) |
@@ -101,13 +101,31 @@ Compose on 8080.
 
 ### 2026-10-13
 
+**Logs and telemetry you can query: EventIds, scopes, trace ids, real histogram buckets.** Every log line is now a `[LoggerMessage]`
+with a stable EventId (1000s gateway, 2000s document, 3000s extraction, 5000s security, 6000s usage, 7000s hosting), and outside
+Development the console writes JSON lines carrying the trace and span ids, so a `kubectl logs` line finds its trace in Honeycomb and back.
+The gateway puts the endpoint and a caller fingerprint on its log scope and on the request span. Duration histograms have
+boundaries from 5 ms to 2 minutes (the SDK default put nearly everything in one bucket) and carry exemplars; spans record
+`error.type`; page kinds and part roles are numbers instead of joined strings; and there are new span events for risk findings, the page
+budget, skipped attachments, scan verdicts and model-load attempts. **Telemetry names changed** (for example
+`intake.extract` is now `intake.extraction.attempt`, `renderer.*` is now `document.render*`, and the bare metric keys `kind`, `status`, `model`
+are now namespaced): the full table, to update boards and triggers, is in
+[docs/docintake-architecture.md](docs/docintake-architecture.md), "Phases 8, 9 and 10".
+
+    dotnet build -c Release && ./tests/DocIntake.Tests/bin/Debug/net10.0/DocIntake.Tests -method '*Logging*' -method '*Metrics*'
+    ASPNETCORE_ENVIRONMENT=Production ASPNETCORE_URLS=http://127.0.0.1:5092 dotnet run --no-build --no-launch-profile -c Release --project src/DocIntake.DocumentService
+    curl -H 'traceparent: 00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01' -F file=@docs/samples/pdf/corpus/redwood-mechanical-ucc1-fax.pdf localhost:5092/documents/classify
+
+You should see a JSON line with `"EventId":2010` and the trace id `0af7651916cd43dd8448eb211c80319c` in its scopes. Free: nothing here
+calls a paid API. **Not run:** Honeycomb itself (no ingest key was used), so the new attributes, events and exemplars are not yet seen there.
+
 **Deployment cutover: everything is `docintake`, including the live cluster names.** The chart, CI and Compose now name every
 object after DocIntake: namespace and release `docintake`, services `docintake-api`, `-document`, `-extraction`, `-decisions`,
 Secrets `docintake-api-key`, `-llm`, `-otel`, claim `docintake-usage`, Gateway and load balancer `docintake`, images
 `ghcr.io/<owner>/docintake-api` and so on, Dockerfile targets `api`, `document`, `extraction`, `decisions`, and the public path
-`/docintake` (the old `/laya` keeps working through `gateway.legacyPathPrefixes` until you remove it). Names in the cluster are
+`/docintake` (the old `/laya` prefix is not kept). Names in the cluster are
 immutable, so the deploy installs a **second release in a new namespace** beside the old one; moving traffic, the TLS
-certificate and the usage history is a manual runbook: [deploy/README.md](deploy/README.md#cutting-over-from-the-laya-names).
+certificate and the usage history is a manual runbook: [deploy/README.md](deploy/README.md#first-deploy-after-the-move-to-the-docintake-names).
 Nothing in the application changed. Docs: [docs/docintake-architecture.md](docs/docintake-architecture.md), Phase 7.
 
     helm template docintake deploy/helm/docintake -f deploy/values-prod.yaml --set image.tag=sha-abc1234 | grep -c 'name: docintake'
@@ -730,11 +748,14 @@ trace across the datasets `docintake-gateway`, `docintake-document` and `docinta
 **What you get.** One extract request is a single trace: the HTTP request (tagged `intake.file.bytes`, `intake.document.kind`,
 `intake.document.strategy`, `intake.document.pages`, `intake.outcome` = `ok` / `rejected` / `renderer_unavailable` / `rate_limited` /
 `auth_invalid` / `extraction_failed`...) with children `intake.buffer`, `intake.classify`, `intake.prepare`, `intake.render` (the
-call to the renderer, with `renderer.render` / `renderer.page` / `renderer.ocr` beneath it), `intake.extraction` and one
-`intake.extract` per model call. `intake.extract` carries the system prompt, the document text sent (page images appear only
+call to the document service, with `document.render` / `document.render.page` / `document.render.ocr` beneath it),
+`intake.extraction.run` and one `intake.extraction.attempt` per model call. `intake.extraction.attempt` carries the system prompt, the document text sent (page images appear only
 as `[image ..., N bytes]`), the model's answer (`intake.extraction.result`), token counts, and retry events. This is a
 technology demonstrator, so prompts and answers are recorded; do not keep that for real documents. Failures are recorded
-on the span (`exception.*`, `intake.failure.kind`) and logged. Metrics are on the `DocIntake.Documents` and
+on the span (`exception.*`, `error.type`, `intake.failure.kind`) and logged: every log line has a stable EventId and, in
+production, is one JSON object with the trace and span ids, so a line in `kubectl logs` can be found in Honeycomb and back.
+Metrics (every histogram in seconds has bucket boundaries from 5 ms to 2 minutes, and keeps exemplars that link a slow bucket to its
+trace) are on the `DocIntake.Documents` and
 `DocIntake.Rendering` meters (document size and pages, queue wait, extraction duration and in-flight, fields found,
 warnings, LLM retries, rate-limit rejections, render/OCR duration, model load times) plus ASP.NET Core, Kestrel,
 HttpClient and .NET runtime metrics. Startup logs one line with the version, renderer, models and limits.
@@ -766,7 +787,7 @@ Without the profile, set `OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io` 
 `OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=<ingest key>"` to export from the API only (the renderer stays silent).
 
 Within a minute a `docintake-gateway` dataset appears in Honeycomb with a `POST` root span and `intake.classify` /
-`intake.prepare` children (plus `renderer.*` spans for rendered pages, from the `docintake-document` service). Add `-H "X-Api-Key: $DOCINTAKE_API_KEY"` and the `extract` endpoint to see `intake.extract` with the
+`intake.prepare` children (plus `document.render*` spans for rendered pages, from the `docintake-document` service). Add `-H "X-Api-Key: $DOCINTAKE_API_KEY"` and the `extract` endpoint to see `intake.extraction.attempt` with the
 model and token counts. To see the spans without a Honeycomb account, point the endpoint at a local OpenTelemetry
 Collector (`http://localhost:4318`, protocol `http/protobuf`).
 

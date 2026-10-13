@@ -98,8 +98,7 @@ public sealed class ProblemMapping(ILogger<ProblemMapping> logger, DocumentMetri
         Telemetry.TagRequest(httpContext, "intake.outcome", failure.Outcome);
         Telemetry.TagRequest(httpContext, "intake.failure.cause", cause);
         Activity.Current?.RecordFailure(ex, failure.Outcome);
-        logger.Log(failure.Level, failure.Logged, "{Outcome}: request answered {Status}: {Reason} (cause {Cause}){Hint}",
-            failure.Outcome, failure.Status, failure.Detail, cause, failure.Hint);
+        logger.RequestFailed(failure.Level, failure.Logged, failure.Outcome, failure.Status, failure.Detail, cause, failure.Hint);
 
         if (failure.RetryAfterSeconds is { } seconds)
             httpContext.Response.Headers.RetryAfter = seconds.ToString();
@@ -118,8 +117,7 @@ public sealed class ProblemMapping(ILogger<ProblemMapping> logger, DocumentMetri
         Activity.Current?.RecordFailure(ex, failure.Outcome);
 
         // Sizes, kinds and the reason only: never the document's text or the provider's error text.
-        logger.Log(failure.Level, failure.Logged, "{Outcome}: {Bytes}-byte {Kind} document answered {Status}: {Reason} (cause {Cause}){Hint}",
-            failure.Outcome, bytes, kind, failure.Status, failure.Detail, cause, failure.Hint);
+        logger.DocumentFailed(failure.Level, failure.Logged, failure.Outcome, bytes, kind, failure.Status, failure.Detail, cause, failure.Hint);
         metrics.RecordDocument(kind, "none", failure.Status);
 
         if (failure.RetryAfterSeconds is { } seconds)

@@ -51,7 +51,7 @@ public sealed class RiskPolicy(IOptions<SecurityOptions> options, DocumentMetric
         Record(findings);
         if (Rejects && findings.Any(f => f.Severity == RiskSeverity.Block))
         {
-            logger.LogWarning("Rejected an extraction whose answer repeated instruction-like text ({Count} finding(s))", findings.Count);
+            logger.AnswerRejected(findings.Count);
             throw new IntakeFailureException(FailureKind.PolicyRejected,
                 "extraction rejected: the answer repeated instruction-like text from the document");
         }
@@ -70,7 +70,7 @@ public sealed class RiskPolicy(IOptions<SecurityOptions> options, DocumentMetric
         if (blocking.Count == 0)
             return;
         // Kinds and counts only: the response and the log never repeat what the document said.
-        logger.LogWarning("Upload has {Count} blocking finding(s): {Kinds} ({Mode})", blocking.Count,
+        logger.BlockingFindings(blocking.Count,
             string.Join(", ", blocking.Select(f => f.Kind).Distinct()), Rejects ? "rejected" : "flagged");
         if (!Rejects)
             return;

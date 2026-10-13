@@ -17,11 +17,6 @@ spec:
         - path:
             type: PathPrefix
             value: {{ .Values.gateway.pathPrefix | quote }}
-        {{- range .Values.gateway.legacyPathPrefixes }}
-        - path:
-            type: PathPrefix
-            value: {{ . | quote }}
-        {{- end }}
       filters:
         - type: URLRewrite
           urlRewrite:

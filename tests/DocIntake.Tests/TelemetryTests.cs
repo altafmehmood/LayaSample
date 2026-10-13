@@ -71,7 +71,7 @@ public class TelemetryTests
 
         Assert.Equal(HttpStatusCode.OK, status);
         var names = spans.Select(s => s.OperationName).ToList();
-        foreach (var expected in new[] { "intake.classify", "intake.prepare", "intake.extraction", "intake.extract" })
+        foreach (var expected in new[] { "intake.classify", "intake.prepare", "intake.extraction.run", "intake.extraction.attempt" })
             Assert.Contains(expected, names);
 
         var server = spans.Single(IsGatewayRequest);
@@ -79,11 +79,31 @@ public class TelemetryTests
         Assert.NotNull(Tag(server, "intake.document.kind"));
         Assert.NotNull(Tag(server, "intake.file.bytes"));
 
-        var extract = spans.Single(s => s.OperationName == "intake.extract");
+        var extract = spans.Single(s => s.OperationName == "intake.extraction.attempt");
         Assert.Contains("You extract data from commercial lending documents", (string)Tag(extract, "intake.prompt.system")!);
         Assert.Contains("<document>", (string)Tag(extract, "intake.prompt.document")!);
         Assert.Contains("ucc1", (string)Tag(extract, "intake.extraction.result")!, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(1000L, Convert.ToInt64(Tag(extract, "intake.extraction.input_tokens")));
+        // The attempt span no longer repeats the tokens (the gen_ai chat span has them); the run span totals them.
+        Assert.Null(Tag(extract, "intake.extraction.input_tokens"));
+        var run = spans.Single(s => s.OperationName == "intake.extraction.run");
+        Assert.Equal(1000L, Convert.ToInt64(Tag(run, "intake.extraction.input_tokens")));
+    }
+
+    [Fact]
+    public async Task The_request_span_says_who_called_and_what_the_endpoint_was()
+    {
+        var fake = FakeChatClient.Returning(Extracted.GenericRoot(LendingDocumentType.Ucc1, Extracted.Ucc1()));
+        using var factory = new Factory(new ExtractionClients(fake, fake));
+
+        var (_, spans) = await Send(factory, "/api/documents/extract", DocumentFixtures.TextPdf());
+
+        var server = spans.Single(IsGatewayRequest);
+        Assert.Equal("ExtractDocument", Tag(server, "intake.endpoint"));
+        Assert.Equal("dev", Tag(server, "intake.caller.fingerprint"));
+        Assert.Equal(true, Tag(server, "intake.caller.admin"));
+        Assert.NotNull(Tag(server, "intake.request.queue_wait_ms"));
+        // Page kinds are numbers, not a joined string.
+        Assert.Null(Tag(spans.Single(s => s.OperationName == "intake.classify"), "intake.document.page_contents"));
     }
 
     [Fact]
@@ -100,5 +120,6 @@ public class TelemetryTests
         Assert.Equal("rejected", Tag(server, "intake.outcome"));
         Assert.Equal(ActivityStatusCode.Error, server.Status);
         Assert.Contains(server.Events, e => e.Name == "exception");
+        Assert.Equal("Unsupported", Tag(server, "error.type"));
     }
 }

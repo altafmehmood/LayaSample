@@ -1,7 +1,7 @@
 # DocIntake architecture: gateway, services, logs and telemetry
 
 Started 2026-10-11. This page tracks a plan delivered in phases: a rename, then splitting the API into a gateway and
-three services, then better logs and OpenTelemetry. Each phase adds its section here when it lands. The README keeps
+three services, then better logs and OpenTelemetry (phases 8 to 10). Each phase adds its section here when it lands. The README keeps
 the short versions.
 
 ## Why
@@ -33,6 +33,117 @@ Target, in later phases:
 | `docintake-extraction` | The model agents. The only service with internet access and the model key. |
 | `docintake-decisions` | The Laya model |
 
+## Phases 8, 9 and 10: logs, OpenTelemetry and this reference (2026-10-13)
+
+**Why.** The review found logs with no EventIds, scopes or trace ids in the console, histograms in seconds with bucket boundaries
+meant for milliseconds (nearly every value landed in the first bucket), bare metric keys (`kind`, `status`), joined-string
+attributes that cannot be grouped, spans that never recorded `error.type`, and two spans with confusingly similar names. These
+three phases (done together, one PR) fix them. Breaking renames are allowed (decided 2026-10-11) and are all listed below.
+
+### Logs (phase 8)
+
+- **Every log line is a `[LoggerMessage]`** in a `Log.cs` per project, with a fixed EventId and name. A guard test fails when a
+  `logger.LogInformation(...)`-style call appears anywhere else (I planted one to check that it fails).
+
+  | Range | Owner | Lines |
+  |---|---|---|
+  | 1000 to 1999 | gateway (`DocIntake.Api/Log.cs`) | 1001 RateLimited, 1002 DocumentAnalysed, 1010 RequestFailed, 1011 DocumentFailed, 1020 Started, 1030 ReadinessChanged |
+  | 2000 to 2999 | document service | 2001 RateLimited, 2010 Classified, 2011 Prepared, 2020 UploadRefused, 2021 UploadFailed, 2030 PageBudgetReached, 2031 PagesRendered, 2032 AttachmentSkipped |
+  | 3000 to 3999 | extraction service | 3001 RateLimited, 3002 ExtractionFailed, 3010 GenericRetry, 3011 ExtractionWarnings, 3012 Extracted, 3020 ModelCall |
+  | 5000 to 5999 | security, written by the gateway | 5001 ApiKeyRejected, 5002 MalwareFound, 5003 AcceptedWithoutVerdict, 5004 ScannerNoVerdict, 5010 AnswerRejected, 5011 BlockingFindings |
+  | 6000 to 6999 | usage, written by the gateway | 6001 UsageDropped, 6002 UsageNotStored, 6003 UsageHistoryLocation |
+  | 7100 to 7299 | hosting and warm-up | 7101 to 7104 Laya model loading, ready, failed, retrying (decisions); 7201 and 7202 OCR ready, failed (document) |
+
+  A test keeps each project's ids inside its range and unique across the system.
+- **Console and export** (`AddIntakeLogging`, called by `AddIntakeTelemetry`): `TraceId`, `SpanId` and `ParentId` on every scope; outside
+  Development the console is one JSON object per line (`EventId`, `Category`, `State`, `Scopes`, UTC time); the OTLP log exporter
+  includes scopes and the formatted message.
+- **Scope on the gateway.** `RequestScopeMiddleware` (after the API-key middleware) opens a scope with `intake.endpoint`,
+  `intake.caller.fingerprint` and `intake.caller.admin`, and puts the same three on the request's span. The caller is a hash prefix
+  of the key and is not passed to the other services (no baggage, by design).
+- **Level policy** (unchanged in substance, now written down). A problem the caller caused (a bad file is Information, a rejected key or an upload turned away by a limit is Warning) carries its reason; a dependency that is degraded or a fail-open decision is Warning; our fault or
+  a misconfiguration is Error. Per request, success is one Information line per service. Logs carry sizes, kinds, counts and
+  reasons, never a file name, text, prompt or answer. One line used to carry an attachment's name (`Embedded file {Attachment}`);
+  it now carries only the extension.
+
+### OpenTelemetry (phase 9)
+
+- **`error.type`** is set by the one `RecordFailure` helper (the failure kind for our own failures, else the exception type);
+  `intake.classify` and every failing `intake.extraction.attempt` now record failures too.
+- **Histogram boundaries** (`IntakeBuckets`): 5 ms to 120 s for every duration; bytes and pages have their own. **Exemplars** are on
+  (`TraceBased`), so a point in a slow bucket links to its trace.
+- **Span events:** `intake.risk.finding` (kind, severity, page), `intake.prepare.page_budget_exhausted`,
+  `intake.prepare.attachment_skipped`, `intake.scan.verdict`, `intake.model.load.attempt`, `intake.extraction.warning`,
+  `intake.route.unrouted`; the existing retry event is now `intake.extraction.generic_retry`.
+- **Resource:** `k8s.node.name` joins `k8s.pod.name` and `k8s.namespace.name` (downward API in the chart); both collector configs
+  gain a `resourcedetection` processor (`env`, `system`; the services' own attributes win), and the Compose collector gains the
+  `memory_limiter` the chart's already had. `service.instance.id` was already generated by the SDK.
+
+**Rename table: update Honeycomb boards, triggers and saved queries.**
+
+| Kind | Before | After |
+|---|---|---|
+| span | `intake.extraction` | `intake.extraction.run` |
+| span | `intake.extract` | `intake.extraction.attempt` |
+| span | `renderer.inspect`, `renderer.render`, `renderer.page`, `renderer.ocr` | `document.inspect`, `document.render`, `document.render.page`, `document.render.ocr` |
+| span | `ocr.model.load` | `document.ocr.model.load` |
+| span event | `generic-agent-retry` | `intake.extraction.generic_retry` |
+| attribute | `intake.document.page_contents` (`Text=2,Fax=1`) | `intake.document.pages.text`, `.fax`, ... (integers) |
+| attribute | `intake.prepare.part_roles` | `intake.prepare.parts.pageimage`, `.pagetext`, ... (integers) |
+| attribute | `intake.prepare.slots` | `intake.prepare.slots.<strategy>` (integers) |
+| attribute | `intake.risk.kinds` | events `intake.risk.finding`; `intake.risk.count.block` and `.info` |
+| attribute | `intake.extraction.input_tokens`, `output_tokens`, `cached_tokens` on the attempt span | gone from the attempt span (see `gen_ai.usage.*` on the chat span); still on the run span |
+| attribute (new) | | `error.type`, `intake.endpoint`, `intake.caller.fingerprint`, `intake.caller.admin`, `intake.request.queue_wait_ms` |
+| metric key | `kind` | `intake.document.kind` (documents, size, pages), `intake.risk.kind` (risk findings) |
+| metric key | `strategy`, `status`, `policy`, `stage`, `result`, `reason`, `endpoint`, `severity` | `intake.document.strategy`, `http.response.status_code`, `intake.ratelimit.policy`, `intake.stage`, `intake.scan.result`, `intake.auth.reason`, `intake.endpoint`, `intake.risk.severity` |
+| metric key | `agent`, `model`, `outcome`, `reason`, `found`, `direction` | `intake.extraction.agent`, `gen_ai.request.model`, `intake.outcome`, `intake.llm.retry_reason`, `intake.extraction.field_found`, `intake.token.direction` |
+| metric key | `media_type`, `ocr` (rendering) | `intake.document.media_type`, `intake.ocr.used` |
+| console | plain text | JSON lines outside Development |
+
+Meter names, metric names and `service.name` are unchanged.
+
+### How to try it
+
+    dotnet build -c Release
+    ./tests/DocIntake.Tests/bin/Debug/net10.0/DocIntake.Tests -method '*Logging*' -method '*Metrics*' -method '*Telemetry*'
+    ASPNETCORE_ENVIRONMENT=Production ASPNETCORE_URLS=http://127.0.0.1:5092 dotnet run --no-build --no-launch-profile -c Release --project src/DocIntake.DocumentService
+    curl -H 'traceparent: 00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01' -F file=@docs/samples/pdf/corpus/redwood-mechanical-ucc1-fax.pdf localhost:5092/documents/classify
+
+The last command prints a JSON line with `"EventId":2010` and the trace id `0af7651916cd43dd8448eb211c80319c` in its scopes.
+
+### What it does not do
+
+- **Not done from the plan:** the per-concern meters (`DocIntake.Gateway`, `.Security`, `.Usage` as separate meters built through
+  `IMeterFactory`; the rendering meter is still static) and an `IntakeSpans.Run` wrapper (the single `RecordFailure` helper does
+  its job). Metric names are unchanged, so no board breaks for this. The `Microsoft.Extensions.Diagnostics.Testing` package was
+  not added: the tests use a small capture logger and a `MeterListener`, so there is no new package or licence to check.
+- Log message templates keep PascalCase placeholders (`{Bytes}`, `{Kind}`); the `[LoggerMessage]` generator cannot name a parameter
+  `intake.document.kind`. The span-style names are used in scopes, where they can be.
+- The document, extraction and decisions services do not open a request scope: they do not know who called, by design.
+  `intake.document.kind` as a scope on those services was in the plan and was not built.
+- Prompts and answers are still captured on spans (always on, by decision).
+
+### Tests
+
+`LoggingTests` (9: a request's EventId, level and scope, no file name in any line, a refusal logged at Information with no Error,
+ranges, uniqueness, and the no-stray-log-call guard), `MetricsTests` (3: duration histogram boundaries, size and page boundaries,
+namespaced keys), `TelemetryTests` (renamed spans, tokens on the run span only, the caller and endpoint on the request span, no
+joined page-content string, `error.type`). None is opt-in or paid. 498 tests in all, 6 opt-in skipped.
+
+### Verified, and not
+
+- Verified: the full build (Release, warnings as errors in CI) and the tests; the guard test fails when a stray log call is planted;
+  the document service run in Production mode prints JSON with the right EventId and the trace id of the incoming `traceparent`;
+  both collector configs pass `otelcol-contrib validate` (image 0.162.0); `helm template` renders the node name and the processor.
+- **Not verified:** that Honeycomb shows the new attributes, events and exemplars (no ingest key was used), the gateway's JSON
+  console and scope in a real run (the tests cover the scope), a deploy, and the Docker images with the new console.
+
+### Before deploying
+
+- [ ] Update Honeycomb boards, triggers and saved queries that use any name in the rename table (span names, `intake.risk.kinds`,
+  metric keys such as `kind`, `status`, `model`).
+- [ ] Anything that parses container logs as plain text will now see JSON lines in Production.
+
 ## Phase 7: deployment cutover to the `docintake` names (2026-10-13)
 
 **Why.** Phases 1 to 6 left the live cluster on the old names (namespace and release `laya`, `laya-*` Secrets and claim, the
@@ -52,23 +163,26 @@ of a running release are immutable. The user chose the full cutover, so the repo
   | Gateway and load balancer `laya`; certificate Secret `laya-tls` | `docintake`; `docintake-tls` |
   | values key `renderer`, templates `renderer-*.yaml`, Dockerfile target and Compose service `renderer` | `document`, `document-*.yaml`, `document` |
   | images `ghcr.io/<owner>/laya-sample-{api,renderer,extraction,decisions}` | `ghcr.io/<owner>/docintake-{api,document,extraction,decisions}` |
-  | public path `/laya` | `/docintake`; `/laya` still routed (`gateway.legacyPathPrefixes`) |
+  | public path `/laya` | `/docintake` (no backward compatibility for `/laya`, by decision) |
   | GitHub secret `LAYA_API_KEY` | `DOCINTAKE_API_KEY` (CI falls back to the old one) |
 
 - **A second release beside the old one.** The deploy job installs release `docintake` in namespace `docintake` and does not
   touch the `laya` release, so the old stack keeps serving until it is removed by hand.
-- **`gateway.legacyPathPrefixes`** (chart value, schema-validated): extra path prefixes on the same HTTPRoute rule, so callers
-  on `https://api.mehmood.us/laya/...` keep working after DNS moves.
-- **The cutover runbook** in [deploy/README.md](../deploy/README.md#cutting-over-from-the-laya-names): make room on the node,
+- **The cutover runbook** in [deploy/README.md](../deploy/README.md#first-deploy-after-the-move-to-the-docintake-names): make room on the node,
   merge, make four GHCR packages public, check the new stack with `curl --resolve`, carry over the TLS Secret, move DNS, copy the
   usage database, remove the old stack. Rollback is pointing DNS back.
 
 Key files: `deploy/helm/docintake/**`, `deploy/values-prod.yaml`, `deploy/cluster-issuer.yaml`, `.github/workflows/ci.yml`,
 `Dockerfile`, `docker-compose.yml`.
 
+> **Update (same day):** the old `laya` namespace was deleted before the deploy and `/laya` is not kept. So there is no second
+> release beside the old one, no certificate or usage-history carry-over (the old usage data is gone), and the runbook in
+> `deploy/README.md` is reduced to "First deploy after the move": make the four GHCR packages public, point DNS at the new
+> load balancer, wait for the certificate, check. The notes below describe the original plan.
+
 ### Settings
 
-`gateway.legacyPathPrefixes` (default empty; `[/laya]` in `values-prod.yaml`). `gateway.pathPrefix` is now `/docintake` in prod.
+`gateway.pathPrefix` is now `/docintake` in prod. A short-lived `gateway.legacyPathPrefixes` value that kept `/laya` routed was added and removed again on the same day: callers must use `/docintake`.
 
 ### How to try it
 

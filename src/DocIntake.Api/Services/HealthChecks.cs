@@ -26,8 +26,7 @@ public sealed class DocumentServiceHealthCheck(DocumentServiceClient client, ILo
         // The probe runs every few seconds; only a change is an event.
         var now = $"{result.Status}: {result.Description}";
         if (Interlocked.Exchange(ref _last, now) is { } before && before != now)
-            logger.Log(result.Status == HealthStatus.Healthy ? LogLevel.Information : LogLevel.Warning,
-                "Document service readiness changed from {Before} to {Now}", before, now);
+            logger.ReadinessChanged(result.Status == HealthStatus.Healthy ? LogLevel.Information : LogLevel.Warning, "Document service", before, now);
         return result;
     }
 }
@@ -53,8 +52,7 @@ public sealed class ExtractionServiceHealthCheck(ExtractionServiceClient client,
             };
         var now = $"{result.Status}: {result.Description}";
         if (Interlocked.Exchange(ref _last, now) is { } before && before != now)
-            logger.Log(result.Status == HealthStatus.Healthy ? LogLevel.Information : LogLevel.Warning,
-                "Extraction service readiness changed from {Before} to {Now}", before, now);
+            logger.ReadinessChanged(result.Status == HealthStatus.Healthy ? LogLevel.Information : LogLevel.Warning, "Extraction service", before, now);
         return result;
     }
 }
@@ -79,8 +77,7 @@ public sealed class DecisionsServiceHealthCheck(DecisionsServiceClient client, I
             };
         var now = $"{result.Status}: {result.Description}";
         if (Interlocked.Exchange(ref _last, now) is { } before && before != now)
-            logger.Log(result.Status == HealthStatus.Healthy ? LogLevel.Information : LogLevel.Warning,
-                "Decisions service readiness changed from {Before} to {Now}", before, now);
+            logger.ReadinessChanged(result.Status == HealthStatus.Healthy ? LogLevel.Information : LogLevel.Warning, "Decisions service", before, now);
         return result;
     }
 }

@@ -88,7 +88,7 @@ internal static class DocumentEndpoints
         Telemetry.TagRequest(httpContext, "intake.outcome", "ok");
 
         // Content only, never file names or text: both can carry personal data.
-        logger.LogInformation("Analysed {Bytes}-byte {Kind} document: {Strategy}, {Pages} page(s), {Parts} part(s) in {ElapsedMs:F0} ms",
+        logger.DocumentAnalysed(
             file!.Length, classification.Kind, prepared.Strategy, classification.PageCount, prepared.Parts.Count,
             run.Elapsed.TotalMilliseconds);
         metrics.RecordDocument(classification.Kind.ToString(), prepared.Strategy.ToString(), StatusCodes.Status200OK);

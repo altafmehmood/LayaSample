@@ -7,13 +7,13 @@
   "quality": "showcase",
   "specification": {
     "path": "/Users/altafmehmood/Repos/LayaSample/.archify/current/candidate.json",
-    "sha256": "bcb699db3e0a7d05e43b9bf12a27d73d2239dea331ad62eb2cdd79fae841b85a",
-    "bytes": 7832
+    "sha256": "b745bfbee0dbc867287ffc5d8acf7e36b69597ecb1d52ad7b1370ac252760b1c",
+    "bytes": 12054
   },
   "artifact": {
     "path": "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.html",
-    "sha256": "68da38cae86a540f4355805c11f76104c4da65f9040cc070846b02190f398ffb",
-    "bytes": 775798
+    "sha256": "413f1605278b331ba36a39037fe02dc54229ba673ce6c2c875742aa3606edb6f",
+    "bytes": 779633
   },
   "gates": {
     "validate": "pass",
@@ -37,50 +37,74 @@
     "installedVersion": "3.0.1",
     "availableVersion": "3.0.1",
     "releaseNotes": null,
-    "checkedAt": "2026-10-11T14:05:52.276Z",
+    "checkedAt": "2026-10-13T01:04:20.512Z",
     "source": "cache",
     "noticeRequired": false,
     "noticeText": null
   },
   "visualReview": "not-requested",
-  "durationMs": 1634,
+  "durationMs": 1636,
   "visualReviewRecommendation": {
     "action": "inspect-route-readability",
     "signals": {
+      "resolvedCrossovers": 1,
       "routesOverSuggestedBends": 2
     },
     "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
     "affectedRoutes": {
-      "crossings": [],
-      "detours": [
+      "crossings": [
         {
-          "relationship": {
+          "left": {
             "from": "api",
-            "to": "parsers",
-            "label": "then parse",
-            "collectionIndex": 3,
-            "artifactIndex": 4
+            "to": "collector",
+            "label": "OTLP/HTTP",
+            "collectionIndex": 6,
+            "artifactIndex": 7
           },
-          "bends": 3,
-          "stretch": 1
-        },
+          "right": {
+            "from": "renderer",
+            "to": "collector",
+            "label": "OTLP/HTTP :4318",
+            "collectionIndex": 7,
+            "artifactIndex": 8
+          },
+          "point": [
+            703,
+            522
+          ],
+          "sharedNode": "collector"
+        }
+      ],
+      "detours": [
         {
           "relationship": {
             "from": "api",
             "to": "collector",
             "label": "OTLP/HTTP",
-            "collectionIndex": 8,
-            "artifactIndex": 9
+            "collectionIndex": 6,
+            "artifactIndex": 7
           },
           "bends": 5,
-          "stretch": 1.349
+          "stretch": 1.195
+        },
+        {
+          "relationship": {
+            "from": "api",
+            "to": "decisions",
+            "label": "feedback",
+            "collectionIndex": 12,
+            "artifactIndex": 13
+          },
+          "bends": 3,
+          "stretch": 1
         }
       ],
       "truncated": false
     },
     "hints": [
-      "api → parsers needs 3 bends: move node api or parsers so they share a row or column with matching centers, or sit diagonally with a clear corner.",
-      "api → collector needs 5 bends: move node api or collector so they share a row or column with matching centers, or sit diagonally with a clear corner."
+      "api → collector and renderer → collector cross next to collector: move node api or renderer so the two reach collector from different sides (for example one level with it, one directly above or below it).",
+      "api → collector needs 5 bends: move node api or collector so they share a row or column with matching centers, or sit diagonally with a clear corner.",
+      "api → decisions needs 3 bends: move node api or decisions so they share a row or column with matching centers, or sit diagonally with a clear corner."
     ],
     "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
   }

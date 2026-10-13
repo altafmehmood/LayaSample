@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "receiptId": "a42f7bce-390d-4b54-a6a1-a832f1b6025e",
+  "receiptId": "6e6ea832-e3b3-492d-899b-7bdff04b9a63",
   "status": "current",
   "command": "deliver",
   "type": "architecture",
   "input": "/Users/altafmehmood/Repos/LayaSample/.archify/current/candidate.json",
   "output": "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.html",
   "specification": {
-    "sha256": "bcb699db3e0a7d05e43b9bf12a27d73d2239dea331ad62eb2cdd79fae841b85a",
-    "bytes": 7832
+    "sha256": "b745bfbee0dbc867287ffc5d8acf7e36b69597ecb1d52ad7b1370ac252760b1c",
+    "bytes": 12054
   },
   "artifact": {
-    "sha256": "68da38cae86a540f4355805c11f76104c4da65f9040cc070846b02190f398ffb",
-    "bytes": 775798
+    "sha256": "413f1605278b331ba36a39037fe02dc54229ba673ce6c2c875742aa3606edb6f",
+    "bytes": 779633
   }
 }

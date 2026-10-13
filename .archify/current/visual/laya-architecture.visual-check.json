@@ -6,11 +6,11 @@
   "status": "pass",
   "visualReview": "pending",
   "provenance": "current",
-  "deliveryReceiptId": "a42f7bce-390d-4b54-a6a1-a832f1b6025e",
+  "deliveryReceiptId": "6e6ea832-e3b3-492d-899b-7bdff04b9a63",
   "artifact": {
     "path": "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.html",
-    "sha256": "68da38cae86a540f4355805c11f76104c4da65f9040cc070846b02190f398ffb",
-    "bytes": 775798
+    "sha256": "413f1605278b331ba36a39037fe02dc54229ba673ce6c2c875742aa3606edb6f",
+    "bytes": 779633
   },
   "state": {
     "detail": "read",
@@ -32,7 +32,7 @@
         "innerWidth": 1440,
         "innerHeight": 900,
         "scrollWidth": 1440,
-        "scrollHeight": 958,
+        "scrollHeight": 968,
         "overflowX": false,
         "overflowY": true,
         "verticalScrollAccepted": true,
@@ -41,25 +41,25 @@
         "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1359,
-        "diagramWidth": 1329,
+        "readerWidth": 1376,
+        "diagramWidth": 1346,
         "pageComposition": {
           "bodyPaddingPx": 12,
           "headerPx": 78,
           "diagramChromePx": 78,
-          "svgPx": 790,
+          "svgPx": 800,
           "cardsPx": 0,
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.504011887072808,
-        "minimumProjectedNonEdgeTextPx": 7.504011887072808,
-        "minimumProjectedEdgeTextPx": 7.898959881129272,
-        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextPx": 7.3,
+        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedEdgeTextPx": 8,
+        "minimumProjectedNodeText": "scan, policy, usage; no model",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "collector"
+          "id": "api"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -82,7 +82,7 @@
         "innerWidth": 1600,
         "innerHeight": 1000,
         "scrollWidth": 1600,
-        "scrollHeight": 1024,
+        "scrollHeight": 1034,
         "overflowX": false,
         "overflowY": true,
         "verticalScrollAccepted": true,
@@ -91,25 +91,25 @@
         "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1359,
-        "diagramWidth": 1329,
+        "readerWidth": 1376,
+        "diagramWidth": 1346,
         "pageComposition": {
           "bodyPaddingPx": 64,
           "headerPx": 86,
           "diagramChromePx": 84,
-          "svgPx": 790,
+          "svgPx": 800,
           "cardsPx": 0,
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.504011887072808,
-        "minimumProjectedNonEdgeTextPx": 7.504011887072808,
-        "minimumProjectedEdgeTextPx": 7.898959881129272,
-        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextPx": 7.3,
+        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedEdgeTextPx": 8,
+        "minimumProjectedNodeText": "scan, policy, usage; no model",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "collector"
+          "id": "api"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -152,14 +152,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.6,
-        "minimumProjectedNonEdgeTextPx": 7.6,
+        "minimumProjectedNodeTextPx": 7.3,
+        "minimumProjectedNonEdgeTextPx": 7.3,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeText": "scan, policy, usage; no model",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "collector"
+          "id": "api"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -202,14 +202,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.6,
-        "minimumProjectedNonEdgeTextPx": 7.6,
+        "minimumProjectedNodeTextPx": 7.3,
+        "minimumProjectedNonEdgeTextPx": 7.3,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeText": "scan, policy, usage; no model",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "collector"
+          "id": "api"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -285,7 +285,7 @@
         "innerWidth": 1440,
         "innerHeight": 900,
         "scrollWidth": 1440,
-        "scrollHeight": 958,
+        "scrollHeight": 968,
         "overflowX": false,
         "overflowY": true,
         "verticalScrollAccepted": true,
@@ -294,25 +294,25 @@
         "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1359,
-        "diagramWidth": 1329,
+        "readerWidth": 1376,
+        "diagramWidth": 1346,
         "pageComposition": {
           "bodyPaddingPx": 12,
           "headerPx": 78,
           "diagramChromePx": 78,
-          "svgPx": 790,
+          "svgPx": 800,
           "cardsPx": 0,
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.504011887072808,
-        "minimumProjectedNonEdgeTextPx": 7.504011887072808,
-        "minimumProjectedEdgeTextPx": 7.898959881129272,
-        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextPx": 7.3,
+        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedEdgeTextPx": 8,
+        "minimumProjectedNodeText": "scan, policy, usage; no model",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "collector"
+          "id": "api"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -335,7 +335,7 @@
         "innerWidth": 1600,
         "innerHeight": 1000,
         "scrollWidth": 1600,
-        "scrollHeight": 1024,
+        "scrollHeight": 1034,
         "overflowX": false,
         "overflowY": true,
         "verticalScrollAccepted": true,
@@ -344,25 +344,25 @@
         "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1359,
-        "diagramWidth": 1329,
+        "readerWidth": 1376,
+        "diagramWidth": 1346,
         "pageComposition": {
           "bodyPaddingPx": 64,
           "headerPx": 86,
           "diagramChromePx": 84,
-          "svgPx": 790,
+          "svgPx": 800,
           "cardsPx": 0,
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.504011887072808,
-        "minimumProjectedNonEdgeTextPx": 7.504011887072808,
-        "minimumProjectedEdgeTextPx": 7.898959881129272,
-        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextPx": 7.3,
+        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedEdgeTextPx": 8,
+        "minimumProjectedNodeText": "scan, policy, usage; no model",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "collector"
+          "id": "api"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -405,14 +405,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.6,
-        "minimumProjectedNonEdgeTextPx": 7.6,
+        "minimumProjectedNodeTextPx": 7.3,
+        "minimumProjectedNonEdgeTextPx": 7.3,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeText": "scan, policy, usage; no model",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "collector"
+          "id": "api"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -455,14 +455,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.6,
-        "minimumProjectedNonEdgeTextPx": 7.6,
+        "minimumProjectedNodeTextPx": 7.3,
+        "minimumProjectedNonEdgeTextPx": 7.3,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeText": "scan, policy, usage; no model",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "collector"
+          "id": "api"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -490,7 +490,7 @@
         "innerWidth": 1440,
         "innerHeight": 900,
         "scrollWidth": 1440,
-        "scrollHeight": 958,
+        "scrollHeight": 968,
         "overflowX": false,
         "overflowY": true,
         "verticalScrollAccepted": true,
@@ -499,25 +499,25 @@
         "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1359,
-        "diagramWidth": 1329,
+        "readerWidth": 1376,
+        "diagramWidth": 1346,
         "pageComposition": {
           "bodyPaddingPx": 12,
           "headerPx": 78,
           "diagramChromePx": 78,
-          "svgPx": 790,
+          "svgPx": 800,
           "cardsPx": 0,
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.504011887072808,
-        "minimumProjectedNonEdgeTextPx": 7.504011887072808,
-        "minimumProjectedEdgeTextPx": 7.898959881129272,
-        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextPx": 7.3,
+        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedEdgeTextPx": 8,
+        "minimumProjectedNodeText": "scan, policy, usage; no model",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "collector"
+          "id": "api"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -540,7 +540,7 @@
         "innerWidth": 1600,
         "innerHeight": 1000,
         "scrollWidth": 1600,
-        "scrollHeight": 1024,
+        "scrollHeight": 1034,
         "overflowX": false,
         "overflowY": true,
         "verticalScrollAccepted": true,
@@ -549,25 +549,25 @@
         "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1359,
-        "diagramWidth": 1329,
+        "readerWidth": 1376,
+        "diagramWidth": 1346,
         "pageComposition": {
           "bodyPaddingPx": 64,
           "headerPx": 86,
           "diagramChromePx": 84,
-          "svgPx": 790,
+          "svgPx": 800,
           "cardsPx": 0,
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.504011887072808,
-        "minimumProjectedNonEdgeTextPx": 7.504011887072808,
-        "minimumProjectedEdgeTextPx": 7.898959881129272,
-        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextPx": 7.3,
+        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedEdgeTextPx": 8,
+        "minimumProjectedNodeText": "scan, policy, usage; no model",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "collector"
+          "id": "api"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -610,14 +610,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.6,
-        "minimumProjectedNonEdgeTextPx": 7.6,
+        "minimumProjectedNodeTextPx": 7.3,
+        "minimumProjectedNonEdgeTextPx": 7.3,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeText": "scan, policy, usage; no model",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "collector"
+          "id": "api"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -660,14 +660,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.6,
-        "minimumProjectedNonEdgeTextPx": 7.6,
+        "minimumProjectedNodeTextPx": 7.3,
+        "minimumProjectedNonEdgeTextPx": 7.3,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeText": "scan, policy, usage; no model",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "collector"
+          "id": "api"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -695,7 +695,7 @@
         "innerWidth": 1440,
         "innerHeight": 900,
         "scrollWidth": 1440,
-        "scrollHeight": 958,
+        "scrollHeight": 968,
         "overflowX": false,
         "overflowY": true,
         "verticalScrollAccepted": true,
@@ -704,25 +704,25 @@
         "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1359,
-        "diagramWidth": 1329,
+        "readerWidth": 1376,
+        "diagramWidth": 1346,
         "pageComposition": {
           "bodyPaddingPx": 12,
           "headerPx": 78,
           "diagramChromePx": 78,
-          "svgPx": 790,
+          "svgPx": 800,
           "cardsPx": 0,
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.504011887072808,
-        "minimumProjectedNonEdgeTextPx": 7.504011887072808,
-        "minimumProjectedEdgeTextPx": 7.898959881129272,
-        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextPx": 7.3,
+        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedEdgeTextPx": 8,
+        "minimumProjectedNodeText": "scan, policy, usage; no model",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "collector"
+          "id": "api"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -746,7 +746,7 @@
         "innerWidth": 1440,
         "innerHeight": 900,
         "scrollWidth": 1440,
-        "scrollHeight": 958,
+        "scrollHeight": 968,
         "overflowX": false,
         "overflowY": true,
         "verticalScrollAccepted": true,
@@ -755,25 +755,25 @@
         "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1359,
-        "diagramWidth": 1329,
+        "readerWidth": 1376,
+        "diagramWidth": 1346,
         "pageComposition": {
           "bodyPaddingPx": 12,
           "headerPx": 78,
           "diagramChromePx": 78,
-          "svgPx": 790,
+          "svgPx": 800,
           "cardsPx": 0,
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.504011887072808,
-        "minimumProjectedNonEdgeTextPx": 7.504011887072808,
-        "minimumProjectedEdgeTextPx": 7.898959881129272,
-        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeTextPx": 7.3,
+        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedEdgeTextPx": 8,
+        "minimumProjectedNodeText": "scan, policy, usage; no model",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "collector"
+          "id": "api"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -817,14 +817,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.6,
-        "minimumProjectedNonEdgeTextPx": 7.6,
+        "minimumProjectedNodeTextPx": 7.3,
+        "minimumProjectedNonEdgeTextPx": 7.3,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeText": "scan, policy, usage; no model",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "collector"
+          "id": "api"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -868,14 +868,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.6,
-        "minimumProjectedNonEdgeTextPx": 7.6,
+        "minimumProjectedNodeTextPx": 7.3,
+        "minimumProjectedNonEdgeTextPx": 7.3,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "in cluster, holds ingest key",
+        "minimumProjectedNodeText": "scan, policy, usage; no model",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "collector"
+          "id": "api"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -906,23 +906,23 @@
         "file": "laya-architecture.visual-check.html"
       },
       {
-        "sha256": "23ca461ac8b428a080e73a4dac440f2de4eee1946080ba616c5c99674111f0bc",
-        "bytes": 190012,
+        "sha256": "035574723fa4417c728bebd8611246ca6b771a54feaa4edcffe720784e2c834d",
+        "bytes": 147969,
         "file": "laya-architecture.visual-check.1440x900.light.png"
       },
       {
-        "sha256": "6b3df503a18b427130f309c4226f1ba67e2fdb3a2525137b07720781a06c91da",
-        "bytes": 197705,
+        "sha256": "7b00dfab6254a4ebd5a2da6d07af2d3bcddfd4231a0e881853f60a8fa02015b1",
+        "bytes": 145439,
         "file": "laya-architecture.visual-check.1440x900.dark.png"
       },
       {
-        "sha256": "5044cff369504255697bf3ed73219da6df33a3c1a63c1fae3aeff2c4a4ab4773",
-        "bytes": 311492,
+        "sha256": "7b3e4c3ca672cda56896880011c54fe8daa720ff5fa9c62486d634d88229f61d",
+        "bytes": 322032,
         "file": "laya-architecture.visual-check.2048x1320.light.png"
       },
       {
-        "sha256": "feb032304c34e53572acb03eddbe7b02e3aa543d333db8aa43cba906d4c2188e",
-        "bytes": 312907,
+        "sha256": "b936fd0685e5f5411a5e2508bb225b39d7ebdf3d4103857322e5be8fe1e5160a",
+        "bytes": 322715,
         "file": "laya-architecture.visual-check.2048x1320.dark.png"
       }
     ]

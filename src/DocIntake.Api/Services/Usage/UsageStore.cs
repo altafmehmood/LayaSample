@@ -73,7 +73,7 @@ public sealed class UsageStore(IOptions<UsageOptions> options, IHostEnvironment 
                 command.CommandText = "PRAGMA journal_mode=WAL;" + Schema;
                 command.ExecuteNonQuery();
             }
-            logger.LogInformation("Usage history is kept in {Path}", path);
+            logger.UsageHistoryLocation(path);
             return _connectionString = connectionString;
         }
     }
