@@ -69,11 +69,12 @@ extraction:
 
 decisions:
   replicas: 1
-  # What the gateway pod had while it still carried the model.
+  # The Laya model is ~850 MB on disk and OOM-killed at 1Gi. The request is what makes the scheduler place the pod on a node
+  # with room (ClamAV already uses ~1Gi of the first node). Measured 2026-10-13: ~1.96Gi after the model loaded, idle. The 3Gi limit leaves headroom for inference, which was not measured.
   resources:
     requests:
       cpu: 100m
-      memory: 256Mi
+      memory: 2Gi
     limits:
       cpu: 1000m
-      memory: 1Gi
+      memory: 3Gi
