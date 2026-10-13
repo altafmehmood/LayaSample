@@ -99,6 +99,26 @@ One entry per day's work, newest first: what was added, the commands to try it a
 **(paid)** call the OpenAI API; **(opt-in)** tests do not run unless you ask. Ports: `dotnet run` listens on 5091, Docker
 Compose on 8080.
 
+### 2026-10-13
+
+**Slim gateway: `Program.cs` is wiring, and failures are answered in one place.** The gateway's `Program.cs` went from 378 lines
+to 83; its endpoints, upload checks, rate limits, OpenAPI setup and service clients are in their own files. A failure is thrown and
+answered by one exception handler (`ProblemMapping`), not caught in each endpoint. And the gateway no longer looks for
+instruction-like text: the document service finds it (`TextRisks`) and sends it with the prepared document, and the gateway's
+`RiskPolicy` only decides, as it already did for what the extraction service finds. Callers see the same answers. Two things you
+might notice: a **feedback** failure is now labelled `feedback_failed` (it said `extraction_failed`), and **the gateway and the
+document service must be deployed together** (the `/documents/prepare` answer changed shape: expect a short burst of 502s on
+document requests during a rollout). See [docs/docintake-architecture.md](docs/docintake-architecture.md), Phase 6.
+
+    # nothing new to run: start the services as in the quick start, then
+    curl -i -F "file=@docs/samples/unsupported/notes.txt" localhost:5091/api/documents/analyze    # 415, logged at Information
+    curl -i -X POST -F "other=x" localhost:5091/api/documents/analyze                               # 400 file is required
+
+You should see `415 unsupported document type` and `400 file is required`, with no error in the gateway's log. A PDF whose
+attachment says "ignore all previous instructions" gets `422 document rejected` from both document endpoints. Run on this machine
+with the real services and a local fake of the model provider (no cost): all of those, a fax PDF extracted, and the feedback failure
+labelled `feedback_failed` in the log and in Honeycomb. Not run: Kubernetes, `docker compose up`.
+
 ### 2026-10-12
 
 **Decisions service: Laya leaves the gateway.** Laya, the local feedback model, now runs in `DocIntake.DecisionsService`, and

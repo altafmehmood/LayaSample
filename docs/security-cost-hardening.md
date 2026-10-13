@@ -23,6 +23,11 @@ adds who asked and what was uploaded. Where this page says "the extractor record
 gateway records". Pricing (`Extraction:Pricing`) is the extraction service's setting. The risk policy for the model's answer
 stays in the gateway: the service only finds instruction-like text.
 
+**Update 2026-10-13 (risk policy):** `RiskScanner` is now `RiskPolicy` in the gateway, and it only decides. Where the table
+below names `InjectionPatterns.cs` and `RiskScanner.cs` for the text check, the detection is the document service's `TextRisks` (it
+sends the findings with the prepared document), and `RiskScanner.CheckAnswer` is the extraction service's `AnswerRisks`, decided
+by `RiskPolicy.EnforceAnswer`. The behaviour, the findings and `Security:OnFinding` are unchanged.
+
 ## Why
 
 - Two extractions on DOKS showed about $3 on the OpenAI dashboard and nothing in the repository could explain it. (The cause

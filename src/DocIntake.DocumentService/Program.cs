@@ -139,7 +139,8 @@ public sealed class DocumentServiceEntryPoint
                 var prepared = await preparer.PrepareAsync(stream, classified, ct);
                 logger.LogInformation("Prepared a {Bytes}-byte {Kind} document: {Strategy}, {Parts} part(s)", file.Length,
                     classified.Kind, prepared.Strategy, prepared.Parts.Count);
-                return Results.Json(prepared, IntakeJson.Options);
+                // Findings about the text travel next to the document; the gateway decides what they mean.
+                return Results.Json(new PrepareResponse(prepared, TextRisks.Find(prepared)), IntakeJson.Options);
             }
             catch (Exception ex) when (ServiceProblems.FromException(ex) is { } problem)
             {

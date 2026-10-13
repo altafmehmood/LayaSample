@@ -4,9 +4,12 @@ using DocIntake.Api.Services.Documents;
 using DocIntake.Api.Services.Security;
 using DocIntake.Contracts;
 using DocIntake.Rendering;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace DocIntake.Tests;
@@ -43,15 +46,23 @@ public class ProblemMappingTests
         public ProblemHttpResult Map(Exception ex) =>
             Assert.IsType<ProblemHttpResult>(mapping.ToResult(ex, 1234, null, context));
 
+        public ProblemHttpResult MapService(Exception ex) =>
+            Assert.IsType<ProblemHttpResult>(mapping.ToServiceResult(ex, context));
+
+        public DefaultHttpContext Context => context;
+
         public string? Header => context.Response.Headers.RetryAfter.ToString() is { Length: > 0 } h ? h : null;
         public object? Tag(string key) => span.GetTagItem(key);
+
+        public ValueTask<bool> Handle(Exception ex) => mapping.TryHandleAsync(context, ex, CancellationToken.None);
     }
 
     private static Call Start()
     {
         var log = new CapturingLogger();
         var span = new Activity("test").Start();
-        var context = new DefaultHttpContext();
+        // Executing the answer (the handler does) needs logging and JSON options from the request's services.
+        var context = new DefaultHttpContext { RequestServices = new Microsoft.Extensions.DependencyInjection.ServiceCollection().AddLogging().BuildServiceProvider() };
         context.Features.Set<IHttpActivityFeature>(new ActivityFeature(span));
         return new Call(new ProblemMapping(log, new DocumentMetrics(new NoMeterFactory())), log, span, context);
     }
@@ -122,6 +133,37 @@ public class ProblemMappingTests
 
         Assert.Equal(outcome, call.Tag("intake.outcome"));
         Assert.Equal("unclassified", call.Tag("intake.document.kind"));
+    }
+
+    [Fact]
+    public void A_feedback_failure_is_not_called_an_extraction_failure()
+    {
+        var call = Start();
+        // As the exception middleware leaves it: no endpoint on the context, the original one on the exception feature.
+        call.Context.SetEndpoint(null);
+        call.Context.Features.Set<IExceptionHandlerFeature>(new ExceptionHandlerFeature
+        {
+            Error = new InvalidOperationException(),
+            Endpoint = new Endpoint(null, new EndpointMetadataCollection(new EndpointNameMetadata("AnalyzeFeedback")), "feedback")
+        });
+
+        call.MapService(new IntakeFailureException(FailureKind.DependencyUnavailable, "the decisions service is unreachable; retry later", 10));
+
+        Assert.Equal("feedback_failed", call.Tag("intake.outcome"));
+        Assert.Null(call.Tag("intake.document.kind"));
+    }
+
+    [Fact]
+    public void A_failure_that_is_not_about_a_document_records_no_document_metric_and_no_kind()
+    {
+        var call = Start();
+
+        var result = call.MapService(new IntakeFailureException(FailureKind.Busy, "extraction is busy; retry later", 12));
+
+        Assert.Equal(503, result.StatusCode);
+        Assert.Equal("12", call.Header);
+        Assert.Equal("extraction_failed", call.Tag("intake.outcome"));
+        Assert.Null(call.Tag("intake.document.kind"));
     }
 
     [Fact]
@@ -200,5 +242,37 @@ public class ProblemMappingTests
         Assert.True(ProblemMapping.Handles(new RenderingFailedException("x")));
         Assert.False(ProblemMapping.Handles(new InvalidOperationException()));
         Assert.False(ProblemMapping.Handles(new OperationCanceledException()));
+    }
+
+    [Fact]
+    public async Task As_the_exception_handler_it_answers_what_it_knows_and_leaves_the_rest()
+    {
+        var call = Start();
+        var known = new IntakeFailureException(FailureKind.Unsupported, "unsupported document type");
+
+        var handled = await call.Handle(known);
+        var left = await call.Handle(new InvalidOperationException("a bug"));
+        var cancelled = await call.Handle(new OperationCanceledException());
+
+        Assert.True(handled);
+        Assert.False(left);
+        Assert.False(cancelled);
+        Assert.Equal(415, call.Context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_started_upload_is_answered_with_its_size_and_kind_and_any_other_request_without()
+    {
+        var withUpload = Start();
+        withUpload.Context.Items[DocumentRequest.ItemKey] = new DocumentRequest(1234, new DocumentRun(new DocumentMetrics(new NoMeterFactory())));
+        var without = Start();
+
+        await withUpload.Handle(new IntakeFailureException(FailureKind.Unreadable, "PDF could not be read"));
+        await without.Handle(new IntakeFailureException(FailureKind.Unreadable, "PDF could not be read"));
+
+        Assert.Equal("unclassified", withUpload.Tag("intake.document.kind"));
+        Assert.Null(without.Tag("intake.document.kind"));
+        Assert.Contains("1234-byte", Assert.Single(withUpload.Log.Entries).Message);
+        Assert.DoesNotContain("byte", Assert.Single(without.Log.Entries).Message);
     }
 }

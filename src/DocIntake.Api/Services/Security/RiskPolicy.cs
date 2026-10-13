@@ -6,12 +6,14 @@ using Microsoft.Extensions.Options;
 namespace DocIntake.Api.Services.Security;
 
 /// <summary>
-/// Turns findings about an upload into a decision. Findings come from three places: the file's structure (active content,
-/// macros, executable attachments, hidden text; found while classifying), the text the model will read (prompt injection),
-/// and the model's answer (instructions repeated from the document; the extraction service finds them, this decides). While <c>Security:OnFinding</c> is <c>reject</c> a
-/// blocking finding refuses the request with 422; with <c>flag</c> every finding is reported and processing goes on.
+/// The gateway's policy for findings, and nothing else: it records them and decides whether they refuse the request. The
+/// services only find. Findings come from three places: the file's structure (active content, macros, executable attachments,
+/// hidden text; found by the document service while classifying), the text the model will read (instruction-like text, found by
+/// the document service while preparing), and the model's answer (instructions repeated from the document; found by the
+/// extraction service). While <c>Security:OnFinding</c> is <c>reject</c> a blocking finding refuses the request with 422; with
+/// <c>flag</c> every finding is reported and processing goes on.
 /// </summary>
-public sealed class RiskScanner(IOptions<SecurityOptions> options, DocumentMetrics metrics, ILogger<RiskScanner> logger)
+public sealed class RiskPolicy(IOptions<SecurityOptions> options, DocumentMetrics metrics, ILogger<RiskPolicy> logger)
 {
     private static readonly Dictionary<string, string> KindNames = new()
     {
@@ -24,29 +26,17 @@ public sealed class RiskScanner(IOptions<SecurityOptions> options, DocumentMetri
 
     private bool Rejects => options.Value.RejectsFindings;
 
-    /// <summary>The findings the file's structure gave, before anything is rendered or read. Throws when they refuse the upload.</summary>
-    public IReadOnlyList<RiskFinding> CheckStructure(DocumentClassification classification)
+    /// <summary>The findings about the file's structure, before anything is rendered or read. Throws when they refuse the upload.</summary>
+    public IReadOnlyList<RiskFinding> EnforceStructure(IReadOnlyList<RiskFinding> findings)
     {
-        Record(classification.Risks);
-        EnforceDocument(classification.Risks);
-        return classification.Risks;
+        Record(findings);
+        EnforceDocument(findings);
+        return findings;
     }
 
-    /// <summary>The text the model will read (text layer, OCR, form values, attachments). Throws when it refuses the upload.</summary>
-    public IReadOnlyList<RiskFinding> CheckText(PreparedDocument prepared)
+    /// <summary>The findings about the text the model will read (text layer, OCR, form values, attachments). Throws when they refuse the upload.</summary>
+    public IReadOnlyList<RiskFinding> EnforceText(IReadOnlyList<RiskFinding> findings)
     {
-        var findings = new List<RiskFinding>();
-        foreach (var part in prepared.Parts)
-        {
-            foreach (var id in InjectionPatterns.Find(part.Text))
-            {
-                var where = part.Source is null ? "" : $" in the embedded file '{UsageFileName.Clean(part.Source)}'";
-                var finding = new RiskFinding(RiskKinds.PromptInjection,
-                    InjectionPatterns.IsInformational(id) ? RiskSeverity.Info : RiskSeverity.Block, part.Page, $"instruction-like text ({id}){where}");
-                if (!findings.Contains(finding))
-                    findings.Add(finding);
-            }
-        }
         Record(findings);
         EnforceDocument(findings);
         return findings;

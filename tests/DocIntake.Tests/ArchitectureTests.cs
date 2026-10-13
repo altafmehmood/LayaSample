@@ -149,4 +149,40 @@ public class ArchitectureTests
                      "DocIntake.DocumentService", "DocIntake.ExtractionService" })
             Assert.DoesNotContain(libraries, l => l.StartsWith(name, StringComparison.OrdinalIgnoreCase));
     }
+
+    private static IEnumerable<string> GatewaySource() =>
+        Directory.EnumerateFiles(Path.Combine(RepositoryRoot(), "src/DocIntake.Api"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"));
+
+    // Program.cs only wires the gateway together: its endpoints, filters, rate limits and OpenAPI setup are in their own files.
+    [Fact]
+    public void The_gateways_entry_point_only_wires()
+    {
+        var program = File.ReadAllText(Path.Combine(RepositoryRoot(), "src/DocIntake.Api/Program.cs"));
+
+        Assert.DoesNotContain(".MapPost(", program);
+        Assert.DoesNotContain(".MapGet(", program);
+        Assert.DoesNotContain("AddConcurrencyLimiter", program);
+        Assert.DoesNotContain("AddDocumentTransformer", program);
+        Assert.True(program.Split('\n').Length < 100, "Program.cs has grown: move what it does into the endpoint, setup or filter files");
+    }
+
+    // Endpoints and filters throw, and ProblemMapping (the exception handler) answers: nothing under Endpoints catches a failure.
+    [Fact]
+    public void The_endpoints_never_catch_failures_themselves()
+    {
+        var endpoints = Directory.EnumerateFiles(Path.Combine(RepositoryRoot(), "src/DocIntake.Api/Endpoints"), "*.cs").ToList();
+
+        Assert.NotEmpty(endpoints);
+        // A catch clause, not the word: "catch (...)" or "catch {".
+        Assert.All(endpoints, file => Assert.DoesNotMatch(@"\bcatch\s*[({]", File.ReadAllText(file)));
+    }
+
+    // The services find, the gateway decides: the rules for what is instruction-like text are not in the gateway.
+    [Fact]
+    public void The_gateway_applies_the_risk_policy_but_never_looks_for_findings()
+    {
+        Assert.All(GatewaySource(), file => Assert.DoesNotContain("InjectionPatterns", File.ReadAllText(file)));
+        Assert.All(GatewaySource(), file => Assert.DoesNotContain("RiskScanner", File.ReadAllText(file)));
+    }
 }
