@@ -1,15 +1,10 @@
 using DocIntake.ServiceDefaults;
 using DocIntake.Api.Services.Documents;
+using DocIntake.Api.Services.Decisions;
 using DocIntake.Api.Services.Documents.Extraction;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace DocIntake.Api.Services;
-
-public sealed class LayaHealthCheck(ModelWarmup warmup) : IHealthCheck
-{
-    public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken ct = default) =>
-        Task.FromResult(HealthReporting.FromState(warmup.State, "feedback analysis"));
-}
 
 /// <summary>
 /// The document service's own readiness. A document service that is down or not ready makes this instance Degraded, not
@@ -60,6 +55,32 @@ public sealed class ExtractionServiceHealthCheck(ExtractionServiceClient client,
         if (Interlocked.Exchange(ref _last, now) is { } before && before != now)
             logger.Log(result.Status == HealthStatus.Healthy ? LogLevel.Information : LogLevel.Warning,
                 "Extraction service readiness changed from {Before} to {Now}", before, now);
+        return result;
+    }
+}
+
+/// <summary>
+/// The decisions service's readiness. Degraded when it does not answer or its model is still loading: the rest of the gateway
+/// works, and feedback analysis answers 503 until it is ready. Not configuring a service URL is a choice and reports Healthy.
+/// </summary>
+public sealed class DecisionsServiceHealthCheck(DecisionsServiceClient client, ILogger<DecisionsServiceHealthCheck> logger) : IHealthCheck
+{
+    private string? _last;
+
+    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken ct = default)
+    {
+        var result = !client.IsConfigured
+            ? HealthCheckResult.Healthy("not configured: Decisions:ServiceUrl is empty; feedback analysis answers 503")
+            : await client.GetReadinessAsync(ct) switch
+            {
+                null => HealthCheckResult.Degraded("unreachable; feedback analysis is unavailable"),
+                "Healthy" => HealthCheckResult.Healthy("ready"),
+                var status => HealthCheckResult.Degraded($"decisions service is {status}; feedback analysis answers 503 meanwhile")
+            };
+        var now = $"{result.Status}: {result.Description}";
+        if (Interlocked.Exchange(ref _last, now) is { } before && before != now)
+            logger.Log(result.Status == HealthStatus.Healthy ? LogLevel.Information : LogLevel.Warning,
+                "Decisions service readiness changed from {Before} to {Now}", before, now);
         return result;
     }
 }

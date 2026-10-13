@@ -25,6 +25,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\redteam\GarakShim\GarakShim.csproj" />
     <ProjectReference Include="..\..\src\DocIntake.Api\DocIntake.Api.csproj" />
+    <ProjectReference Include="..\..\src\DocIntake.DecisionsService\DocIntake.DecisionsService.csproj" />
     <ProjectReference Include="..\..\src\DocIntake.DocumentService\DocIntake.DocumentService.csproj" />
     <ProjectReference Include="..\..\src\DocIntake.ExtractionService\DocIntake.ExtractionService.csproj" />
     <!-- Direct, so RapidOcrNet's build targets (which copy the bundled OCR models) reach this project too. -->

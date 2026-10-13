@@ -9,15 +9,18 @@ internet -> DigitalOcean load balancer -> Gateway (cilium, TLS) -> HTTPRoute -> 
                                                                                    |
                                                        renderer Service <----------+  (NetworkPolicy: only the API may call it)
                                                        extraction Service <--------+  (only the API may call it; it may reach 443, DNS, collector)
+                                                       decisions Service <---------+  (only the API may call it; it may reach only the collector)
 ```
 
-The API, the renderer and the extraction service fit **one node with 1 vCPU and 2 GB of memory** (the extraction pod asks for
-192 MiB and is limited to 768 MiB): one replica of each, one document analysed at a
+The API, the renderer, the extraction service and the decisions service fit **one node with 1 vCPU and 2 GB of memory** by
+their requests (the extraction pod asks for 192 MiB and is limited to 768 MiB; the decisions pod asks for 256 MiB and is
+limited to 1 GiB, as the API pod was while it carried Laya): one replica of each, one document analysed at a
 time, short queues, no CPU limits, and a rolling update that replaces the pod in place (a second copy would not fit).
 Expect slow OCR and brief downtime on upgrades. **The malware scanner changes that:** the ClamAV pod (on by default) needs
 about 4 GB of its own, so use a node with 8 GB, or set `malware.clamd.enabled: false` (see
 [Malware scanning](#malware-scanning-clamav)). For real traffic use a bigger node and raise the values under `api.config`,
-`renderer.config`, `extraction.maxConcurrent` and `*.resources`.
+`renderer.config`, `extraction.maxConcurrent` and `*.resources`. The API pod's limits (256 MiB requested, 1 GiB limit) were set
+while it carried the model; it carries none now, and I did not lower them without measuring.
 
 ## Prerequisites
 
@@ -84,8 +87,17 @@ curl -F "file=@docs/samples/pdf/corpus/redwood-mechanical-loan-application-scan.
   "https://<hostname>/api/documents/analyze?dispatch=false&includeData=false"
 ```
 
-The first start is slow on a small node: the API image is 2 GB and it loads an 840 MB model. The startup probes allow
-ten minutes.
+The gateway is ready in seconds: it loads no model. The decisions service is the slow one on a small node (its image carries
+the 840 MB Laya model and loading takes minutes); its startup probe allows ten minutes, and until it is ready the gateway
+reports `decisions-service` as `Degraded` and feedback analysis answers 503. Documents and extraction are not affected.
+
+### First deploy of the decisions image: make the package public
+
+CI pushes the decisions image to `ghcr.io/<owner>/laya-sample-decisions`. **A package that is new to GitHub starts private**, and
+the cluster pulls images without credentials, so on the first deploy the decisions pod sits in `ImagePullBackOff` (and
+`helm upgrade --wait` times out) until the package is made public: GitHub, your profile, Packages, `laya-sample-decisions`,
+Package settings, Change visibility. The extraction image (`laya-sample-extraction`) needs the same step once; see
+[AI extraction key](#ai-extraction-key). Do the same for any image package a later phase renames.
 
 ## AI extraction key
 

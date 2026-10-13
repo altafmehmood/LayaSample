@@ -69,3 +69,14 @@ extraction:
     limits:
       cpu: 500m
       memory: 768Mi
+
+decisions:
+  replicas: 1
+  # What the gateway pod had while it still carried the model.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi

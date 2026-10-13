@@ -22,6 +22,11 @@ the key in its process or its environment, and a test checks that the gateway's 
 The extraction service trusts any pod that reaches it (the same open item 4.2), and it has no authentication of its own.
 The gateway's pod still has no NetworkPolicy (open item 4), but it no longer needs egress to the model provider.
 
+**Update 2026-10-12 (decisions service):** Laya moved into its own service, so the gateway runs no model and carries no native
+library at all (ONNX Runtime was the last one; a test checks its build). The decisions service is reachable only from the
+gateway and may reach nothing but the telemetry collector, because its model is in the image. It has no authentication of its
+own (the same open item 4.2). The feedback text it receives is not recorded in logs or usage.
+
 ## What is protected
 
 | Asset | Why it matters |

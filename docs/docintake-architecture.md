@@ -33,6 +33,127 @@ Target, in later phases:
 | `docintake-extraction` | The model agents. The only service with internet access and the model key. |
 | `docintake-decisions` | The Laya model |
 
+## Phase 5: the decisions service (2026-10-12)
+
+**What it does.** Laya, the local model that scores hotel-guest feedback, moved out of the gateway into
+`DocIntake.DecisionsService`. The gateway now **loads no model and carries no native library at all** (ONNX Runtime was the
+last one), so it is ready in seconds instead of waiting for an 850 MB model. `POST /api/feedback/analyze` keeps its validation
+and its answers.
+
+**How it works.** The gateway checks the text at the edge (required, at most `FeedbackLimits.MaxTextLength` = 4000 characters:
+400 otherwise, without calling anything) and calls the service, `POST /decisions/feedback`. The service checks the text again,
+answers `503` with the kind `DependencyUnavailable` while the model loads (`model is still loading`) or after it failed for good
+(`model failed to load`), and otherwise returns the same `AnalyzeResponse` as before. The gateway passes the 503's text
+through, so a client sees exactly the answers it saw when Laya was in-process. A service that cannot be reached is a `503` with
+`Retry-After: 10` and the text `the decisions service is unreachable; retry later`; one that dies on the request is a `502`.
+
+**What moved where.**
+
+| Now in `DocIntake.DecisionsService` | Still in `DocIntake.Api` (gateway) | Shared |
+|---|---|---|
+| `DissatisfactionAnalyzer`, `ModelWarmup` (with a new `IModelStatus` seam), the `Laya` settings, `DecisionsMetrics`, the `ElBruno.LocalLLMs.Decisions` package | `DecisionsServiceClient`, `DecisionsGatewayOptions`, the feedback endpoint's validation, `ProblemMapping.ToServiceResult` (the answer for a failure that is not about a document) | `Contracts`: `FeedbackLimits` |
+
+**Settings.**
+
+| Setting | Before | Now |
+|---|---|---|
+| `Laya:*` (`ModelPath`, `CacheDirectory`, `ModelRepository`, `IntraOpNumThreads`, `DecisionThreshold`), and `Laya__ModelPath` in the image | gateway | **Decisions service** (the Docker `decisions` target sets `Laya__ModelPath=/models/laya`) |
+| `Decisions:ServiceUrl` | none | **Gateway.** Optional: empty means feedback analysis answers `503` "not configured" and the gateway still starts (an empty environment variable is fine; a non-http value refuses to start) |
+
+**Deployment, pulled forward again.** The same reason as Phase 4: merging deploys. `Dockerfile` has a `decisions` target that
+carries the model (and the `api` target no longer does); `docker-compose.yml` has a `decisions` service on the **internal**
+network (no route out: the model is in the image); Helm has `decisions-deployment.yaml`, `decisions-service.yaml` and a
+NetworkPolicy (ingress from the API only; egress only to the collector and DNS, like the renderer); the collector accepts its
+telemetry; CI builds, pushes and checks its rollout (15 minutes). The API's startup probe shrank from ten minutes to two,
+because the gateway no longer loads a model; the decisions pod keeps the ten-minute one.
+
+**Measured.** The gateway image is **377 MB** (the deploy README said about 2 GB while it carried the model) and its only
+native library is SQLite's, for the usage history; the decisions image is 2.03 GB. As containers, the gateway was live in about
+1 second. In a read-only, no-capability, no-network decisions container the real model loaded in **1.5 s** and answered at +5 s.
+
+**Behaviour changes.**
+- **The gateway's readiness is no longer 503 while Laya loads.** It is `200` `Degraded`, and `decisions-service` says why. In
+  Kubernetes the gateway takes traffic sooner, and feedback requests during the model load get the same 503 as before.
+- **Feedback analysis needs the decisions service running**: a fourth process locally (README quick start).
+- The gateway's `laya` health check is gone; the decisions service has it, and the gateway's `decisions-service` check is `Degraded`
+  when the service is unreachable or still loading, and `Healthy` ("not configured") with no URL.
+- The model-load metric (`intake.model.load.duration`) moves to the meter `DocIntake.Decisions`, and the `intake.model.load` span
+  and the feedback request's spans arrive in the dataset **`docintake-decisions`**.
+- The gateway's startup log names the decisions service's address.
+- An unreachable service answers feedback with a `Retry-After`, which "still loading" never had.
+- **Compose:** the gateway's `mem_limit` went from 3g to 2g. It is a guess, not a measurement.
+
+**Deviations from the plan.**
+- **Deployment pulled forward** (above), so Phase 7 has less to do.
+- `ModelWarmup` gained the `IModelStatus` interface (and lost its `Ready` property): it is the seam that lets tests say "ready"
+  without loading an 850 MB model.
+
+**Key files.**
+- `src/DocIntake.DecisionsService/Program.cs` (the endpoint), `ModelWarmup.cs`, `DissatisfactionAnalyzer.cs`
+- `src/DocIntake.Api/Services/Decisions/DecisionsServiceClient.cs`, `DecisionsGatewayOptions.cs`; `HealthChecks.cs`
+- `deploy/helm/docintake/templates/decisions-*.yaml`, `networkpolicy.yaml`; `Dockerfile` (the `decisions` target)
+
+**How to try it.** Free: the model is open-weight and runs on your machine.
+
+    dotnet run --project src/DocIntake.DecisionsService         # terminal 1, http://localhost:5094 (downloads the model on the first run)
+    dotnet run --project src/DocIntake.Api                      # terminal 2, http://localhost:5091, ready in seconds
+    curl -s localhost:5091/health/ready
+    curl -s -H 'Content-Type: application/json' -d '{"text":"The room was dirty"}' localhost:5091/api/feedback/analyze
+
+**What it does not do.**
+- The decisions service has no authentication: any pod that can reach it is trusted (threat model 4.2).
+- It does not scale as one model: each replica loads its own copy (about 1 GiB) and has its own warm-up.
+- The feedback text is not recorded in logs or usage by either service. It is not in the traces either: only the URL is.
+
+**Tests.** 475 tests, 469 passed and 6 skipped (the opt-in ones from Phase 1). New:
+- `DecisionsServiceTests` (10): the service over HTTP with a fixed model state and a fake analyzer: a ready model answers; a
+  loading or failed model is a 503 with its kind and text and the analyzer is not asked; the service checks the text too;
+  readiness follows the model (loading is 503 `Unhealthy`, failed is 200 `Degraded`); liveness does not wait.
+- `GatewayDecisionsTests` (9): the gateway as deployed. A ready model answers through the gateway unchanged; loading and failed
+  are 503 with the same text and no retry hint; bad text is refused at the gateway **without calling the service**; an
+  unreachable service is a 503 with a retry hint and the rest of the gateway still works (`Degraded`); a service dying on the
+  request is a 502; no URL means 503 and a gateway that starts; **an empty URL** (what an empty environment variable binds as)
+  does not stop it starting; a non-http URL does.
+- `AnalyzeEndpointTests`: the old readiness test, which expected the gateway to be unready while Laya loaded, now asserts the
+  new behaviour on purpose.
+- `ArchitectureTests`: the gateway's build has **no ONNX Runtime and no Laya library**; the decisions service has them and no
+  document parser, no provider client, no database and no reference to the other services; its source mentions no `StatusCodes`
+  outside its entry point.
+
+### Verified (2026-10-12)
+
+- `dotnet build`, `dotnet test` (above), the licence check (no package was added: the Laya package moved), `helm lint` on the
+  three CI values files, `docker compose config`, both images build.
+- **The rendered chart:** the decisions Deployment has no Secret, no extraction setting and a read-only root filesystem; the API
+  has `Decisions__ServiceUrl` and the short startup probe.
+- **The real model, as separate processes** (no fake): the gateway up in 4 s; the decisions service restarted while the gateway
+  was polled: `503 the decisions service is unreachable` at +0 s, `503 model is still loading` at +1 s, answers at +3 s; a
+  guest complaining about a dirty room scored `dissatisfied` with `Cleanliness`, a delighted one `None`.
+- **The images as containers**, decisions read-only with no capabilities and on a network with no route out ("Network is
+  unreachable" to 1.1.1.1): ready in seconds, answers, and stopping it gives `503` with `Retry-After: 10`.
+- **Honeycomb:** the dataset `docintake-decisions` has the model loads and the request spans, as children of the gateway's.
+
+### Not verified
+
+- `docker compose up` of the quartet, Kubernetes, and a rolling deploy with old and new pods together.
+- Laya's behaviour under load or with many replicas, and the memory the decisions pod really needs: its 1 GiB limit is what the
+  API pod had while it carried Laya, not a new measurement.
+- Whether the gateway needs less memory now (its limits are unchanged in Helm).
+
+### Before deploying (Phase 5)
+
+- [ ] **Make the `laya-sample-decisions` package public after CI first pushes it** (deploy/README.md). A package new to GitHub
+      starts private and the cluster pulls without credentials, so the first deploy leaves the decisions pod in
+      `ImagePullBackOff` and `helm upgrade --wait` fails until you do. (If you have not yet done the same for
+      `laya-sample-extraction`, do both.) Re-run the deploy afterwards.
+- [ ] **Rollout window:** the API and the new decisions Deployment come up separately, and the model takes minutes on a small
+      node, so feedback analysis answers 503 until it has loaded (the same 503 as before). Documents are not affected.
+- [ ] **The node must fit one more pod** (256 MiB requested, 1 GiB limit). Together with ClamAV (about 4 GB) the node needs 8 GB.
+- [ ] Honeycomb: the model-load span and metric, and the feedback request's child spans, move to `docintake-decisions` and the
+      meter `DocIntake.Decisions`. A trigger on the gateway's readiness being 503 while Laya loads will stop firing.
+- [ ] Anything that set `Laya__*` on the API Deployment must set it on the decisions Deployment (`decisions.extraEnv`); nothing in
+      this repository does.
+
 ## Phase 4: the extraction service (2026-10-12)
 
 **What it does.** AI extraction moved out of the gateway into `DocIntake.ExtractionService`. It is now the only process that

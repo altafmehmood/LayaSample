@@ -1,19 +1,23 @@
 # syntax=docker/dockerfile:1
 #
-# Three images from one build; run them together with docker-compose.yml.
+# Four images from one build; run them together with docker-compose.yml.
 #
 #   docker build --target api -t docintake-api .
 #   docker build --target extraction -t docintake-extraction .
+#   docker build --target decisions -t docintake-decisions .
 #   docker build --target renderer -t docintake-renderer .                                    # PP-OCRv5 Latin OCR
 #   docker build --target renderer -t docintake-renderer --build-arg OCR_MODEL=PPOCRv6Medium .  # multilingual, ~4x slower
 #
-# api       The gateway: auth, scanning, risk policy, usage, Laya feedback analysis. It reads no document itself, so it
-#           carries no PDF, Office, image or OCR library, and it holds no model provider key.
+# api       The gateway: auth, scanning, risk policy, usage. It reads no document itself and runs no model, so it carries no PDF,
+#           Office, image, OCR or ONNX library, holds no model provider key, and starts in seconds.
 # extraction  Turns a prepared document into structured data with the model provider. The only process that holds the
 #           provider's key and reaches the internet; it never sees the caller or the file's name.
 # renderer  The document service (the target keeps its old name until the services are deployed one by one): classifies
 #           and prepares every upload with PdfPig, the Office libraries, PDFium, ImageMagick and OCR. The only process
 #           that reads untrusted bytes. Run it isolated (see docker-compose.yml).
+#
+# decisions Laya, the local model that scores hotel-guest feedback. Carries the 850 MB model, needs no network, takes minutes
+#           to become ready.
 #
 # All models are baked into the images, so containers never download at startup and run offline.
 
@@ -52,14 +56,17 @@ COPY src/DocIntake.ServiceDefaults/DocIntake.ServiceDefaults.csproj src/DocIntak
 COPY src/DocIntake.Rendering/DocIntake.Rendering.csproj src/DocIntake.Rendering/packages.lock.json src/DocIntake.Rendering/
 COPY src/DocIntake.DocumentService/DocIntake.DocumentService.csproj src/DocIntake.DocumentService/packages.lock.json src/DocIntake.DocumentService/
 COPY src/DocIntake.ExtractionService/DocIntake.ExtractionService.csproj src/DocIntake.ExtractionService/packages.lock.json src/DocIntake.ExtractionService/
+COPY src/DocIntake.DecisionsService/DocIntake.DecisionsService.csproj src/DocIntake.DecisionsService/packages.lock.json src/DocIntake.DecisionsService/
 COPY src/DocIntake.Api/DocIntake.Api.csproj src/DocIntake.Api/packages.lock.json src/DocIntake.Api/
 RUN dotnet restore src/DocIntake.Api/DocIntake.Api.csproj -a $TARGETARCH \
  && dotnet restore src/DocIntake.DocumentService/DocIntake.DocumentService.csproj -a $TARGETARCH \
- && dotnet restore src/DocIntake.ExtractionService/DocIntake.ExtractionService.csproj -a $TARGETARCH
+ && dotnet restore src/DocIntake.ExtractionService/DocIntake.ExtractionService.csproj -a $TARGETARCH \
+ && dotnet restore src/DocIntake.DecisionsService/DocIntake.DecisionsService.csproj -a $TARGETARCH
 COPY src/ src/
 # A runtime-specific publish keeps only this platform's native libraries (ImageMagick, PDFium, Skia, ONNX Runtime).
 RUN dotnet publish src/DocIntake.DocumentService/DocIntake.DocumentService.csproj -c Release -a $TARGETARCH --no-restore -o /app/document \
  && dotnet publish src/DocIntake.ExtractionService/DocIntake.ExtractionService.csproj -c Release -a $TARGETARCH --no-restore -o /app/extraction \
+ && dotnet publish src/DocIntake.DecisionsService/DocIntake.DecisionsService.csproj -c Release -a $TARGETARCH --no-restore -o /app/decisions \
  && dotnet publish src/DocIntake.Api/DocIntake.Api.csproj -c Release -a $TARGETARCH --no-restore -o /app/api
 
 # ---- Document service
@@ -89,19 +96,30 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
 ENTRYPOINT ["dotnet", "DocIntake.ExtractionService.dll"]
 
+# ---- Decisions service
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS decisions
+WORKDIR /app
+COPY --from=build /app/decisions .
+COPY --from=laya-model /models/laya /models/laya
+ENV Laya__ModelPath=/models/laya
+EXPOSE 8080
+USER $APP_UID
+# Ready once Laya is loaded (a few minutes on a small node); Degraded (still 200) when the load failed for good.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=3m --retries=3 \
+    CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
+ENTRYPOINT ["dotnet", "DocIntake.DecisionsService.dll"]
+
 # ---- API (last, so it is also the default target)
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS api
 WORKDIR /app
 COPY --from=build /app/api .
-COPY --from=laya-model /models/laya /models/laya
 # DocumentAnalysis__DocumentServiceUrl must be set at run time (docker-compose.yml does); the API refuses to start without it.
-ENV Laya__ModelPath=/models/laya
 # Where the usage history (SQLite) is kept; a volume mounted here starts out writable for the non-root user.
 RUN mkdir /data && chown "$APP_UID" /data
 EXPOSE 8080
 USER $APP_UID
-# Ready once Laya is loaded; Degraded (still 200) when Laya failed for good or the document service is down, since the
-# rest of the service works.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=2m --retries=3 \
+# Ready at once (it loads no model); Degraded (still 200) when the document, extraction or decisions service is down, since
+# the rest of the service works.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
 ENTRYPOINT ["dotnet", "DocIntake.Api.dll"]
