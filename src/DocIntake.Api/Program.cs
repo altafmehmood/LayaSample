@@ -74,7 +74,6 @@ builder.Services.AddSingleton<DocumentMetrics>();
 builder.Services.AddSingleton<DocumentPipeline>();
 builder.Services.AddSingleton<ProblemMapping>();
 builder.Services.AddUsageTracking(builder.Configuration);
-builder.Services.AddExtraction(builder.Configuration);
 foreach (var route in DocumentRoutes.All)
     builder.Services.AddSingleton<IDocumentAgent>(new StubDocumentAgent(route));
 builder.Services.AddSingleton<ModelWarmup>();
@@ -85,7 +84,7 @@ builder.Services.AddMalwareScanning(builder.Configuration, healthChecks);
 // Endpoint limits are fixed when the app is built, so the options are read here; ValidateOnStart still checks them (and
 // refuses to start without a document service to send uploads to).
 var documentOptions = builder.Configuration.GetSection(DocumentGatewayOptions.Section).Get<DocumentGatewayOptions>() ?? new();
-var extractionOptions = builder.Configuration.GetSection(ExtractionOptions.Section).Get<ExtractionOptions>() ?? new();
+var extractionOptions = builder.Configuration.GetSection(ExtractionGatewayOptions.Section).Get<ExtractionGatewayOptions>() ?? new();
 
 // Untrusted bytes are read only inside the document service: classification, preparation, rendering and OCR all happen there.
 builder.Services.AddHttpClient(DocumentServiceClient.HttpClientName, c =>
@@ -98,6 +97,22 @@ builder.Services.AddHttpClient(DocumentServiceClient.HttpClientName, c =>
 builder.Services.AddSingleton<DocumentServiceClient>();
 builder.Services.AddSingleton<IDocumentClassifier>(sp => sp.GetRequiredService<DocumentServiceClient>());
 builder.Services.AddSingleton<IDocumentPreparer>(sp => sp.GetRequiredService<DocumentServiceClient>());
+
+// The model provider's key and the only route to it are in the extraction service. Without a URL, extraction answers 503.
+builder.Services.AddOptions<ExtractionGatewayOptions>()
+    .Bind(builder.Configuration.GetSection(ExtractionGatewayOptions.Section))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddHttpClient(ExtractionServiceClient.HttpClientName, c =>
+{
+    if (!string.IsNullOrWhiteSpace(extractionOptions.ServiceUrl))
+        c.BaseAddress = new Uri(extractionOptions.ServiceUrl.TrimEnd('/') + "/");
+    // Bounded by the request's own token instead, which carries the request timeout.
+    c.Timeout = Timeout.InfiniteTimeSpan;
+});
+builder.Services.AddSingleton<ExtractionServiceClient>();
+builder.Services.AddSingleton<IDocumentExtractor, DocumentExtractor>();
+healthChecks.AddCheck<ExtractionServiceHealthCheck>("extraction-service", tags: [HealthReporting.Ready], timeout: TimeSpan.FromSeconds(5));
 healthChecks.AddCheck<DocumentServiceHealthCheck>("document-service", tags: [HealthReporting.Ready], timeout: TimeSpan.FromSeconds(5));
 
 const string DocumentsPolicy = "documents";
@@ -273,8 +288,17 @@ app.MapPost("/api/documents/extract", async (
     HttpContext httpContext,
     CancellationToken ct) =>
 {
-    if (!extractor.IsConfigured)
-        return Problem(StatusCodes.Status503ServiceUnavailable, "extraction is not configured");
+    // Before the upload is read, scanned or prepared: without a key the answer is 503 at once, and an unreachable service
+    // is the same 503 with a retry hint.
+    try
+    {
+        if (!await extractor.IsConfiguredAsync(ct))
+            return Problem(StatusCodes.Status503ServiceUnavailable, "extraction is not configured");
+    }
+    catch (IntakeFailureException ex)
+    {
+        return problems.ToResult(ex, file?.Length ?? 0, null, httpContext);
+    }
     if (file is null || file.Length == 0)
         return Problem(StatusCodes.Status400BadRequest, "file is required");
     if (file.Length > options.Value.MaxFileBytes)
@@ -329,12 +353,11 @@ app.MapUsageEndpoints();
 
 // One line that says how this instance was configured, so a trace can be read against it. No secrets.
 app.Lifetime.ApplicationStarted.Register(() => app.Logger.LogInformation(
-    "DocIntake API {Version} started in {Environment}: renderer {Renderer}, extraction {Extraction} (vision {Vision}, text {Text}), "
+    "DocIntake API {Version} started in {Environment}: document service {DocumentService}, extraction service {Extraction}, "
     + "{Analyses} analyses and {Extractions} extractions at once, telemetry export {Telemetry}",
     IntakeTelemetry.Version, app.Environment.EnvironmentName,
     documentOptions.DocumentServiceUrl,
-    app.Services.GetRequiredService<ExtractionClients>().IsConfigured ? "configured" : "not configured",
-    extractionOptions.VisionModel, extractionOptions.TextModel,
+    string.IsNullOrWhiteSpace(extractionOptions.ServiceUrl) ? "not configured" : extractionOptions.ServiceUrl,
     documentOptions.EffectiveMaxConcurrentAnalyses, extractionOptions.MaxConcurrentExtractions,
     string.IsNullOrWhiteSpace(app.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]) ? "off" : "on"));
 

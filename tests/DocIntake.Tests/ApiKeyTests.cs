@@ -1,3 +1,4 @@
+using DocIntake.ExtractionService;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -35,8 +36,7 @@ public class ApiKeyTests
             {
                 foreach (var d in s.Where(d => d.ServiceType == typeof(IHostedService)).ToList()) s.Remove(d);
                 s.UseDocumentService();
-                s.RemoveAll<ExtractionClients>();
-                s.AddSingleton(new ExtractionClients(model, model));
+                s.UseExtractionService(new ExtractionClients(model, model));
             });
         }
     }

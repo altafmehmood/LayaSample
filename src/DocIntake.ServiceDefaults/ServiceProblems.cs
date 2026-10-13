@@ -13,12 +13,18 @@ public static class ServiceProblems
     /// <summary>The problem-details extension that carries the <see cref="FailureKind"/>.</summary>
     public const string KindExtension = "kind";
 
+    /// <summary>The problem-details extension that carries <see cref="IntakeFailureException.RetryAfterSeconds"/>.</summary>
+    public const string RetryAfterExtension = "retryAfterSeconds";
+
+    /// <summary>The problem-details extension that carries <see cref="IntakeFailureException.Calls"/>.</summary>
+    public const string CallsExtension = "calls";
+
     public static int StatusOf(FailureKind kind) => kind switch
     {
         FailureKind.Unsupported => StatusCodes.Status415UnsupportedMediaType,
         FailureKind.Unreadable or FailureKind.OverLimit or FailureKind.Malicious or FailureKind.PolicyRejected
             or FailureKind.Declined => StatusCodes.Status422UnprocessableEntity,
-        FailureKind.Busy or FailureKind.Misconfigured => StatusCodes.Status503ServiceUnavailable,
+        FailureKind.Busy or FailureKind.Misconfigured or FailureKind.DependencyUnavailable => StatusCodes.Status503ServiceUnavailable,
         FailureKind.Timeout => StatusCodes.Status504GatewayTimeout,
         _ => StatusCodes.Status502BadGateway
     };
@@ -26,11 +32,18 @@ public static class ServiceProblems
     /// <summary>The answer for a failure a service knows how to report, or null for anything else (which stays a 500).</summary>
     public static IResult? FromException(Exception ex) => ex switch
     {
-        IntakeFailureException f => Results.Problem(detail: f.Message, statusCode: StatusOf(f.Kind),
-            extensions: new Dictionary<string, object?> { [KindExtension] = f.Kind.ToString() }),
+        IntakeFailureException f => Results.Problem(detail: f.Message, statusCode: StatusOf(f.Kind), extensions: Extensions(f)),
         OcrUnavailableException o => Results.Problem(detail: o.Message, statusCode: StatusCodes.Status503ServiceUnavailable,
             type: OcrUnavailableException.ProblemType),
         RenderingFailedException r => Results.Problem(detail: r.Message, statusCode: StatusCodes.Status502BadGateway),
         _ => null
     };
+
+    private static Dictionary<string, object?> Extensions(IntakeFailureException f)
+    {
+        var extensions = new Dictionary<string, object?> { [KindExtension] = f.Kind.ToString() };
+        if (f.RetryAfterSeconds is { } seconds) extensions[RetryAfterExtension] = seconds;
+        if (f.Calls.Count > 0) extensions[CallsExtension] = f.Calls;
+        return extensions;
+    }
 }

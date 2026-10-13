@@ -34,7 +34,10 @@ public enum FailureKind
     Timeout,
 
     /// <summary>The model provider failed, or its answer was cut off or unreadable.</summary>
-    DependencyFailed
+    DependencyFailed,
+
+    /// <summary>A service this one depends on cannot be reached or is saturated; trying again later may work.</summary>
+    DependencyUnavailable
 }
 
 /// <summary>
@@ -51,4 +54,10 @@ public sealed class IntakeFailureException(FailureKind kind, string message, int
 
     /// <summary>Tokens the provider billed for the call that failed, when it answered (a cut-off or refused answer still costs).</summary>
     public ExtractionUsage? Usage { get; init; }
+
+    /// <summary>
+    /// The model calls made before this failure, failed ones included. The extraction service sends them with the failure
+    /// so the gateway can record what was spent even when the request did not succeed.
+    /// </summary>
+    public IReadOnlyList<ModelCall> Calls { get; set; } = [];
 }

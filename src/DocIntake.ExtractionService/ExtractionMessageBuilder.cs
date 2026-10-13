@@ -1,8 +1,7 @@
 using DocIntake.Contracts;
-using DocIntake.Api.Services.Security;
 using Microsoft.Extensions.AI;
 
-namespace DocIntake.Api.Services.Documents.Extraction;
+namespace DocIntake.ExtractionService;
 
 public sealed record ExtractionRequest(IReadOnlyList<ChatMessage> Messages, bool UsesImages, IReadOnlyList<string> Warnings);
 

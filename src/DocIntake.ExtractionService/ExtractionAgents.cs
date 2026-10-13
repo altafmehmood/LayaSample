@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 using DocIntake.Contracts;
 using Microsoft.Extensions.AI;
 
-namespace DocIntake.Api.Services.Documents.Extraction;
+namespace DocIntake.ExtractionService;
 
 public sealed record AgentOutput(ExtractionResult Result, ExtractionUsage Usage);
 

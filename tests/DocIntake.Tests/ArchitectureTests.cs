@@ -36,10 +36,14 @@ public class ArchitectureTests
     [InlineData("src/DocIntake.DocumentService/Preparation")]
     [InlineData("src/DocIntake.DocumentService/Pdf")]
     [InlineData("src/DocIntake.DocumentService/Inspection")]
+    [InlineData("src/DocIntake.ExtractionService")]
     public void The_services_below_the_endpoints_never_mention_http_status_codes(string folder)
     {
         var files = Directory.EnumerateFiles(Path.Combine(RepositoryRoot(), folder), "*.cs", SearchOption.AllDirectories)
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")).ToList();
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
+                // A service's entry point is its HTTP edge, where status codes belong.
+                && Path.GetFileName(f) != "Program.cs").ToList();
 
         Assert.NotEmpty(files);
         Assert.All(files, file => Assert.DoesNotContain("StatusCodes", File.ReadAllText(file)));
@@ -80,5 +84,55 @@ public class ArchitectureTests
         var libraries = json.RootElement.GetProperty("libraries").EnumerateObject().Select(l => l.Name).ToList();
         foreach (var name in new[] { "PdfPig", "ClosedXML", "DocumentFormat.OpenXml", "Magick.NET", "PDFtoImage", "RapidOcrNet" })
             Assert.Contains(libraries, l => l.StartsWith(name, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static List<string> Libraries(string project)
+    {
+        var manifests = Directory.EnumerateFiles(Path.Combine(RepositoryRoot(), $"src/{project}/bin"), $"{project}.deps.json", SearchOption.AllDirectories).ToList();
+        Assert.NotEmpty(manifests);
+        using var json = JsonDocument.Parse(File.ReadAllText(manifests[0]));
+        return json.RootElement.GetProperty("libraries").EnumerateObject().Select(l => l.Name).ToList();
+    }
+
+    // The gateway has no model provider to call, so it carries neither the library for one nor the extraction service.
+    [Fact]
+    public void The_gateway_carries_no_model_provider_library()
+    {
+        var libraries = Libraries("DocIntake.Api");
+
+        foreach (var name in new[] { "OpenAI", "Microsoft.Extensions.AI.OpenAI", "DocIntake.ExtractionService" })
+            Assert.DoesNotContain(libraries, l => l.StartsWith(name + "/", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void The_extraction_service_has_the_model_libraries_and_no_document_parser()
+    {
+        var libraries = Libraries("DocIntake.ExtractionService");
+
+        foreach (var name in new[] { "OpenAI", "Microsoft.Extensions.AI" })
+            Assert.Contains(libraries, l => l.StartsWith(name + "/", StringComparison.OrdinalIgnoreCase));
+        foreach (var name in new[] { "PdfPig", "ClosedXML", "DocumentFormat.OpenXml", "Magick.NET", "PDFtoImage", "SkiaSharp", "RapidOcrNet",
+                     "Microsoft.ML.OnnxRuntime", "Microsoft.Data.Sqlite", "DocIntake.Api", "DocIntake.Rendering", "DocIntake.DocumentService" })
+            Assert.DoesNotContain(libraries, l => l.StartsWith(name, StringComparison.OrdinalIgnoreCase));
+    }
+
+    // The key is only ever handed to the extraction service: not read by the gateway's code, and not in its Deployment.
+    [Fact]
+    public void The_gateway_never_reads_or_is_given_the_model_provider_key()
+    {
+        var root = RepositoryRoot();
+        var gatewaySource = Directory.EnumerateFiles(Path.Combine(root, "src/DocIntake.Api"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"));
+        Assert.All(gatewaySource, file => Assert.DoesNotContain("OPENAI_API_KEY", File.ReadAllText(file)));
+
+        var deployment = File.ReadAllText(Path.Combine(root, "deploy/helm/docintake/templates/api-deployment.yaml"));
+        Assert.DoesNotContain("Extraction__ApiKey", deployment);
+        Assert.DoesNotContain("OPENAI_API_KEY", deployment);
+        Assert.DoesNotContain("api.extraction", deployment);
+
+        var compose = File.ReadAllText(Path.Combine(root, "docker-compose.yml"));
+        var gatewayService = compose[compose.IndexOf("\n  api:", StringComparison.Ordinal)..compose.IndexOf("\n  clamav:", StringComparison.Ordinal)];
+        Assert.DoesNotContain("OPENAI_API_KEY", gatewayService);
+        Assert.DoesNotContain("Extraction__ApiKey", gatewayService);
     }
 }

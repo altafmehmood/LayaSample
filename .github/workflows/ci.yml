@@ -60,7 +60,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        target: [api, renderer]
+        target: [api, renderer, extraction]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -198,7 +198,7 @@ jobs:
             --create-namespace \
             --values deploy/values-prod.yaml \
             --set image.tag=sha-${COMMIT_SHA} \
-            --set-string api.extraction.keyChecksum="${KEY_CHECKSUM:-}" \
+            --set-string extraction.keyChecksum="${KEY_CHECKSUM:-}" \
             --set-string api.auth.keyChecksum="${AUTH_KEY_CHECKSUM:-}" \
             --set-string telemetry.headersChecksum="${OTEL_CHECKSUM:-}" \
             --wait \
@@ -208,6 +208,7 @@ jobs:
         run: |
           kubectl rollout status deploy/laya-api -n laya --timeout=5m
           kubectl rollout status deploy/laya-renderer -n laya --timeout=5m
+          kubectl rollout status deploy/laya-extraction -n laya --timeout=5m
           kubectl get gateway -n laya -o wide
           kubectl get pods -n laya
 

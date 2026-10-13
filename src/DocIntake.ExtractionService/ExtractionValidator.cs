@@ -1,7 +1,7 @@
 using System.Text;
 using DocIntake.Contracts;
 
-namespace DocIntake.Api.Services.Documents.Extraction;
+namespace DocIntake.ExtractionService;
 
 /// <summary>Checks a model's answer against the document it was given: valid page numbers, quotes that really appear.</summary>
 public static class ExtractionValidator

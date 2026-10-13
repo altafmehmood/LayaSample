@@ -1,8 +1,7 @@
 using System.ClientModel.Primitives;
 using System.Diagnostics.Metrics;
 using System.Net;
-using DocIntake.Api.Services.Documents;
-using DocIntake.Api.Services.Documents.Extraction;
+using DocIntake.ExtractionService;
 
 namespace DocIntake.Tests;
 
@@ -45,13 +44,13 @@ public class RetryPolicyTests
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, l) =>
         {
-            if (instrument.Meter.Name == DocumentMetrics.MeterName && instrument.Name == "intake.llm.retries")
+            if (instrument.Meter.Name == ExtractionMetrics.MeterName && instrument.Name == "intake.llm.retries")
                 l.EnableMeasurementEvents(instrument);
         };
         listener.SetMeasurementEventCallback<long>((_, value, _, _) => retries += value);
         listener.Start();
 
-        var policy = new RecordingRetryPolicy(maxRetries, new DocumentMetrics(new Meters()));
+        var policy = new RecordingRetryPolicy(maxRetries, new ExtractionMetrics(new Meters()));
         var pipeline = ClientPipeline.Create(new ClientPipelineOptions
         {
             RetryPolicy = policy,
