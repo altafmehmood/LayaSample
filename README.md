@@ -123,9 +123,9 @@ calls a paid API. **Not run:** Honeycomb itself (no ingest key was used), so the
 object after DocIntake: namespace and release `docintake`, services `docintake-api`, `-document`, `-extraction`, `-decisions`,
 Secrets `docintake-api-key`, `-llm`, `-otel`, claim `docintake-usage`, Gateway and load balancer `docintake`, images
 `ghcr.io/<owner>/docintake-api` and so on, Dockerfile targets `api`, `document`, `extraction`, `decisions`, and the public path
-`/docintake` (the old `/laya` keeps working through `gateway.legacyPathPrefixes` until you remove it). Names in the cluster are
+`/docintake` (the old `/laya` prefix is not kept). Names in the cluster are
 immutable, so the deploy installs a **second release in a new namespace** beside the old one; moving traffic, the TLS
-certificate and the usage history is a manual runbook: [deploy/README.md](deploy/README.md#cutting-over-from-the-laya-names).
+certificate and the usage history is a manual runbook: [deploy/README.md](deploy/README.md#first-deploy-after-the-move-to-the-docintake-names).
 Nothing in the application changed. Docs: [docs/docintake-architecture.md](docs/docintake-architecture.md), Phase 7.
 
     helm template docintake deploy/helm/docintake -f deploy/values-prod.yaml --set image.tag=sha-abc1234 | grep -c 'name: docintake'

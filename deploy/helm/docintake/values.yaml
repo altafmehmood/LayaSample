@@ -191,8 +191,5 @@ gateway:
     clusterIssuer: letsencrypt-prod
   # Path the API is published under, e.g. /docintake. The prefix is stripped before the request reaches the API.
   pathPrefix: /
-  # Other prefixes that reach the same API during a rename, e.g. [/laya] while callers move to the new prefix. Remove once
-  # nobody calls them (watch the request counts by path in Honeycomb).
-  legacyPathPrefixes: []
   # Longer than the API's request timeout (api.config.requestTimeoutSeconds), so the API answers before the gateway cuts in.
   requestTimeout: 330s

@@ -163,23 +163,26 @@ of a running release are immutable. The user chose the full cutover, so the repo
   | Gateway and load balancer `laya`; certificate Secret `laya-tls` | `docintake`; `docintake-tls` |
   | values key `renderer`, templates `renderer-*.yaml`, Dockerfile target and Compose service `renderer` | `document`, `document-*.yaml`, `document` |
   | images `ghcr.io/<owner>/laya-sample-{api,renderer,extraction,decisions}` | `ghcr.io/<owner>/docintake-{api,document,extraction,decisions}` |
-  | public path `/laya` | `/docintake`; `/laya` still routed (`gateway.legacyPathPrefixes`) |
+  | public path `/laya` | `/docintake` (no backward compatibility for `/laya`, by decision) |
   | GitHub secret `LAYA_API_KEY` | `DOCINTAKE_API_KEY` (CI falls back to the old one) |
 
 - **A second release beside the old one.** The deploy job installs release `docintake` in namespace `docintake` and does not
   touch the `laya` release, so the old stack keeps serving until it is removed by hand.
-- **`gateway.legacyPathPrefixes`** (chart value, schema-validated): extra path prefixes on the same HTTPRoute rule, so callers
-  on `https://api.mehmood.us/laya/...` keep working after DNS moves.
-- **The cutover runbook** in [deploy/README.md](../deploy/README.md#cutting-over-from-the-laya-names): make room on the node,
+- **The cutover runbook** in [deploy/README.md](../deploy/README.md#first-deploy-after-the-move-to-the-docintake-names): make room on the node,
   merge, make four GHCR packages public, check the new stack with `curl --resolve`, carry over the TLS Secret, move DNS, copy the
   usage database, remove the old stack. Rollback is pointing DNS back.
 
 Key files: `deploy/helm/docintake/**`, `deploy/values-prod.yaml`, `deploy/cluster-issuer.yaml`, `.github/workflows/ci.yml`,
 `Dockerfile`, `docker-compose.yml`.
 
+> **Update (same day):** the old `laya` namespace was deleted before the deploy and `/laya` is not kept. So there is no second
+> release beside the old one, no certificate or usage-history carry-over (the old usage data is gone), and the runbook in
+> `deploy/README.md` is reduced to "First deploy after the move": make the four GHCR packages public, point DNS at the new
+> load balancer, wait for the certificate, check. The notes below describe the original plan.
+
 ### Settings
 
-`gateway.legacyPathPrefixes` (default empty; `[/laya]` in `values-prod.yaml`). `gateway.pathPrefix` is now `/docintake` in prod.
+`gateway.pathPrefix` is now `/docintake` in prod. A short-lived `gateway.legacyPathPrefixes` value that kept `/laya` routed was added and removed again on the same day: callers must use `/docintake`.
 
 ### How to try it
 
