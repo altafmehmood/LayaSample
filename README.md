@@ -101,6 +101,21 @@ Compose on 8080.
 
 ### 2026-10-13
 
+**Deployment cutover: everything is `docintake`, including the live cluster names.** The chart, CI and Compose now name every
+object after DocIntake: namespace and release `docintake`, services `docintake-api`, `-document`, `-extraction`, `-decisions`,
+Secrets `docintake-api-key`, `-llm`, `-otel`, claim `docintake-usage`, Gateway and load balancer `docintake`, images
+`ghcr.io/<owner>/docintake-api` and so on, Dockerfile targets `api`, `document`, `extraction`, `decisions`, and the public path
+`/docintake` (the old `/laya` keeps working through `gateway.legacyPathPrefixes` until you remove it). Names in the cluster are
+immutable, so the deploy installs a **second release in a new namespace** beside the old one; moving traffic, the TLS
+certificate and the usage history is a manual runbook: [deploy/README.md](deploy/README.md#cutting-over-from-the-laya-names).
+Nothing in the application changed. Docs: [docs/docintake-architecture.md](docs/docintake-architecture.md), Phase 7.
+
+    helm template docintake deploy/helm/docintake -f deploy/values-prod.yaml --set image.tag=sha-abc1234 | grep -c 'name: docintake'
+    docker compose config -q
+
+The chart renders the new names and both prefixes; the compose file is valid. **Not run here:** a real deploy (it needs the
+cluster, a node big enough for both stacks, and the four new GHCR packages made public after their first push).
+
 **Slim gateway: `Program.cs` is wiring, and failures are answered in one place.** The gateway's `Program.cs` went from 378 lines
 to 83; its endpoints, upload checks, rate limits, OpenAPI setup and service clients are in their own files. A failure is thrown and
 answered by one exception handler (`ProblemMapping`), not caught in each endpoint. And the gateway no longer looks for
@@ -292,10 +307,10 @@ Or run the manual `redteam` job from the Actions tab. It spends the `OPENAI_API_
     RUN_EXTRACTION_EVAL=1 dotnet run --project tests/LayaSample.Tests -c Release -- -trait "Category=Evaluation"   # (paid)
 
 **Telemetry in production (Honeycomb through the in-cluster collector).** Add the `HONEYCOMB_API_KEY` GitHub secret, then
-merge to `main`; the deploy job creates the `laya-otel` Secret and the collector.
+merge to `main`; the deploy job creates the `docintake-otel` Secret and the collector.
 
-    kubectl -n laya get pods                       # laya-otel-collector next to the API and the renderer
-    # Honeycomb: datasets laya-sample-api and laya-sample-renderer
+    kubectl -n docintake get pods                  # docintake-otel-collector next to the services
+    # Honeycomb: datasets docintake-gateway and docintake-document
 
 See [Telemetry](#telemetry-honeycomb) and [deploy/README.md](deploy/README.md).
 
@@ -666,8 +681,7 @@ rather than being reported as unreadable. Local models live in [`models/`](model
 
 ## Docker
 
-`docker-compose.yml` runs the gateway, the hardened document service (the `renderer` service and image target keep their old
-name for now), the extraction service and the decisions service. The images bake in their models (Laya in the decisions
+`docker-compose.yml` runs the gateway, the hardened document service (service `document`), the extraction service and the decisions service. The images bake in their models (Laya in the decisions
 service, OCR in the document service; the gateway and the extraction service have none), so containers never download
 anything and run offline. The gateway image is small and starts in seconds. The build itself takes models from the local
 [`models/`](models/README.md) folder when their SHA-256 matches the pinned version and downloads only what is missing,
@@ -689,13 +703,13 @@ network only (it needs the internet for the model provider). Both have a read-on
 Linux capabilities, and have their own memory, CPU and process limits; they restart automatically after a crash. All run as
 non-root users and have a `HEALTHCHECK` on `/health/ready`. The decisions service is on the internal network with no route
 out, like the document service. The images are built from one `Dockerfile`
-(`--target api` / `--target renderer` / `--target extraction` / `--target decisions`); model downloads use a BuildKit cache, so rebuilds don't fetch
+(`--target api` / `--target document` / `--target extraction` / `--target decisions`); model downloads use a BuildKit cache, so rebuilds don't fetch
 them again.
 
 ## Kubernetes
 
 [`deploy/`](deploy/README.md) has a Helm chart that deploys the services to a DigitalOcean Kubernetes cluster: the API
-is public through the Gateway API with a Let's Encrypt certificate, the renderer (now the document service) is reachable only
+is public through the Gateway API with a Let's Encrypt certificate, the document service is reachable only
 from the API and has no egress, and the extraction service, the only pod that gets the OpenAI key, is reachable only from the
 API and may reach only port 443, DNS and the collector; the decisions service (Laya) is reachable only from the API and
 reaches nothing but the collector. The CI `deploy` job runs it on every push to `main`, with the cluster credentials, the Let's Encrypt
@@ -758,7 +772,7 @@ Collector (`http://localhost:4318`, protocol `http/protobuf`).
 
 **On DOKS.** Store the key as a Secret and set two chart values; see
 [Telemetry in deploy/README.md](deploy/README.md#telemetry-opentelemetry). Check it with
-`kubectl -n laya rollout status deploy/<release>-api`, send a request through the gateway, then look for the same dataset.
+`kubectl -n docintake rollout status deploy/<release>-api`, send a request through the gateway, then look for the same dataset.
 
 ## Feedback sentiment
 

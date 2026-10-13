@@ -5,14 +5,14 @@
 #   docker build --target api -t docintake-api .
 #   docker build --target extraction -t docintake-extraction .
 #   docker build --target decisions -t docintake-decisions .
-#   docker build --target renderer -t docintake-renderer .                                    # PP-OCRv5 Latin OCR
-#   docker build --target renderer -t docintake-renderer --build-arg OCR_MODEL=PPOCRv6Medium .  # multilingual, ~4x slower
+#   docker build --target document -t docintake-document .                                    # PP-OCRv5 Latin OCR
+#   docker build --target document -t docintake-document --build-arg OCR_MODEL=PPOCRv6Medium .  # multilingual, ~4x slower
 #
 # api       The gateway: auth, scanning, risk policy, usage. It reads no document itself and runs no model, so it carries no PDF,
 #           Office, image, OCR or ONNX library, holds no model provider key, and starts in seconds.
 # extraction  Turns a prepared document into structured data with the model provider. The only process that holds the
 #           provider's key and reaches the internet; it never sees the caller or the file's name.
-# renderer  The document service (the target keeps its old name until the services are deployed one by one): classifies
+# document  The document service: classifies
 #           and prepares every upload with PdfPig, the Office libraries, PDFium, ImageMagick and OCR. The only process
 #           that reads untrusted bytes. Run it isolated (see docker-compose.yml).
 #
@@ -70,7 +70,7 @@ RUN dotnet publish src/DocIntake.DocumentService/DocIntake.DocumentService.cspro
  && dotnet publish src/DocIntake.Api/DocIntake.Api.csproj -c Release -a $TARGETARCH --no-restore -o /app/api
 
 # ---- Document service
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS renderer
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS document
 WORKDIR /app
 COPY --from=build /app/document .
 # Merges models/v6 (when chosen) next to the models/v5 set the NuGet published.

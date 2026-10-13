@@ -2,9 +2,9 @@
 image:
   tag: sha-0000000
 gateway:
-  hostname: laya.example.com
+  hostname: docintake.example.com
 telemetry:
   endpoint: https://api.honeycomb.io
-  existingSecret: laya-otel
+  existingSecret: docintake-otel
   collector:
     enabled: true
