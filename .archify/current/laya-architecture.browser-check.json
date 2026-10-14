@@ -6,11 +6,11 @@
   "status": "pass",
   "visualReview": "not-requested",
   "provenance": "current",
-  "deliveryReceiptId": "6e6ea832-e3b3-492d-899b-7bdff04b9a63",
+  "deliveryReceiptId": "dd670422-f740-4344-a0a1-90f65d1b38aa",
   "artifact": {
     "path": "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.html",
-    "sha256": "413f1605278b331ba36a39037fe02dc54229ba673ce6c2c875742aa3606edb6f",
-    "bytes": 779633
+    "sha256": "f8fe3d64c85fd99b4cea7b0409bc691923bd6c4c87c2e8787e92bdd02ebfacf1",
+    "bytes": 779684
   },
   "state": {
     "detail": "read",
@@ -52,14 +52,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.3,
-        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedNodeTextPx": 6.6,
+        "minimumProjectedNonEdgeTextPx": 6.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "scan, policy, usage; no model",
+        "minimumProjectedNodeText": "Gateway API, /docintake prefix",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "api"
+          "id": "gateway"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -102,14 +102,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.3,
-        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedNodeTextPx": 6.6,
+        "minimumProjectedNonEdgeTextPx": 6.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "scan, policy, usage; no model",
+        "minimumProjectedNodeText": "Gateway API, /docintake prefix",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "api"
+          "id": "gateway"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -152,14 +152,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.3,
-        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedNodeTextPx": 6.6,
+        "minimumProjectedNonEdgeTextPx": 6.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "scan, policy, usage; no model",
+        "minimumProjectedNodeText": "Gateway API, /docintake prefix",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "api"
+          "id": "gateway"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -202,14 +202,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.3,
-        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedNodeTextPx": 6.6,
+        "minimumProjectedNonEdgeTextPx": 6.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "scan, policy, usage; no model",
+        "minimumProjectedNodeText": "Gateway API, /docintake prefix",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "api"
+          "id": "gateway"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -305,14 +305,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.3,
-        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedNodeTextPx": 6.6,
+        "minimumProjectedNonEdgeTextPx": 6.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "scan, policy, usage; no model",
+        "minimumProjectedNodeText": "Gateway API, /docintake prefix",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "api"
+          "id": "gateway"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -355,14 +355,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.3,
-        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedNodeTextPx": 6.6,
+        "minimumProjectedNonEdgeTextPx": 6.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "scan, policy, usage; no model",
+        "minimumProjectedNodeText": "Gateway API, /docintake prefix",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "api"
+          "id": "gateway"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -405,14 +405,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.3,
-        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedNodeTextPx": 6.6,
+        "minimumProjectedNonEdgeTextPx": 6.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "scan, policy, usage; no model",
+        "minimumProjectedNodeText": "Gateway API, /docintake prefix",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "api"
+          "id": "gateway"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -455,14 +455,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.3,
-        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedNodeTextPx": 6.6,
+        "minimumProjectedNonEdgeTextPx": 6.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "scan, policy, usage; no model",
+        "minimumProjectedNodeText": "Gateway API, /docintake prefix",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "api"
+          "id": "gateway"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -510,14 +510,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.3,
-        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedNodeTextPx": 6.6,
+        "minimumProjectedNonEdgeTextPx": 6.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "scan, policy, usage; no model",
+        "minimumProjectedNodeText": "Gateway API, /docintake prefix",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "api"
+          "id": "gateway"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -560,14 +560,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.3,
-        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedNodeTextPx": 6.6,
+        "minimumProjectedNonEdgeTextPx": 6.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "scan, policy, usage; no model",
+        "minimumProjectedNodeText": "Gateway API, /docintake prefix",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "api"
+          "id": "gateway"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -610,14 +610,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.3,
-        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedNodeTextPx": 6.6,
+        "minimumProjectedNonEdgeTextPx": 6.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "scan, policy, usage; no model",
+        "minimumProjectedNodeText": "Gateway API, /docintake prefix",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "api"
+          "id": "gateway"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -660,14 +660,14 @@
           "viewBoxHeight": 800
         },
         "viewBoxWidth": 1346,
-        "minimumProjectedNodeTextPx": 7.3,
-        "minimumProjectedNonEdgeTextPx": 7.3,
+        "minimumProjectedNodeTextPx": 6.6,
+        "minimumProjectedNonEdgeTextPx": 6.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "scan, policy, usage; no model",
+        "minimumProjectedNodeText": "Gateway API, /docintake prefix",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "api"
+          "id": "gateway"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
