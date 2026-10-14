@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "DocIntake Document Extraction",
-    "subtitle": "Request path, scanning, the gateway and its three services, the model key, usage and telemetry at dd7e520",
+    "subtitle": "Request path, scanning, the gateway and its three services, the model key, usage and telemetry at 2b31d8b",
     "output": ".archify/current/laya-architecture.html",
     "visual_preset": "blueprint",
     "quality_profile": "showcase",
@@ -11,7 +11,7 @@
       "url": "https://github.com/altafmehmood/LayaSample.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "dd7e52019eeb68d82a52681b8c439c8a26ceafb4"
+      "revision": "2b31d8b0b1c270f2ea582e196af39279776c01cc"
     }
   },
   "components": [
@@ -33,7 +33,7 @@
       "id": "gateway",
       "type": "cloud",
       "label": "Ingress (Cilium)",
-      "sublabel": "Gateway API, /laya prefix",
+      "sublabel": "Gateway API, /docintake prefix",
       "pos": [
         230,
         300
@@ -101,7 +101,7 @@
       "sources": [
         {
           "path": "src/DocIntake.Api/Services/Security/MalwareScanner.cs",
-          "line": 55,
+          "line": 53,
           "end_line": 59,
           "label": "INSTREAM scanner"
         },
@@ -141,8 +141,8 @@
         },
         {
           "path": "src/DocIntake.Rendering/LocalPageRasterizer.cs",
-          "line": 136,
-          "end_line": 142,
+          "line": 137,
+          "end_line": 143,
           "label": "PDF page to image"
         }
       ]
@@ -163,8 +163,8 @@
       "sources": [
         {
           "path": "src/DocIntake.Rendering/OcrEngine.cs",
-          "line": 34,
-          "end_line": 40,
+          "line": 35,
+          "end_line": 41,
           "label": "RapidOcrEngine"
         }
       ]
@@ -462,7 +462,7 @@
       "dot": "cyan",
       "title": "Request Path",
       "items": [
-        "Ingress terminates HTTPS and forwards /laya to the gateway (httproute.yaml:26)",
+        "Ingress terminates HTTPS and forwards /docintake to the gateway (httproute.yaml:17-19, values-prod.yaml:21)",
         "The API key is checked before the extract handler runs (DocumentEndpoints.cs:49)",
         "Failures are thrown, not caught in the endpoints: one exception handler answers them (ProblemMapping.cs:22, ArchitectureTests.cs:172)",
         "The service sends back the model calls it made; the gateway records each as usage (DocumentExtractor.cs:56)"
@@ -473,10 +473,10 @@
       "title": "Trust Boundaries",
       "items": [
         "Every upload is streamed to ClamAV before any parser reads it; an infection is refused with 422 (DocumentPipeline.cs:50-55)",
-        "Parsers run only in the document service, which has no egress (DocumentClassifier.cs:49, LocalPageRasterizer.cs:136-142)",
+        "Parsers run only in the document service, which has no egress (DocumentClassifier.cs:49, LocalPageRasterizer.cs:137-143)",
         "Only the extraction service holds the model key and reaches the internet; a test checks the gateway never mentions it (ArchitectureTests.cs:122)",
         "The gateway runs no model and carries no native library; a test checks its build (ArchitectureTests.cs:57)",
-        "The three services accept calls only from the gateway; the decisions and document services may reach nothing (networkpolicy.yaml:6-128)"
+        "The three services accept calls only from the gateway; the decisions and document services may reach nothing (networkpolicy.yaml:1-128)"
       ]
     },
     {
