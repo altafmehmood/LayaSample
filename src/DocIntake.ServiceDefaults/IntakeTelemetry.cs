@@ -51,7 +51,7 @@ public static class IntakeTelemetry
                 .AddAttributes([new KeyValuePair<string, object>("deployment.environment.name", builder.Environment.EnvironmentName)]))
             .WithTracing(t => t
                 .AddAspNetCoreInstrumentation(o => o.Filter = ctx => !ctx.Request.Path.StartsWithSegments("/health"))
-                .AddHttpClientInstrumentation()
+                .AddHttpClientInstrumentation(o => o.EnrichWithHttpRequestMessage = (activity, request) => activity.DisplayName = ClientSpanName(request))
                 .AddSource(SourceName, GenAiSourceName))
             .WithMetrics(m => m
                 // A histogram point keeps the trace id of a sampled request, so a slow bucket links to a trace in Honeycomb.
@@ -90,6 +90,22 @@ public static class IntakeTelemetry
             });
         }
         return builder;
+    }
+
+    /// <summary>
+    /// "POST docintake-document /documents/prepare" instead of the instrumentation's bare "POST", so a trace says which service
+    /// each call went to. Only fixed routes reach here (no ids in the paths), so the names stay low-cardinality.
+    /// </summary>
+    public static string ClientSpanName(HttpRequestMessage request)
+    {
+        var uri = request.RequestUri;
+        if (uri is null) return request.Method.Method;
+        var path = uri.AbsolutePath;
+        // Dapr service invocation: /v1.0/invoke/{app-id}/method/{operation}.
+        const string invoke = "/v1.0/invoke/";
+        if (path.StartsWith(invoke, StringComparison.Ordinal) && path[invoke.Length..].Split("/method", 2) is [var app, var operation])
+            return $"{request.Method.Method} {app} {operation}";
+        return $"{request.Method.Method} {uri.Host} {path}";
     }
 
     /// <summary>Marks the activity failed and records the exception (type, message, stack) on it.</summary>

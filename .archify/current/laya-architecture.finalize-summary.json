@@ -7,13 +7,13 @@
   "quality": "showcase",
   "specification": {
     "path": "/Users/altafmehmood/Repos/LayaSample/.archify/current/candidate.json",
-    "sha256": "78721e6a922ffde20908adfd3709e2a47d541d60fcdf6386a2d171d8721a8339",
-    "bytes": 12088
+    "sha256": "daacdf68ddf1878f5eceb7b69be8e535db2b8818447a67c50c8cf4e9d15fa1b4",
+    "bytes": 15080
   },
   "artifact": {
     "path": "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.html",
-    "sha256": "f8fe3d64c85fd99b4cea7b0409bc691923bd6c4c87c2e8787e92bdd02ebfacf1",
-    "bytes": 779684
+    "sha256": "3aa8a6f9f5b3ecd796b035c55a8505a0cad07aa35ce82635e039f80550dc16cc",
+    "bytes": 847211
   },
   "gates": {
     "validate": "pass",
@@ -33,81 +33,15 @@
     "browserCheckReceipt": "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.browser-check.json"
   },
   "update": {
-    "status": "update_available",
-    "installedVersion": "3.0.1",
+    "status": "current",
+    "installedVersion": "3.1.0",
     "availableVersion": "3.1.0",
-    "releaseNotes": "https://github.com/tt-a1i/archify/releases/tag/v3.1.0",
-    "severity": "normal",
-    "checkedAt": "2026-10-14T21:00:55.077Z",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-15T01:43:53.482Z",
     "source": "cache",
-    "noticeRequired": true,
-    "noticeText": "Archify update: 3.0.1 → 3.1.0. A previous check at 2026-10-14T21:00:55.077Z found a newer release. Release notes: https://github.com/tt-a1i/archify/releases/tag/v3.1.0. The installed Skill has not changed; ask to snooze or ignore this reminder.",
-    "eventKey": "archify@sha256:ffedc53390c9da6e859f41e432c5d2d0615a23cf00a503181f07efbba88a7ce8"
+    "noticeRequired": false,
+    "noticeText": null
   },
   "visualReview": "not-requested",
-  "durationMs": 1559,
-  "visualReviewRecommendation": {
-    "action": "inspect-route-readability",
-    "signals": {
-      "resolvedCrossovers": 1,
-      "routesOverSuggestedBends": 2
-    },
-    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
-    "affectedRoutes": {
-      "crossings": [
-        {
-          "left": {
-            "from": "api",
-            "to": "collector",
-            "label": "OTLP/HTTP",
-            "collectionIndex": 6,
-            "artifactIndex": 7
-          },
-          "right": {
-            "from": "renderer",
-            "to": "collector",
-            "label": "OTLP/HTTP :4318",
-            "collectionIndex": 7,
-            "artifactIndex": 8
-          },
-          "point": [
-            703,
-            522
-          ],
-          "sharedNode": "collector"
-        }
-      ],
-      "detours": [
-        {
-          "relationship": {
-            "from": "api",
-            "to": "collector",
-            "label": "OTLP/HTTP",
-            "collectionIndex": 6,
-            "artifactIndex": 7
-          },
-          "bends": 5,
-          "stretch": 1.195
-        },
-        {
-          "relationship": {
-            "from": "api",
-            "to": "decisions",
-            "label": "feedback",
-            "collectionIndex": 12,
-            "artifactIndex": 13
-          },
-          "bends": 3,
-          "stretch": 1
-        }
-      ],
-      "truncated": false
-    },
-    "hints": [
-      "api → collector and renderer → collector cross next to collector: move node api or renderer so the two reach collector from different sides (for example one level with it, one directly above or below it).",
-      "api → collector needs 5 bends: move node api or collector so they share a row or column with matching centers, or sit diagonally with a clear corner.",
-      "api → decisions needs 3 bends: move node api or decisions so they share a row or column with matching centers, or sit diagonally with a clear corner."
-    ],
-    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
-  }
+  "durationMs": 2130
 }

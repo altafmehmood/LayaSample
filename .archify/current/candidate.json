@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "DocIntake Document Extraction",
-    "subtitle": "Request path, scanning, the gateway and its three services, the model key, usage and telemetry at 2b31d8b",
+    "subtitle": "Request path, scanning, Dapr mTLS between the gateway and its services, the model key, usage and telemetry at 6af5186",
     "output": ".archify/current/laya-architecture.html",
     "visual_preset": "blueprint",
     "quality_profile": "showcase",
@@ -11,7 +11,7 @@
       "url": "https://github.com/altafmehmood/LayaSample.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "2b31d8b0b1c270f2ea582e196af39279776c01cc"
+      "revision": "6af518694476d5e514b035a6a794fae9aac6ed2c"
     }
   },
   "components": [
@@ -48,6 +48,12 @@
           "line": 11,
           "end_line": 11,
           "label": "Gateway"
+        },
+        {
+          "path": "deploy/helm/docintake/templates/backendtlspolicy.yaml",
+          "line": 5,
+          "end_line": 5,
+          "label": "BackendTLSPolicy to the API"
         }
       ]
     },
@@ -55,7 +61,7 @@
       "id": "api",
       "type": "backend",
       "label": "DocIntake gateway",
-      "sublabel": "scan, policy, usage; no model",
+      "sublabel": "HTTPS only; scan, policy, usage",
       "pos": [
         430,
         290
@@ -72,24 +78,24 @@
           "label": "extract endpoint and its filters"
         },
         {
-          "path": "src/DocIntake.Api/Services/Documents/DocumentPipeline.cs",
-          "line": 50,
-          "end_line": 55,
-          "label": "scan before parse"
+          "path": "src/DocIntake.Api/TlsSetup.cs",
+          "line": 98,
+          "end_line": 100,
+          "label": "HTTPS listener with a reloading certificate"
         },
         {
-          "path": "src/DocIntake.Api/Services/Documents/Extraction/DocumentExtractor.cs",
-          "line": 56,
-          "end_line": 56,
-          "label": "usage from the calls"
+          "path": "deploy/helm/docintake/templates/api-deployment.yaml",
+          "line": 75,
+          "end_line": 114,
+          "label": "callee URLs go via the Dapr sidecar :3500"
         }
       ]
     },
     {
-      "id": "clamav",
+      "id": "scan",
       "type": "security",
-      "label": "ClamAV",
-      "sublabel": "clamd, infected = 422",
+      "label": "Scan service",
+      "sublabel": "clamd verdict, infected = 422",
       "pos": [
         430,
         100
@@ -100,16 +106,50 @@
       ],
       "sources": [
         {
+          "path": "src/DocIntake.ScanService/Program.cs",
+          "line": 55,
+          "end_line": 55,
+          "label": "POST /scan"
+        },
+        {
           "path": "src/DocIntake.Api/Services/Security/MalwareScanner.cs",
-          "line": 53,
-          "end_line": 59,
-          "label": "INSTREAM scanner"
+          "line": 57,
+          "end_line": 57,
+          "label": "ScanServiceMalwareScanner"
+        },
+        {
+          "path": "src/DocIntake.Api/Services/Documents/DocumentPipeline.cs",
+          "line": 50,
+          "end_line": 55,
+          "label": "scan before parse"
+        }
+      ]
+    },
+    {
+      "id": "clamav",
+      "type": "security",
+      "label": "ClamAV",
+      "sublabel": "clamd, no Service port",
+      "pos": [
+        680,
+        100
+      ],
+      "size": [
+        136,
+        62
+      ],
+      "sources": [
+        {
+          "path": "src/DocIntake.ScanService/ClamdClient.cs",
+          "line": 67,
+          "end_line": 67,
+          "label": "INSTREAM command"
         },
         {
           "path": "deploy/helm/docintake/templates/clamav.yaml",
-          "line": 6,
-          "end_line": 6,
-          "label": "clamav Deployment"
+          "line": 88,
+          "end_line": 89,
+          "label": "scan container reaches clamd on 127.0.0.1"
         }
       ]
     },
@@ -119,7 +159,7 @@
       "label": "Document service",
       "sublabel": "classify, prepare, render",
       "pos": [
-        430,
+        230,
         480
       ],
       "size": [
@@ -134,16 +174,16 @@
           "label": "POST /documents/classify"
         },
         {
-          "path": "src/DocIntake.DocumentService/Classification/DocumentClassifier.cs",
-          "line": 49,
-          "end_line": 49,
-          "label": "PDF classify"
+          "path": "src/DocIntake.Rendering/LocalPageRasterizer.cs",
+          "line": 138,
+          "end_line": 144,
+          "label": "PDF page to image"
         },
         {
-          "path": "src/DocIntake.Rendering/LocalPageRasterizer.cs",
-          "line": 137,
-          "end_line": 143,
-          "label": "PDF page to image"
+          "path": "deploy/helm/docintake/templates/dapr-config.yaml",
+          "line": 25,
+          "end_line": 25,
+          "label": "accepts only the API's Dapr app id"
         }
       ]
     },
@@ -153,7 +193,7 @@
       "label": "RapidOCR",
       "sublabel": "PaddleOCR models, ONNX",
       "pos": [
-        430,
+        230,
         650
       ],
       "size": [
@@ -166,6 +206,68 @@
           "line": 35,
           "end_line": 41,
           "label": "RapidOcrEngine"
+        }
+      ]
+    },
+    {
+      "id": "extraction",
+      "type": "backend",
+      "label": "Extraction service",
+      "sublabel": "holds the model key",
+      "pos": [
+        880,
+        300
+      ],
+      "size": [
+        136,
+        62
+      ],
+      "sources": [
+        {
+          "path": "src/DocIntake.ExtractionService/Program.cs",
+          "line": 79,
+          "end_line": 79,
+          "label": "POST /extract"
+        },
+        {
+          "path": "src/DocIntake.ExtractionService/ExtractionOrchestrator.cs",
+          "line": 15,
+          "end_line": 15,
+          "label": "orchestrator"
+        },
+        {
+          "path": "deploy/helm/docintake/templates/dapr-config.yaml",
+          "line": 25,
+          "end_line": 25,
+          "label": "accepts only the API's Dapr app id"
+        }
+      ]
+    },
+    {
+      "id": "sentry",
+      "type": "security",
+      "label": "Dapr control plane",
+      "sublabel": "dapr-system: Sentry, injector",
+      "pos": [
+        880,
+        100
+      ],
+      "size": [
+        136,
+        62
+      ],
+      "sources": [
+        {
+          "path": "deploy/README.md",
+          "line": 122,
+          "end_line": 122,
+          "label": "Dapr install and what it runs"
+        },
+        {
+          "path": ".github/workflows/ci.yml",
+          "line": 195,
+          "end_line": 202,
+          "label": "deploy stops if Dapr is missing"
         }
       ]
     },
@@ -223,9 +325,9 @@
       "id": "collector",
       "type": "backend",
       "label": "OTel collector",
-      "sublabel": "in cluster, holds ingest key",
+      "sublabel": "TLS receiver, holds ingest key",
       "pos": [
-        680,
+        430,
         650
       ],
       "size": [
@@ -238,6 +340,12 @@
           "line": 6,
           "end_line": 6,
           "label": "collector Deployment"
+        },
+        {
+          "path": "deploy/helm/docintake/templates/collector-config.yaml",
+          "line": 23,
+          "end_line": 25,
+          "label": "TLS on the OTLP receiver"
         }
       ]
     },
@@ -257,8 +365,8 @@
       "sources": [
         {
           "path": "deploy/helm/docintake/templates/collector-config.yaml",
-          "line": 29,
-          "end_line": 29,
+          "line": 41,
+          "end_line": 41,
           "label": "exporter endpoint"
         }
       ]
@@ -279,65 +387,15 @@
       "sources": [
         {
           "path": ".github/workflows/ci.yml",
-          "line": 127,
-          "end_line": 127,
+          "line": 130,
+          "end_line": 130,
           "label": "deploy job"
-        }
-      ]
-    },
-    {
-      "id": "extraction",
-      "type": "backend",
-      "label": "Extraction service",
-      "sublabel": "holds the model key",
-      "pos": [
-        800,
-        300
-      ],
-      "size": [
-        136,
-        62
-      ],
-      "sources": [
-        {
-          "path": "src/DocIntake.ExtractionService/Program.cs",
-          "line": 79,
-          "end_line": 79,
-          "label": "POST /extract"
         },
         {
-          "path": "src/DocIntake.ExtractionService/ExtractionOrchestrator.cs",
-          "line": 15,
-          "end_line": 15,
-          "label": "orchestrator"
-        }
-      ]
-    },
-    {
-      "id": "decisions",
-      "type": "backend",
-      "label": "Decisions service",
-      "sublabel": "Laya feedback model",
-      "pos": [
-        680,
-        100
-      ],
-      "size": [
-        136,
-        62
-      ],
-      "sources": [
-        {
-          "path": "src/DocIntake.DecisionsService/Program.cs",
-          "line": 56,
-          "end_line": 56,
-          "label": "POST /decisions/feedback"
-        },
-        {
-          "path": "src/DocIntake.DecisionsService/ModelWarmup.cs",
-          "line": 17,
-          "end_line": 17,
-          "label": "model warm-up"
+          "path": ".github/workflows/ci.yml",
+          "line": 195,
+          "end_line": 202,
+          "label": "Dapr, cert-manager and CRD precheck"
         }
       ]
     }
@@ -345,23 +403,33 @@
   "boundaries": [
     {
       "kind": "region",
-      "label": "DigitalOcean DOKS / namespace laya",
+      "label": "DigitalOcean DOKS cluster",
       "wraps": [
         "gateway",
         "api",
+        "scan",
         "clamav",
+        "sentry",
         "renderer",
         "ocr",
         "usage",
         "collector",
-        "extraction",
-        "decisions"
+        "extraction"
       ],
       "pad": 20
     },
     {
       "kind": "security-group",
-      "label": "document service NetworkPolicy: gateway in, collector out",
+      "label": "ClamAV pod: port 3310 closed to other pods",
+      "wraps": [
+        "scan",
+        "clamav"
+      ],
+      "pad": 14
+    },
+    {
+      "kind": "security-group",
+      "label": "document pod: API only, no egress",
       "wraps": [
         "renderer",
         "ocr"
@@ -379,14 +447,22 @@
     {
       "from": "gateway",
       "to": "api",
-      "label": "HTTP :8080",
+      "label": "TLS :8443",
       "variant": "emphasis"
     },
     {
       "from": "api",
-      "to": "clamav",
-      "label": "INSTREAM scan first",
+      "to": "scan",
+      "label": "Dapr mTLS: scan first",
       "variant": "security"
+    },
+    {
+      "from": "scan",
+      "to": "clamav",
+      "label": "INSTREAM",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "left"
     },
     {
       "from": "api",
@@ -400,7 +476,7 @@
     {
       "from": "api",
       "to": "renderer",
-      "label": "classify, then prepare",
+      "label": "Dapr mTLS: classify, prepare",
       "variant": "security"
     },
     {
@@ -411,18 +487,16 @@
     {
       "from": "api",
       "to": "collector",
-      "label": "OTLP/HTTP",
-      "variant": "dashed",
-      "fromSide": "bottom",
-      "toSide": "left"
+      "label": "OTLP over TLS",
+      "variant": "dashed"
     },
     {
       "from": "renderer",
       "to": "collector",
-      "label": "OTLP/HTTP :4318",
+      "label": "OTLP over TLS :4318",
       "variant": "dashed",
       "fromSide": "right",
-      "toSide": "top"
+      "toSide": "left"
     },
     {
       "from": "collector",
@@ -439,22 +513,20 @@
     {
       "from": "api",
       "to": "extraction",
-      "label": "POST /extract",
+      "label": "Dapr mTLS: POST /extract",
       "variant": "security"
+    },
+    {
+      "from": "sentry",
+      "to": "extraction",
+      "label": "Sentry certs",
+      "variant": "dashed"
     },
     {
       "from": "extraction",
       "to": "openai",
       "label": "pages + OCR text",
       "variant": "security"
-    },
-    {
-      "from": "api",
-      "to": "decisions",
-      "label": "feedback",
-      "variant": "dashed",
-      "fromSide": "right",
-      "toSide": "bottom"
     }
   ],
   "cards": [
@@ -462,40 +534,50 @@
       "dot": "cyan",
       "title": "Request Path",
       "items": [
-        "Ingress terminates HTTPS and forwards /docintake to the gateway (httproute.yaml:17-19, values-prod.yaml:21)",
+        "Ingress terminates HTTPS and forwards /docintake to the gateway, now over TLS to port 8443 (httproute.yaml:17-28)",
+        "A BackendTLSPolicy makes the Gateway check the API's certificate against the release's private CA (backendtlspolicy.yaml:5)",
         "The API key is checked before the extract handler runs (DocumentEndpoints.cs:49)",
-        "Failures are thrown, not caught in the endpoints: one exception handler answers them (ProblemMapping.cs:22, ArchitectureTests.cs:172)",
-        "The service sends back the model calls it made; the gateway records each as usage (DocumentExtractor.cs:56)"
+        "Failures are thrown, not caught in the endpoints: one exception handler answers them (ProblemMapping.cs:22)"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Dapr",
+      "items": [
+        "Every service pod runs a Dapr sidecar (not drawn). The gateway calls the scan, document and extraction services as http://localhost:3500/v1.0/invoke/<app id>/method; the sidecars carry it over mutual TLS on port 50002 (api-deployment.yaml:75-114)",
+        "Each callee's Configuration denies everything and allows only the API's app id and the operations it uses (dapr-config.yaml:25)",
+        "The control plane runs in dapr-system in the same cluster and is installed once per cluster before the chart: Sentry issues every sidecar's certificate, the injector adds the sidecars. The CI deploy stops if it is missing (deploy/README.md:122, ci.yml:195-202)",
+        "Callee pods accept the API only on 50002 and may reach dapr-system; the 8080 app port stays on the pod's loopback (networkpolicy.yaml:6-55)"
       ]
     },
     {
       "dot": "rose",
       "title": "Trust Boundaries",
       "items": [
-        "Every upload is streamed to ClamAV before any parser reads it; an infection is refused with 422 (DocumentPipeline.cs:50-55)",
-        "Parsers run only in the document service, which has no egress (DocumentClassifier.cs:49, LocalPageRasterizer.cs:137-143)",
-        "Only the extraction service holds the model key and reaches the internet; a test checks the gateway never mentions it (ArchitectureTests.cs:122)",
-        "The gateway runs no model and carries no native library; a test checks its build (ArchitectureTests.cs:57)",
-        "The three services accept calls only from the gateway; the decisions and document services may reach nothing (networkpolicy.yaml:1-128)"
+        "Every upload goes to the scan service, which asks clamd over the pod's loopback, before any parser reads it; an infection is refused with 422 (DocumentPipeline.cs:50-55, clamav.yaml:88-89)",
+        "Parsers run only in the document service, which has no egress (DocumentClassifier.cs:49, LocalPageRasterizer.cs:138-144)",
+        "Only the extraction service holds the model key and reaches the internet (ArchitectureTests.cs:118-130)",
+        "The gateway carries no model provider library (ArchitectureTests.cs:96-100)"
       ]
     },
     {
       "dot": "emerald",
       "title": "Usage and Telemetry",
       "items": [
-        "Each model call is queued and written to a SQLite file; GET /api/usage serves it as JSON or CSV (UsageStore.cs:19, UsageEndpoints.cs:75)",
-        "The collector alone holds the Honeycomb ingest key (collector-config.yaml:29)",
-        "Production is not yet verified: the collector image and Honeycomb ingestion are untested"
+        "Each model call is queued and written to a SQLite file on a PVC (UsageStore.cs:19, api-pvc.yaml:5)",
+        "Services send OTLP over TLS to the collector, which re-reads its certificate on renewal; it alone holds the Honeycomb ingest key (collector-config.yaml:23-25, 41)",
+        "Production is not yet verified: the BackendTLSPolicy and Honeycomb ingestion over the TLS collector are untested on the cluster"
       ]
     },
     {
       "dot": "amber",
       "title": "Not Shown",
       "items": [
-        "Local dotnet run turns scanning off in appsettings.Development.json (line 13); Compose and Helm turn it on",
-        "The analyze route dispatches to stub agents, not real downstream agents (Program.cs:34)",
-        "The decisions service's telemetry and the other services' links to the collector are not all drawn",
-        "The manual garak red-team harness and its CI job are not part of the runtime (redteam/)"
+        "The Dapr sidecars are not drawn; the 'Dapr mTLS' labels stand for sidecar to sidecar calls. The control plane is joined to one service although Sentry serves every sidecar, and its operator, placement and scheduler are not named in the box (deploy/README.md:122)",
+        "cert-manager and the private CA that sign the API and collector certificates are not drawn (internal-ca.yaml:20)",
+        "The decisions service was removed; /api/feedback/analyze answers 503 (FeedbackEndpoints.cs:13-18)",
+        "Local dotnet run turns scanning off in appsettings.Development.json (line 13); Compose and Helm turn it on, and Compose has no Dapr or TLS",
+        "The analyze route dispatches to stub agents, not real downstream agents (Program.cs:34)"
       ]
     }
   ]

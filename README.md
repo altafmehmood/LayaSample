@@ -22,6 +22,7 @@ OpenAI vision and text models.
 | [Lending corpus and evaluation](#lending-corpus) | 39 synthetic lending PDFs with ground truth, and an opt-in accuracy score for the model | `RUN_EXTRACTION_EVAL=1 dotnet run --project tests/DocIntake.Tests -c Release -- -trait "Category=Evaluation"` (paid) |
 | [Red team](redteam/README.md) | garak attacks the extraction API through a shim, with the defences on and in `flag` mode | `redteam/run.sh --smoke` (paid) |
 | [Kubernetes deploy](#kubernetes) | Helm chart and CI deploy to DOKS: Gateway API, TLS, ClamAV, usage PVC, collector | see [deploy/README.md](deploy/README.md) |
+| [OpenTelemetry trace readability](docs/otel-observability.md) | Client spans named `POST <service> <operation>`, a `scan.clamd` span, Dapr sidecar spans in Honeycomb, and a collector probe that no longer logs TLS errors | `dotnet test --filter "FullyQualifiedName~TraceNaming"`; then open a trace in Honeycomb |
 | [Internal transport security](#internal-transport-security) | Every hop inside the cluster over TLS: Dapr mutual TLS between services with a per-caller allow-list, a private-CA certificate from the Gateway to the API, TLS to the telemetry collector, and ClamAV behind its own scan service | `python3 deploy/check-chart.py`; the cluster steps are in [docs/internal-transport-security.md](docs/internal-transport-security.md) |
 | [Feedback sentiment](#feedback-sentiment) | Removed: the endpoint answers 503 until the OpenAI-based replacement exists | `curl -H 'Content-Type: application/json' -d '{"text":"The room was dirty"}' localhost:5091/api/feedback/analyze` (503) |
 
@@ -101,6 +102,13 @@ One entry per day's work, newest first: what was added, the commands to try it a
 Compose on 8080.
 
 ### 2026-10-14
+
+**OpenTelemetry: readable traces, sidecar spans, a quiet collector.** HTTP client spans were all named `POST`; they are now `POST <service> <operation>`
+(for Dapr calls, the app id and operation). The scan service has a `scan.clamd` child span (bytes sent, verdict), and `document.render.page`
+carries `intake.render.ocr`. With `telemetry.collector.enabled` the Dapr sidecars export their own spans to the collector over TLS
+(`dapr.tracing.samplingRate` defaults to `"1"`; `"0"` turns it off), and the collector's readiness probe no longer logs a TLS handshake error
+every ten seconds. Try: `dotnet test --filter "FullyQualifiedName~TraceNaming"` (ran, passes), `python3 deploy/check-chart.py` (ran, passes).
+Checked on a kind cluster with the real images; not on DOKS. Details: [docs/otel-observability.md](docs/otel-observability.md).
 
 **Internal transport security: Dapr mutual TLS, a scan service in front of ClamAV, a private CA, TLS to the collector. The decisions
 service (Laya) is gone.** In Kubernetes the API now calls the document, extraction and scan services through Dapr sidecars (mutual TLS;

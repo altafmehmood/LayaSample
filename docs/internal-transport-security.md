@@ -78,7 +78,7 @@ pod on Dapr's port 50002, no longer 8080; egress to `dapr-system`). When the sid
 403 from the policy) it answers with its own JSON error; `src/DocIntake.Api/Services/DaprErrors.cs` recognises it so the gateway answers
 503 with `Retry-After` and never leaks the sidecar's text (it names internal services) instead of calling it a 502 crash.
 
-**Settings.** `dapr.enabled`, `trustDomain`, `controlPlaneTrustDomain`, `namespace`, `maxBodySize` (32Mi), `tracing.samplingRate` ("0"),
+**Settings.** `dapr.enabled`, `trustDomain`, `controlPlaneTrustDomain`, `namespace`, `maxBodySize` (32Mi), `tracing.samplingRate` ("1"; spans go to the collector, see the 2026-10-14 update),
 `sidecar.resources` and per-service `sidecar.overrides` (api: 512Mi limit, extraction: 384Mi). Install: `deploy/README.md`, "Dapr".
 
 **Try it.** After the deploy: `kubectl get pods -n docintake` (2/2, ClamAV 3/3), upload a sample through the Gateway, and from a pod
@@ -169,7 +169,7 @@ Run on this machine on 2026-10-14:
 
 - **The API pod has no NetworkPolicy.** The Gateway's traffic reaches it with Cilium's ingress identity, which a plain NetworkPolicy cannot select;
   a `CiliumNetworkPolicy` with `fromEntities: ingress` would. Until then any pod can reach the API on 8443 (it still needs an API key for extraction).
-- clamd binds all interfaces of its pod (above). Dapr's metrics and sidecar spans are off. docker-compose is plaintext.
+- clamd binds all interfaces of its pod (above). Dapr's metrics are off (sidecar spans are on, see [otel-observability.md](otel-observability.md)). docker-compose is plaintext.
 - Where the old releases' decisions Deployment, Service and NetworkPolicy exist, `helm upgrade` removes them.
 
 ## Before you deploy
@@ -183,3 +183,7 @@ The same steps, with exact commands and a place to record each as done, are in t
 - [ ] If the Gateway answers 502 or 503 after the deploy, the `BackendTLSPolicy` is not working: `helm upgrade ... --set internalTls.enabled=false` returns the API to plain HTTP 8080 (the rest stays on).
 - [ ] Record `kubectl top pods --containers -n docintake` and set the sidecar limits in `deploy/values-prod.yaml` from it; run a real extraction and look at the extraction sidecar.
 - [ ] Delete the old `docintake-decisions` package and the `Decisions` settings anywhere else you keep them.
+
+## Update 2026-10-14: sidecar spans reach the collector
+
+Moved to [otel-observability.md](otel-observability.md) (plan 0002), where it is written up and checked on kind. The default of `dapr.tracing.samplingRate` is now `"1"`; `"0"` turns it off.

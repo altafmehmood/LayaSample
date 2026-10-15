@@ -60,6 +60,7 @@ public sealed class LocalPageRasterizer(IOcrEngine ocr, IOptions<RenderingOption
                 pageSpan?.SetTag("intake.render.page", page.Number);
                 pageSpan?.SetTag("intake.render.dpi", page.Dpi ?? DefaultPdfDpi);
                 pageSpan?.SetTag("intake.render.grayscale", page.Grayscale);
+                pageSpan?.SetTag("intake.render.ocr", page.Ocr && options.Value.EnableOcr);
                 var pageStarted = Stopwatch.GetTimestamp();
                 using var bitmap = Readable($"page {page.Number} could not be rendered", () => job.MediaType == MediaTypes.Pdf
                     ? RenderPdfPage(job.Document, page.Number, page.Dpi ?? DefaultPdfDpi)

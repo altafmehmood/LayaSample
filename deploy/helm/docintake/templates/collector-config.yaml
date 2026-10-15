@@ -8,6 +8,11 @@ metadata:
     {{- include "docintake.labels" (dict "root" . "component" "otel-collector") | nindent 4 }}
 data:
   config.yaml: |
+    extensions:
+      # Ready when the pipelines are running. Plain HTTP on its own port: it reports status only, and the kubelet's probe would
+      # otherwise connect to the TLS port and log a handshake error each time.
+      health_check:
+        endpoint: 0.0.0.0:13133
     receivers:
       otlp:
         protocols:
@@ -39,6 +44,7 @@ data:
           {{ .Values.telemetry.collector.headerName }}: ${env:BACKEND_API_KEY}
         {{- end }}
     service:
+      extensions: [health_check]
       telemetry:
         metrics:
           level: none
