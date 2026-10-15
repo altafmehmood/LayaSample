@@ -80,6 +80,11 @@ capabilities:
 {{- printf "%s://%s-otel-collector:4318" (ternary "https" "http" (not (empty (include "docintake.otlpTls" .)))) (include "docintake.fullname" .) -}}
 {{- end -}}
 
+{{/* Host and port of the collector's OTLP/HTTP receiver, without a scheme (what Dapr's tracing configuration takes). */}}
+{{- define "docintake.collectorAddress" -}}
+{{- printf "%s-otel-collector.%s.svc.cluster.local:4318" (include "docintake.fullname" .) .Release.Namespace -}}
+{{- end -}}
+
 {{/* Env shared by every service: where telemetry goes and which pod it came from. Takes the chart context. */}}
 {{- define "docintake.telemetryEnv" -}}
 - name: POD_NAME
@@ -143,6 +148,12 @@ dapr.io/enable-api-logging: "false"
 dapr.io/log-as-json: "true"
 # Traces only: the sidecar's Prometheus endpoint is off (nothing scrapes it).
 dapr.io/enable-metrics: "false"
+{{- if include "docintake.otlpTls" .root }}
+# The sidecar sends its spans to the collector over TLS (dapr-config.yaml); the collector's certificate is signed by the private
+# CA, so the sidecar gets the CA mounted and uses it instead of the system roots (it talks to nothing else over public TLS).
+dapr.io/volume-mounts: "internal-ca:/ca"
+dapr.io/env: "SSL_CERT_FILE=/ca/ca.crt"
+{{- end }}
 {{- $resources := .root.Values.dapr.sidecar.resources }}
 {{- with (get .root.Values.dapr.sidecar.overrides .name) }}{{ $resources = .resources }}{{ end }}
 dapr.io/sidecar-cpu-request: {{ $resources.requests.cpu | quote }}
@@ -187,4 +198,19 @@ dapr.io/sidecar-memory-limit: {{ $resources.limits.memory | quote }}
   configMap:
     name: {{ include "docintake.fullname" . }}-internal-ca
 {{- end -}}
+{{- end -}}
+
+{{/*
+The sidecar's tracing: its sampling rate and, when the chart runs the collector, where it sends its spans (OTLP over HTTP, TLS
+when the collector has it). Without the collector the sidecar only propagates trace context.
+*/}}
+{{- define "docintake.daprTracing" -}}
+tracing:
+  samplingRate: {{ .Values.dapr.tracing.samplingRate | quote }}
+  {{- if .Values.telemetry.collector.enabled }}
+  otel:
+    endpointAddress: {{ include "docintake.collectorAddress" . | quote }}
+    protocol: http
+    isSecure: {{ not (empty (include "docintake.otlpTls" .)) }}
+  {{- end }}
 {{- end -}}

@@ -39,6 +39,10 @@ spec:
           ports:
             - name: otlp-http
               containerPort: 4318
+            # The collector's health_check extension (collector-config.yaml): a plain HTTP answer for the kubelet, so the probe does not
+            # open the TLS port and leave a "TLS handshake error" in the collector's log every ten seconds.
+            - name: health
+              containerPort: 13133
           {{- if .Values.telemetry.existingSecret }}
           env:
             # optional: a missing Secret sends unauthenticated data that the backend rejects, instead of stopping the pod.
@@ -50,7 +54,7 @@ spec:
                   optional: true
           {{- end }}
           readinessProbe:
-            tcpSocket: { port: otlp-http }
+            httpGet: { path: /, port: health }
             periodSeconds: 10
           resources:
             {{- toYaml .Values.telemetry.collector.resources | nindent 12 }}

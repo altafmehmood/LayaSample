@@ -35,10 +35,7 @@ spec:
             httpVerb: {{ toJson .verbs }}
             action: allow
           {{- end }}
-  {{- with $.Values.dapr.tracing }}
-  tracing:
-    samplingRate: {{ .samplingRate | quote }}
-  {{- end }}
+  {{- include "docintake.daprTracing" $ | nindent 2 }}
 {{- end }}
 ---
 # The API only calls out: nothing is allowed to call it through Dapr.
@@ -56,8 +53,5 @@ spec:
   accessControl:
     defaultAction: deny
     trustDomain: {{ .Values.dapr.trustDomain | quote }}
-  {{- with .Values.dapr.tracing }}
-  tracing:
-    samplingRate: {{ .samplingRate | quote }}
-  {{- end }}
+  {{- include "docintake.daprTracing" . | nindent 2 }}
 {{- end }}

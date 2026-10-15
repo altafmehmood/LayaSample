@@ -2,7 +2,9 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Net.Sockets;
 using System.Text;
+using System.Diagnostics;
 using DocIntake.Contracts;
+using DocIntake.ServiceDefaults;
 using Microsoft.Extensions.Options;
 
 namespace DocIntake.ScanService;
@@ -28,6 +30,30 @@ public sealed class ClamdClient(IOptions<ScanOptions> options, ILogger<ClamdClie
     /// </summary>
     public async Task<ScanResponse> ScanAsync(Stream document, CancellationToken ct)
     {
+        // The round trip to clamd, so a slow scan can be told from a slow upload to this service.
+        using var span = IntakeTelemetry.Source.StartActivity("scan.clamd", ActivityKind.Client);
+        span?.SetTag("peer.service", "clamd");
+        span?.SetTag("server.address", _options.ClamdHost);
+        span?.SetTag("server.port", _options.ClamdPort);
+        long sent = 0;
+        try
+        {
+            var response = await ScanCoreAsync(document, n => sent += n, ct);
+            span?.SetTag("intake.scan.bytes", sent);
+            span?.SetTag("intake.scan.result", response.Outcome);
+            if (response.Outcome == ScanOutcomes.Unavailable)
+                span?.SetStatus(ActivityStatusCode.Error, response.Error);
+            return response;
+        }
+        catch (Exception ex)
+        {
+            span.RecordFailure(ex);
+            throw;
+        }
+    }
+
+    private async Task<ScanResponse> ScanCoreAsync(Stream document, Action<int> sentBytes, CancellationToken ct)
+    {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(_options.TimeoutSeconds));
         var token = timeout.Token;
@@ -48,6 +74,7 @@ public sealed class ClamdClient(IOptions<ScanOptions> options, ILogger<ClamdClie
                     BinaryPrimitives.WriteInt32BigEndian(length, read);
                     await network.WriteAsync(length, token);
                     await network.WriteAsync(chunk.AsMemory(0, read), token);
+                    sentBytes(read);
                 }
                 // A zero-length chunk ends the stream.
                 BinaryPrimitives.WriteInt32BigEndian(length, 0);

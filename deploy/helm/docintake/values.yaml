@@ -190,9 +190,11 @@ dapr:
   trustDomain: public
   # Documents are sent through the sidecars; the default request limit of 4 MB would refuse most of them.
   maxBodySize: 32Mi
-  # Spans from the sidecars themselves: 0 sends none (the trace context still travels, so the services' spans stay in one trace).
+  # Spans from the sidecars themselves (the hop between the API and a service, mTLS included), sent to the in-cluster collector
+  # (telemetry.collector.enabled). 0 sends none (the trace context still travels, so the services' spans stay in one trace).
+  # Without the collector there is nowhere to send them, so they are not exported whatever this says.
   tracing:
-    samplingRate: "0"
+    samplingRate: "1"
   sidecar:
     # Measured on kind (arm64), Dapr 1.18.7, one 19 MB upload: the callees' sidecars peaked at about 60 MiB, so 192Mi is room.
     resources:
