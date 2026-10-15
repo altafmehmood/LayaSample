@@ -112,6 +112,7 @@ spec:
               drop: [ALL]
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
+            {{- include "docintake.caMount" . | nindent 12 }}
       # Empty volumes without size limits (a limit is a limit): the database is downloaded again when the pod is replaced.
       volumes:
         {{- include "docintake.caVolume" . | nindent 8 }}

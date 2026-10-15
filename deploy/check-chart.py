@@ -85,6 +85,9 @@ check(re.search(r"kind: HTTPRoute[\s\S]*?port: 8443", secured) is not None, "the
 check("https://t-docintake-otel-collector:4318" in secured and "http://t-docintake-otel-collector" not in secured,
       "services send telemetry to the collector over HTTPS")
 check(secured.count("OTEL_EXPORTER_OTLP_CERTIFICATE") == 4, "each exporting service trusts the private CA for the collector")
+exporting = [d for d in of_kind(docs, "Deployment") if "OTEL_EXPORTER_OTLP_CERTIFICATE" in d]
+check(len(exporting) == 4 and all("mountPath: /ca" in d for d in exporting),
+      "every Deployment that sets OTEL_EXPORTER_OTLP_CERTIFICATE also mounts the CA at /ca (the scan container crashed without it)")
 check("cert_file: /tls/tls.crt" in secured, "the collector's receiver terminates TLS")
 
 # --- the switches really switch it off (docker-compose style, and clusters without Dapr or cert-manager) --------------------------
