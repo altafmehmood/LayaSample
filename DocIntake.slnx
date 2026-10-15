@@ -2,10 +2,10 @@
   <Folder Name="/src/">
     <Project Path="src/DocIntake.Api/DocIntake.Api.csproj" />
     <Project Path="src/DocIntake.Contracts/DocIntake.Contracts.csproj" />
-    <Project Path="src/DocIntake.DecisionsService/DocIntake.DecisionsService.csproj" />
     <Project Path="src/DocIntake.DocumentService/DocIntake.DocumentService.csproj" />
     <Project Path="src/DocIntake.ExtractionService/DocIntake.ExtractionService.csproj" />
     <Project Path="src/DocIntake.Rendering/DocIntake.Rendering.csproj" />
+    <Project Path="src/DocIntake.ScanService/DocIntake.ScanService.csproj" />
     <Project Path="src/DocIntake.ServiceDefaults/DocIntake.ServiceDefaults.csproj" />
   </Folder>
   <Folder Name="/redteam/">

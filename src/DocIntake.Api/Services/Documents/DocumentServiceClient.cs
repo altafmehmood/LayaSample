@@ -108,6 +108,8 @@ public sealed class DocumentServiceClient(IHttpClientFactory httpClientFactory) 
                 }
             }
 
+            if (await DaprErrors.ReadAsync(response, ct) is { } sidecar)
+                throw new RendererUnavailableException("document service is unreachable", new HttpRequestException(sidecar));
             var problem = await ReadProblemAsync(response, ct);
             var detail = problem?.Detail ?? response.ReasonPhrase ?? "document service error";
             if (problem?.Extensions.TryGetValue(ServiceProblems.KindExtension, out var named) == true

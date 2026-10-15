@@ -18,8 +18,16 @@ spec:
     metadata:
       labels:
         {{- include "docintake.labels" (dict "root" . "component" "document") | nindent 8 }}
+      {{- if .Values.dapr.enabled }}
+      annotations:
+        {{- include "docintake.daprAnnotations" (dict "root" . "name" "document" "appPort" 8080) | nindent 8 }}
+      {{- end }}
     spec:
       automountServiceAccountToken: false
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         {{- include "docintake.podSecurityContext" . | nindent 8 }}
       {{- with .Values.imagePullSecrets }}
@@ -65,7 +73,9 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- include "docintake.caMount" . | nindent 12 }}
       volumes:
+        {{- include "docintake.caVolume" . | nindent 8 }}
         - name: tmp
           emptyDir:
             sizeLimit: 512Mi

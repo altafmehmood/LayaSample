@@ -1,7 +1,5 @@
-using DocIntake.Api.Services.Decisions;
 using DocIntake.Api.Services.Documents;
 using DocIntake.Api.Services.Documents.Extraction;
-using DocIntake.DecisionsService;
 using DocIntake.DocumentService;
 using DocIntake.ExtractionService;
 using DocIntake.Rendering;
@@ -78,34 +76,6 @@ public static class DocumentServiceHost
         return services;
     }
 
-    /// <summary>A decisions service that lives as long as the gateway it is attached to, and is only started when first called.</summary>
-    private sealed class DecisionsHandle(IModelStatus? model, IDissatisfactionAnalyzer? analyzer) : IDisposable
-    {
-        private readonly Lazy<DecisionsServiceFactory> _factory = new(() => new DecisionsServiceFactory(model, analyzer));
-
-        public HttpMessageHandler Handler => new TraceContextHandler(_factory.Value.Server.CreateHandler());
-
-        public void Dispose()
-        {
-            if (_factory.IsValueCreated) _factory.Value.Dispose();
-        }
-    }
-
-    /// <summary>
-    /// Points the gateway's decisions client at a new in-memory decisions service, as deployed: the gateway holds no model.
-    /// The real model is never loaded: by default the service is still "loading" (so it answers 503), and a test that needs
-    /// an answer says the model is ready and supplies the analyzer.
-    /// </summary>
-    public static IServiceCollection UseDecisionsService(this IServiceCollection services, IModelStatus? model = null, IDissatisfactionAnalyzer? analyzer = null)
-    {
-        services.AddSingleton(_ => new DecisionsHandle(model, analyzer));
-        services.AddHttpClient(DecisionsServiceClient.HttpClientName)
-            .ConfigureHttpClient(c => c.BaseAddress ??= new Uri("http://decisions/"))
-            .ConfigurePrimaryHttpMessageHandler(sp => sp.GetRequiredService<DecisionsHandle>().Handler);
-        services.PostConfigure<DecisionsGatewayOptions>(o => o.ServiceUrl ??= "http://decisions");
-        return services;
-    }
-
     /// <summary>An extraction service that lives as long as the gateway it is attached to, and is only started when first called.</summary>
     private sealed class ExtractionHandle(ExtractionClients clients, (string Key, string Value)[] settings) : IDisposable
     {
@@ -149,18 +119,4 @@ public class ExtractionServiceFactory(ExtractionClients clients, params (string 
             s.AddSingleton(clients);
         });
     }
-}
-
-/// <summary>The decisions service hosted in memory, with no model loaded and, optionally, a fixed model state and analyzer.</summary>
-public class DecisionsServiceFactory(IModelStatus? model = null, IDissatisfactionAnalyzer? analyzer = null)
-    : WebApplicationFactory<DecisionsServiceEntryPoint>
-{
-    protected override void ConfigureWebHost(IWebHostBuilder builder) =>
-        builder.ConfigureServices(s =>
-        {
-            // Not even the warm-up: it would download and load an 850 MB model.
-            foreach (var d in s.Where(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)).ToList()) s.Remove(d);
-            if (model is not null) { s.RemoveAll<IModelStatus>(); s.AddSingleton(model); }
-            if (analyzer is not null) { s.RemoveAll<IDissatisfactionAnalyzer>(); s.AddSingleton(analyzer); }
-        });
 }

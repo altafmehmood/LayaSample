@@ -1,6 +1,5 @@
 using System.Diagnostics.Metrics;
 using DocIntake.Api.Services.Documents;
-using DocIntake.DecisionsService;
 using DocIntake.ExtractionService;
 using DocIntake.Rendering;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,7 +23,6 @@ public class MetricsTests
         listener.Start();
         _ = new DocumentMetrics(factory);
         _ = new ExtractionMetrics(factory);
-        _ = new DecisionsMetrics(factory);
         _ = RenderingMetrics.RenderDuration; // the rendering meter is static: touching it creates its instruments
         listener.RecordObservableInstruments();
         return found;

@@ -7,8 +7,14 @@ metadata:
 spec:
   type: ClusterIP
   ports:
+    {{- if .Values.internalTls.enabled }}
+    - name: https
+      port: 8443
+      targetPort: https
+    {{- else }}
     - name: http
       port: 8080
       targetPort: http
+    {{- end }}
   selector:
     {{- include "docintake.selectorLabels" (dict "root" . "component" "api") | nindent 4 }}

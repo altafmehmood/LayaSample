@@ -37,7 +37,6 @@ public class ArchitectureTests
     [InlineData("src/DocIntake.DocumentService/Pdf")]
     [InlineData("src/DocIntake.DocumentService/Inspection")]
     [InlineData("src/DocIntake.ExtractionService")]
-    [InlineData("src/DocIntake.DecisionsService")]
     public void The_services_below_the_endpoints_never_mention_http_status_codes(string folder)
     {
         var files = Directory.EnumerateFiles(Path.Combine(RepositoryRoot(), folder), "*.cs", SearchOption.AllDirectories)
@@ -62,8 +61,7 @@ public class ArchitectureTests
         string[] forbidden =
         [
             "PdfPig", "ClosedXML", "DocumentFormat.OpenXml", "System.Security.Cryptography.Pkcs", "Magick.NET", "PDFtoImage",
-            "SkiaSharp", "RapidOcrNet", "Microsoft.ML.OnnxRuntime", "ElBruno", "DocIntake.Rendering", "DocIntake.DocumentService",
-            "DocIntake.DecisionsService"
+            "SkiaSharp", "RapidOcrNet", "Microsoft.ML.OnnxRuntime", "ElBruno", "DocIntake.Rendering", "DocIntake.DocumentService"
         ];
         foreach (var manifest in manifests)
         {
@@ -137,22 +135,23 @@ public class ArchitectureTests
         Assert.DoesNotContain("Extraction__ApiKey", gatewayService);
     }
 
-    [Fact]
-    public void The_decisions_service_has_the_model_libraries_and_nothing_that_reads_documents_or_calls_a_provider()
-    {
-        var libraries = Libraries("DocIntake.DecisionsService");
-
-        foreach (var name in new[] { "ElBruno.LocalLLMs.Decisions", "Microsoft.ML.OnnxRuntime" })
-            Assert.Contains(libraries, l => l.StartsWith(name, StringComparison.OrdinalIgnoreCase));
-        foreach (var name in new[] { "PdfPig", "ClosedXML", "DocumentFormat.OpenXml", "Magick.NET", "PDFtoImage", "SkiaSharp", "RapidOcrNet",
-                     "OpenAI", "Microsoft.Extensions.AI", "Microsoft.Data.Sqlite", "DocIntake.Api", "DocIntake.Rendering",
-                     "DocIntake.DocumentService", "DocIntake.ExtractionService" })
-            Assert.DoesNotContain(libraries, l => l.StartsWith(name, StringComparison.OrdinalIgnoreCase));
-    }
-
     private static IEnumerable<string> GatewaySource() =>
         Directory.EnumerateFiles(Path.Combine(RepositoryRoot(), "src/DocIntake.Api"), "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"));
+
+    // The scan service is the only thing that speaks clamd's plaintext socket (and only on the pod's loopback); the gateway reaches
+    // ClamAV over HTTP through it, so it carries no raw TCP client and no clamd protocol.
+    [Fact]
+    public void The_gateway_never_speaks_to_clamd_itself()
+    {
+        Assert.All(GatewaySource(), file =>
+        {
+            var text = File.ReadAllText(file);
+            Assert.DoesNotContain("TcpClient", text);
+            Assert.DoesNotContain("INSTREAM", text);
+            Assert.DoesNotContain("System.Net.Sockets", text);
+        });
+    }
 
     // Program.cs only wires the gateway together: its endpoints, filters, rate limits and OpenAPI setup are in their own files.
     [Fact]

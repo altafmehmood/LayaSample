@@ -17,11 +17,9 @@ public class AnalyzeEndpointTests : IClassFixture<AnalyzeEndpointTests.Factory>
         protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder) =>
             builder.ConfigureServices(s =>
             {
-                // Don't load the real model in unit tests.
                 foreach (var d in s.Where(d => d.ServiceType == typeof(IHostedService)).ToList()) s.Remove(d);
-                // No real ports: the document and decisions services are in-memory ones (the model is never loaded).
+                // No real ports: the document service is an in-memory one.
                 s.UseDocumentService();
-                s.UseDecisionsService();
             });
     }
 
@@ -46,7 +44,7 @@ public class AnalyzeEndpointTests : IClassFixture<AnalyzeEndpointTests.Factory>
     }
 
     [Fact]
-    public async Task Returns_503_while_model_loading()
+    public async Task Answers_503_because_feedback_analysis_is_not_available()
     {
         var res = await _client.PostAsJsonAsync("/api/feedback/analyze", new AnalyzeRequest("Terrible stay"), TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, res.StatusCode);
@@ -60,21 +58,18 @@ public class AnalyzeEndpointTests : IClassFixture<AnalyzeEndpointTests.Factory>
     }
 
     [Fact]
-    public async Task The_gateway_is_ready_while_the_feedback_model_loads_and_says_which_service_is_not()
+    public async Task The_gateway_is_ready_and_lists_the_services_it_calls()
     {
         var res = await _client.GetAsync("/health/ready", TestContext.Current.CancellationToken);
 
-        // Laya loads in the decisions service, so a slow load no longer keeps the gateway out of rotation: it is Degraded.
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
         using var doc = System.Text.Json.JsonDocument.Parse(await res.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
-        Assert.Equal("Degraded", doc.RootElement.GetProperty("status").GetString());
         var checks = doc.RootElement.GetProperty("checks");
+        Assert.False(checks.TryGetProperty("decisions-service", out _));
         Assert.False(checks.TryGetProperty("laya", out _));
         Assert.False(checks.TryGetProperty("ocr", out _));
-        var decisions = checks.GetProperty("decisions-service");
-        Assert.Equal("Degraded", decisions.GetProperty("status").GetString());
-        Assert.Contains("Unhealthy", decisions.GetProperty("description").GetString());
         Assert.True(checks.TryGetProperty("document-service", out _));
+        Assert.True(checks.TryGetProperty("extraction-service", out _));
     }
 
     [Theory]

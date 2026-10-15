@@ -4,7 +4,7 @@
 #
 #   docker build --target api -t docintake-api .
 #   docker build --target extraction -t docintake-extraction .
-#   docker build --target decisions -t docintake-decisions .
+#   docker build --target scan -t docintake-scan .
 #   docker build --target document -t docintake-document .                                    # PP-OCRv5 Latin OCR
 #   docker build --target document -t docintake-document --build-arg OCR_MODEL=PPOCRv6Medium .  # multilingual, ~4x slower
 #
@@ -12,14 +12,12 @@
 #           Office, image, OCR or ONNX library, holds no model provider key, and starts in seconds.
 # extraction  Turns a prepared document into structured data with the model provider. The only process that holds the
 #           provider's key and reaches the internet; it never sees the caller or the file's name.
+# scan      The scan service: a thin HTTP front for the ClamAV daemon in its pod. Parses nothing and holds no key.
 # document  The document service: classifies
 #           and prepares every upload with PdfPig, the Office libraries, PDFium, ImageMagick and OCR. The only process
 #           that reads untrusted bytes. Run it isolated (see docker-compose.yml).
 #
-# decisions Laya, the local model that scores hotel-guest feedback. Carries the 850 MB model, needs no network, takes minutes
-#           to become ready.
-#
-# All models are baked into the images, so containers never download at startup and run offline.
+# The OCR model is baked into the document image, so containers never download at startup and run offline.
 
 # DocumentAnalysis:OcrModel value: PPOCRv5Latin (bundled in the NuGet), PPOCRv6Tiny, PPOCRv6Small or PPOCRv6Medium.
 ARG OCR_MODEL=PPOCRv5Latin
@@ -33,11 +31,6 @@ RUN apk add --no-cache curl
 COPY scripts/download-models.sh /download-models.sh
 # A Windows checkout may have CRLF line endings, which sh cannot run; .gitattributes prevents that for new checkouts.
 RUN sed -i 's/\r$//' /download-models.sh
-
-FROM model-tools AS laya-model
-RUN --mount=type=cache,target=/cache --mount=type=bind,source=models,target=/local \
-    MODEL_SEED=/local/elbruno_laya-onnx sh /download-models.sh laya /cache/laya \
- && mkdir -p /models && cp -r /cache/laya /models/laya
 
 FROM model-tools AS ocr-models
 ARG OCR_MODEL
@@ -56,17 +49,17 @@ COPY src/DocIntake.ServiceDefaults/DocIntake.ServiceDefaults.csproj src/DocIntak
 COPY src/DocIntake.Rendering/DocIntake.Rendering.csproj src/DocIntake.Rendering/packages.lock.json src/DocIntake.Rendering/
 COPY src/DocIntake.DocumentService/DocIntake.DocumentService.csproj src/DocIntake.DocumentService/packages.lock.json src/DocIntake.DocumentService/
 COPY src/DocIntake.ExtractionService/DocIntake.ExtractionService.csproj src/DocIntake.ExtractionService/packages.lock.json src/DocIntake.ExtractionService/
-COPY src/DocIntake.DecisionsService/DocIntake.DecisionsService.csproj src/DocIntake.DecisionsService/packages.lock.json src/DocIntake.DecisionsService/
+COPY src/DocIntake.ScanService/DocIntake.ScanService.csproj src/DocIntake.ScanService/packages.lock.json src/DocIntake.ScanService/
 COPY src/DocIntake.Api/DocIntake.Api.csproj src/DocIntake.Api/packages.lock.json src/DocIntake.Api/
 RUN dotnet restore src/DocIntake.Api/DocIntake.Api.csproj -a $TARGETARCH \
  && dotnet restore src/DocIntake.DocumentService/DocIntake.DocumentService.csproj -a $TARGETARCH \
  && dotnet restore src/DocIntake.ExtractionService/DocIntake.ExtractionService.csproj -a $TARGETARCH \
- && dotnet restore src/DocIntake.DecisionsService/DocIntake.DecisionsService.csproj -a $TARGETARCH
+ && dotnet restore src/DocIntake.ScanService/DocIntake.ScanService.csproj -a $TARGETARCH
 COPY src/ src/
-# A runtime-specific publish keeps only this platform's native libraries (ImageMagick, PDFium, Skia, ONNX Runtime).
+# A runtime-specific publish keeps only this platform's native libraries (ImageMagick, PDFium, Skia).
 RUN dotnet publish src/DocIntake.DocumentService/DocIntake.DocumentService.csproj -c Release -a $TARGETARCH --no-restore -o /app/document \
  && dotnet publish src/DocIntake.ExtractionService/DocIntake.ExtractionService.csproj -c Release -a $TARGETARCH --no-restore -o /app/extraction \
- && dotnet publish src/DocIntake.DecisionsService/DocIntake.DecisionsService.csproj -c Release -a $TARGETARCH --no-restore -o /app/decisions \
+ && dotnet publish src/DocIntake.ScanService/DocIntake.ScanService.csproj -c Release -a $TARGETARCH --no-restore -o /app/scan \
  && dotnet publish src/DocIntake.Api/DocIntake.Api.csproj -c Release -a $TARGETARCH --no-restore -o /app/api
 
 # ---- Document service
@@ -96,18 +89,18 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
 ENTRYPOINT ["dotnet", "DocIntake.ExtractionService.dll"]
 
-# ---- Decisions service
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS decisions
+# ---- Scan service
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS scan
 WORKDIR /app
-COPY --from=build /app/decisions .
-COPY --from=laya-model /models/laya /models/laya
-ENV Laya__ModelPath=/models/laya
+COPY --from=build /app/scan .
+# Runs in the ClamAV pod (or shares the ClamAV container's network namespace in docker-compose.yml): Scan__ClamdHost is the
+# loopback address by default, so clamd's plaintext socket is never reached over a network.
 EXPOSE 8080
 USER $APP_UID
-# Ready once Laya is loaded (a few minutes on a small node); Degraded (still 200) when the load failed for good.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=3m --retries=3 \
+# Ready once clamd answers a PING (its signature database takes a few minutes on the first start).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=1m --retries=3 \
     CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
-ENTRYPOINT ["dotnet", "DocIntake.DecisionsService.dll"]
+ENTRYPOINT ["dotnet", "DocIntake.ScanService.dll"]
 
 # ---- API (last, so it is also the default target)
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS api
@@ -118,7 +111,7 @@ COPY --from=build /app/api .
 RUN mkdir /data && chown "$APP_UID" /data
 EXPOSE 8080
 USER $APP_UID
-# Ready at once (it loads no model); Degraded (still 200) when the document, extraction or decisions service is down, since
+# Ready at once (it loads no model); Degraded (still 200) when the document or extraction service is down, since
 # the rest of the service works.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]

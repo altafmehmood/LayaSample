@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    Wraps the ClamAV daemon (clamd): the gateway sends a document here and gets a verdict back, and clamd's own socket (which
+    has no authentication or encryption) is only ever reached over the pod's loopback, from this container. It holds no
+    parser and no key. ClamAV (GPL-2.0) stays its own container; nothing of it is linked into this service.
+  -->
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DocIntake.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DocIntake.Contracts\DocIntake.Contracts.csproj" />
+    <ProjectReference Include="..\DocIntake.ServiceDefaults\DocIntake.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+</Project>

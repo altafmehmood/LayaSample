@@ -13,6 +13,13 @@ data:
         protocols:
           http:
             endpoint: 0.0.0.0:4318
+            {{- if .Values.internalTls.enabled }}
+            # TLS from the release's private CA. The collector re-reads the files when cert-manager renews them.
+            tls:
+              cert_file: /tls/tls.crt
+              key_file: /tls/tls.key
+              reload_interval: 1h
+            {{- end }}
     processors:
       memory_limiter:
         check_interval: 5s

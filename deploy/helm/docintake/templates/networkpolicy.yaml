@@ -20,17 +20,11 @@ spec:
               {{- include "docintake.selectorLabels" (dict "root" . "component" "api") | nindent 14 }}
       ports:
         - protocol: TCP
-          port: 8080
-  # Nothing, except telemetry to the in-cluster collector (and the DNS lookup of its Service) when the chart runs one.
-  {{- if .Values.telemetry.collector.enabled }}
+          port: {{ include "docintake.calleePort" $ }}
+  # Nothing, except telemetry to the in-cluster collector and the Dapr control plane (the sidecar fetches its certificate from
+  # Sentry), with the DNS lookup of their Services.
+  {{- if or .Values.telemetry.collector.enabled .Values.dapr.enabled }}
   egress:
-    - to:
-        - podSelector:
-            matchLabels:
-              {{- include "docintake.selectorLabels" (dict "root" . "component" "otel-collector") | nindent 14 }}
-      ports:
-        - protocol: TCP
-          port: 4318
     - to:
         - namespaceSelector:
             matchLabels:
@@ -41,6 +35,16 @@ spec:
       ports:
         - { protocol: UDP, port: 53 }
         - { protocol: TCP, port: 53 }
+    {{- if .Values.telemetry.collector.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "docintake.selectorLabels" (dict "root" . "component" "otel-collector") | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 4318
+    {{- end }}
+    {{- include "docintake.daprEgress" . | nindent 4 }}
   {{- else }}
   egress: []
   {{- end }}
@@ -65,7 +69,7 @@ spec:
               {{- include "docintake.selectorLabels" (dict "root" . "component" "api") | nindent 14 }}
       ports:
         - protocol: TCP
-          port: 8080
+          port: {{ include "docintake.calleePort" $ }}
   egress:
     - ports:
         - { protocol: UDP, port: 53 }
@@ -81,48 +85,5 @@ spec:
         - protocol: TCP
           port: 4318
     {{- end }}
----
-# Laya runs on a model baked into the image and needs no network. Only the API may call it, and it may call nothing, except
-# telemetry to the in-cluster collector (and the DNS lookup of its Service) when the chart runs one.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: {{ include "docintake.fullname" . }}-decisions
-  labels:
-    {{- include "docintake.labels" (dict "root" . "component" "decisions") | nindent 4 }}
-spec:
-  podSelector:
-    matchLabels:
-      {{- include "docintake.selectorLabels" (dict "root" . "component" "decisions") | nindent 6 }}
-  policyTypes: [Ingress, Egress]
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              {{- include "docintake.selectorLabels" (dict "root" . "component" "api") | nindent 14 }}
-      ports:
-        - protocol: TCP
-          port: 8080
-  {{- if .Values.telemetry.collector.enabled }}
-  egress:
-    - to:
-        - podSelector:
-            matchLabels:
-              {{- include "docintake.selectorLabels" (dict "root" . "component" "otel-collector") | nindent 14 }}
-      ports:
-        - protocol: TCP
-          port: 4318
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - { protocol: UDP, port: 53 }
-        - { protocol: TCP, port: 53 }
-  {{- else }}
-  egress: []
-  {{- end }}
+    {{- include "docintake.daprEgress" . | nindent 4 }}
 {{- end }}

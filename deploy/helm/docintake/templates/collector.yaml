@@ -26,6 +26,10 @@ spec:
         {{- end }}
     spec:
       automountServiceAccountToken: false
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         {{- include "docintake.podSecurityContext" . | nindent 8 }}
       containers:
@@ -55,7 +59,17 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/otelcol
+            {{- if .Values.internalTls.enabled }}
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            {{- end }}
       volumes:
+        {{- if .Values.internalTls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ $name }}-tls
+        {{- end }}
         - name: config
           configMap:
             name: {{ $name }}
@@ -99,9 +113,11 @@ spec:
         - podSelector:
             matchLabels:
               {{- include "docintake.selectorLabels" (dict "root" . "component" "extraction") | nindent 14 }}
+        {{- if .Values.malware.clamd.enabled }}
         - podSelector:
             matchLabels:
-              {{- include "docintake.selectorLabels" (dict "root" . "component" "decisions") | nindent 14 }}
+              {{- include "docintake.selectorLabels" (dict "root" . "component" "clamav") | nindent 14 }}
+        {{- end }}
       ports:
         - protocol: TCP
           port: 4318

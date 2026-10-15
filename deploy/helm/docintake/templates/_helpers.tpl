@@ -77,7 +77,7 @@ capabilities:
 
 {{/* In-cluster OTLP endpoint of the collector, when the chart runs one. */}}
 {{- define "docintake.collectorEndpoint" -}}
-{{- printf "http://%s-otel-collector:4318" (include "docintake.fullname" .) -}}
+{{- printf "%s://%s-otel-collector:4318" (ternary "https" "http" (not (empty (include "docintake.otlpTls" .)))) (include "docintake.fullname" .) -}}
 {{- end -}}
 
 {{/* Env shared by every service: where telemetry goes and which pod it came from. Takes the chart context. */}}
@@ -98,5 +98,93 @@ capabilities:
   value: {{ include "docintake.collectorEndpoint" . | quote }}
 - name: OTEL_EXPORTER_OTLP_PROTOCOL
   value: http/protobuf
+{{- if include "docintake.otlpTls" . }}
+# The collector's certificate is signed by the release's private CA, which only the exporter trusts for this.
+- name: OTEL_EXPORTER_OTLP_CERTIFICATE
+  value: /ca/ca.crt
 {{- end }}
+{{- end }}
+{{- end -}}
+
+{{/*
+Where the API sends a call to one of the services behind it. With Dapr, the API's own sidecar (localhost:3500) carries it to
+the callee's sidecar over mutual TLS and the callee only accepts the API's app id. Without, the Service name, in plain HTTP.
+Takes root and name (document | extraction | clamav; the scan service answers on the clamav Service and is app id "scan").
+*/}}
+{{- define "docintake.serviceUrl" -}}
+{{- $fullname := include "docintake.fullname" .root -}}
+{{- if .root.Values.dapr.enabled -}}
+{{- printf "http://localhost:3500/v1.0/invoke/%s-%s/method" $fullname (default .name .appId) -}}
+{{- else -}}
+{{- printf "http://%s-%s:8080" $fullname .name -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Pod annotations that put a Dapr sidecar next to a service. Takes root, name (the app id suffix) and, for a service the API
+calls, appPort. The sidecar's identity is its app id; what it accepts is the Configuration of the same name (dapr-config.yaml).
+*/}}
+{{- define "docintake.daprAnnotations" -}}
+{{- if .root.Values.dapr.enabled }}
+dapr.io/enabled: "true"
+dapr.io/app-id: {{ printf "%s-%s" (include "docintake.fullname" .root) .name | quote }}
+dapr.io/config: {{ printf "%s-dapr-%s" (include "docintake.fullname" .root) .name | quote }}
+{{- if .appPort }}
+dapr.io/app-port: {{ .appPort | quote }}
+dapr.io/enable-app-health-check: "true"
+dapr.io/app-health-check-path: "/health/live"
+{{- end }}
+# Documents go up to 25 MB; the sidecar's default request limit is 4 MB.
+dapr.io/max-body-size: {{ .root.Values.dapr.maxBodySize | quote }}
+# The pods mount no service account token (automountServiceAccountToken: false), and the sidecar's built-in Kubernetes secret
+# store would need one to start. Nothing here uses Dapr secrets, so it is off. (Found by running the chart on kind.)
+dapr.io/disable-builtin-k8s-secret-store: "true"
+dapr.io/enable-api-logging: "false"
+dapr.io/log-as-json: "true"
+# Traces only: the sidecar's Prometheus endpoint is off (nothing scrapes it).
+dapr.io/enable-metrics: "false"
+{{- $resources := .root.Values.dapr.sidecar.resources }}
+{{- with (get .root.Values.dapr.sidecar.overrides .name) }}{{ $resources = .resources }}{{ end }}
+dapr.io/sidecar-cpu-request: {{ $resources.requests.cpu | quote }}
+dapr.io/sidecar-memory-request: {{ $resources.requests.memory | quote }}
+dapr.io/sidecar-cpu-limit: {{ $resources.limits.cpu | quote }}
+dapr.io/sidecar-memory-limit: {{ $resources.limits.memory | quote }}
+{{- end }}
+{{- end -}}
+
+{{/* The port a service the API calls accepts the call on: Dapr's internal gRPC port (sidecar to sidecar, mutual TLS), else its own. */}}
+{{- define "docintake.calleePort" -}}
+{{- ternary 50002 8080 .Values.dapr.enabled -}}
+{{- end -}}
+
+{{/* Egress rule to the Dapr control plane (Sentry for certificates, the operator for configuration), when Dapr is on. */}}
+{{- define "docintake.daprEgress" -}}
+{{- if .Values.dapr.enabled -}}
+- to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: {{ .Values.dapr.namespace }}
+{{- end -}}
+{{- end -}}
+
+{{/* Do the services reach the collector over TLS? When the chart runs the collector and the private CA exists. */}}
+{{- define "docintake.otlpTls" -}}
+{{- if and .Values.telemetry.collector.enabled .Values.internalTls.enabled -}}true{{- end -}}
+{{- end -}}
+
+{{/* The private CA's certificate, for the services that send telemetry to the collector. Empty when the collector is plain HTTP. */}}
+{{- define "docintake.caMount" -}}
+{{- if include "docintake.otlpTls" . -}}
+- name: internal-ca
+  mountPath: /ca
+  readOnly: true
+{{- end -}}
+{{- end -}}
+
+{{- define "docintake.caVolume" -}}
+{{- if include "docintake.otlpTls" . -}}
+- name: internal-ca
+  configMap:
+    name: {{ include "docintake.fullname" . }}-internal-ca
+{{- end -}}
 {{- end -}}

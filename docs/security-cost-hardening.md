@@ -4,6 +4,8 @@ Built 2026-10-11 (plan: track token usage and cost; scan uploads for malware, hi
 the document end to end; add a manual garak red-team run). This page says what each feature does, how it works, how to try
 it, and what it does not do. The README has the short versions: the Features table and "Quickstarts by date".
 
+**Update 2026-10-14:** the gateway no longer speaks to clamd directly. It streams uploads to a scan service (`DocIntake.ScanService`) in the ClamAV pod, which passes them to clamd over the pod's loopback. The settings `Security:Malware:Host` and `Port` below are replaced by `Security:Malware:ServiceUrl`, and the provider `clamd` by `scan-service`; the scan service has `Scan:ClamdHost` and `Scan:ClamdPort`. Everything else on this page about scanning (chunking, `FailMode`, 422 and 503) is unchanged. See [internal-transport-security.md](internal-transport-security.md).
+
 **Update 2026-10-11:** the project is now DocIntake. Paths on this page read `src/DocIntake.Api` and
 `tests/DocIntake.Tests`, the metrics are `intake.*` (they were `laya.*`), and the compose and red-team variables are
 `DOCINTAKE_API_KEY` and `DOCINTAKE_ON_FINDING`. Kubernetes names (`laya-otel`, `laya-clamav`, namespace `laya`) are

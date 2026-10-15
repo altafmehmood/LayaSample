@@ -1,5 +1,6 @@
 using System.Text;
-using DocIntake.Api.Services.Security;
+using DocIntake.Contracts;
+using DocIntake.ScanService;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -15,14 +16,14 @@ public class ClamdIntegrationTests
     // The standard anti-malware test file: harmless, and every scanner detects it.
     private const string Eicar = @"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*";
 
-    private static ClamdMalwareScanner Scanner()
+    private static ClamdClient Scanner()
     {
         var host = Environment.GetEnvironmentVariable("CLAMD_HOST");
         Assert.SkipUnless(!string.IsNullOrWhiteSpace(host), "set CLAMD_HOST to a running ClamAV daemon to run the integration tests");
         var port = int.TryParse(Environment.GetEnvironmentVariable("CLAMD_PORT"), out var p) ? p : 3310;
-        return new ClamdMalwareScanner(
-            Options.Create(new SecurityOptions { Malware = new MalwareOptions { Host = host!, Port = port, TimeoutSeconds = 120 } }),
-            NullLogger<ClamdMalwareScanner>.Instance);
+        return new ClamdClient(
+            Options.Create(new ScanOptions { ClamdHost = host!, ClamdPort = port, TimeoutSeconds = 120 }),
+            NullLogger<ClamdClient>.Instance);
     }
 
     [Fact]
@@ -33,7 +34,7 @@ public class ClamdIntegrationTests
 
         var result = await Scanner().ScanAsync(document, TestContext.Current.CancellationToken);
 
-        Assert.Equal(ScanOutcome.Infected, result.Outcome);
+        Assert.Equal(ScanOutcomes.Infected, result.Outcome);
         Assert.Contains("EICAR", result.Signature, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -45,8 +46,7 @@ public class ClamdIntegrationTests
 
         var result = await Scanner().ScanAsync(document, TestContext.Current.CancellationToken);
 
-        Assert.Equal(ScanOutcome.Clean, result.Outcome);
-        Assert.Equal(0, document.Position);
+        Assert.Equal(ScanOutcomes.Clean, result.Outcome);
     }
 
     [Fact]
@@ -65,11 +65,11 @@ public class ClamdIntegrationTests
             using (var entry = zip.CreateEntry("eicar.com").Open())
                 entry.Write(Encoding.ASCII.GetBytes(Eicar));
         }
-        Assert.True(document.Length > 30 * ClamdMalwareScanner.ChunkSize);
+        Assert.True(document.Length > 30 * ClamdClient.ChunkSize);
 
         var result = await Scanner().ScanAsync(document, TestContext.Current.CancellationToken);
 
-        Assert.Equal(ScanOutcome.Infected, result.Outcome);
+        Assert.Equal(ScanOutcomes.Infected, result.Outcome);
     }
 
     [Fact]

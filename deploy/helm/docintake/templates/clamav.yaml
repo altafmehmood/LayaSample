@@ -1,7 +1,7 @@
 {{- if .Values.malware.clamd.enabled }}
 {{- $name := printf "%s-clamav" (include "docintake.fullname" .) }}
-# ClamAV daemon: the API streams every upload to it before anything parses the file. It holds the signature database in
-# memory, so it is the biggest pod in the release; there are deliberately no resource requests or limits (see values.yaml).
+# ClamAV daemon plus the scan service that fronts it: the API streams every upload to the scan service before anything parses the file. It holds the signature database in
+# memory, so it is the biggest pod in the release; the clamd container has no limit, and a request only where values set one (see values.yaml).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,8 +23,17 @@ spec:
     metadata:
       labels:
         {{- include "docintake.labels" (dict "root" . "component" "clamav") | nindent 8 }}
+      {{- if .Values.dapr.enabled }}
+      annotations:
+        # The scan container is the Dapr app (app id `scan`); clamd beside it listens on the pod's loopback for it alone.
+        {{- include "docintake.daprAnnotations" (dict "root" . "name" "scan" "appPort" 8080) | nindent 8 }}
+      {{- end }}
     spec:
       automountServiceAccountToken: false
+      {{- with (.Values.malware.clamd.nodeSelector | default .Values.nodeSelector) }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       # The image's clamav user is 1000. fsGroup makes the empty volumes below writable for it.
       securityContext:
         runAsNonRoot: true
@@ -38,9 +47,12 @@ spec:
           image: {{ printf "%s:%s" .Values.malware.clamd.image .Values.malware.clamd.tag | quote }}
           # The image's non-root entrypoint: downloads the signature database on first start, keeps it updated, runs clamd.
           command: ["/init-unprivileged"]
-          ports:
-            - name: clamd
-              containerPort: 3310
+          {{- with .Values.malware.clamd.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          # Port 3310 is only for the scan container beside this one (same pod, loopback): it is not a container port, not in
+          # the Service, and the NetworkPolicy lets nothing else reach it.
           # The first start downloads the whole database, so allow up to 15 minutes before giving up.
           startupProbe:
             exec: { command: ["/usr/local/bin/clamdcheck.sh"] }
@@ -65,8 +77,44 @@ spec:
             - { name: db, mountPath: /var/lib/clamav }
             - { name: log, mountPath: /var/log/clamav }
             - { name: tmp, mountPath: /tmp }
+        # Scans a document for the API by passing it to clamd over the pod's loopback. Holds no key and parses nothing.
+        - name: scan
+          image: {{ include "docintake.image" (dict "root" . "image" .Values.malware.clamd.scan.image) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: Scan__ClamdHost
+              value: "127.0.0.1"
+            - name: Scan__ClamdPort
+              value: "3310"
+            {{- include "docintake.telemetryEnv" . | nindent 12 }}
+          startupProbe:
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 5
+            failureThreshold: 24
+          # Not ready until clamd answers, so the Service sends no upload to a pod that cannot scan.
+          readinessProbe:
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: 15
+            timeoutSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.malware.clamd.scan.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
       # Empty volumes without size limits (a limit is a limit): the database is downloaded again when the pod is replaced.
       volumes:
+        {{- include "docintake.caVolume" . | nindent 8 }}
         - name: db
           emptyDir: {}
         - name: log
@@ -83,14 +131,14 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-    - name: clamd
-      port: 3310
-      targetPort: clamd
+    - name: http
+      port: 8080
+      targetPort: http
   selector:
     {{- include "docintake.selectorLabels" (dict "root" . "component" "clamav") | nindent 4 }}
 {{- if .Values.networkPolicy.enabled }}
 ---
-# Documents in from the API only; out only for DNS and the signature updates (HTTPS).
+# Documents in from the API only, to the scan service's port (clamd's 3310 is never opened to other pods); out only for DNS and the signature updates (HTTPS).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -109,12 +157,22 @@ spec:
               {{- include "docintake.selectorLabels" (dict "root" . "component" "api") | nindent 14 }}
       ports:
         - protocol: TCP
-          port: 3310
+          port: {{ include "docintake.calleePort" $ }}
   egress:
     - ports:
         - { protocol: UDP, port: 53 }
         - { protocol: TCP, port: 53 }
     - ports:
         - { protocol: TCP, port: 443 }
+    {{- if .Values.telemetry.collector.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "docintake.selectorLabels" (dict "root" . "component" "otel-collector") | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 4318
+    {{- end }}
+    {{- include "docintake.daprEgress" . | nindent 4 }}
 {{- end }}
 {{- end }}

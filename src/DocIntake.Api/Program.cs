@@ -1,7 +1,6 @@
 using DocIntake.Api;
 using DocIntake.Api.Endpoints;
 using DocIntake.Api.Services;
-using DocIntake.Api.Services.Decisions;
 using DocIntake.Api.Services.Documents;
 using DocIntake.Api.Services.Documents.Extraction;
 using DocIntake.Api.Services.Security;
@@ -11,12 +10,13 @@ using DocIntake.ServiceDefaults;
 using Scalar.AspNetCore;
 
 // The gateway: the public API. It authenticates, rate-limits, scans, applies the risk policy and records usage, and calls the
-// document, extraction and decisions services for everything that reads a document, calls a model provider or runs a model.
+// document and extraction services for everything that reads a document or calls a model provider.
 // This file only wires it together; the endpoints, filters and settings are in their own files.
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddIntakeTelemetry("docintake-gateway", DocumentMetrics.MeterName);
+builder.AddInternalTls();
 
 builder.Services.AddGatewayOpenApi(builder.Configuration);
 builder.Services.AddOptions<ApiAccessOptions>()
@@ -37,12 +37,10 @@ var health = builder.Services.AddHealthChecks();
 builder.Services.AddMalwareScanning(builder.Configuration, health);
 builder.Services.AddDocumentServiceClient(builder.Configuration, health);
 builder.Services.AddExtractionServiceClient(builder.Configuration, health);
-builder.Services.AddDecisionsServiceClient(builder.Configuration, health);
 
 // Endpoint limits are fixed when the app is built, so the options are read here; ValidateOnStart still checks them.
 var documentOptions = builder.Configuration.GetSection(DocumentGatewayOptions.Section).Get<DocumentGatewayOptions>() ?? new();
 var extractionOptions = builder.Configuration.GetSection(ExtractionGatewayOptions.Section).Get<ExtractionGatewayOptions>() ?? new();
-var decisionsOptions = builder.Configuration.GetSection(DecisionsGatewayOptions.Section).Get<DecisionsGatewayOptions>() ?? new();
 builder.Services.AddGatewayRateLimiting(documentOptions, extractionOptions);
 
 var app = builder.Build();
@@ -73,7 +71,6 @@ app.Lifetime.ApplicationStarted.Register(() => app.Logger.Started(
     IntakeTelemetry.Version, app.Environment.EnvironmentName,
     documentOptions.DocumentServiceUrl,
     string.IsNullOrWhiteSpace(extractionOptions.ServiceUrl) ? "not configured" : extractionOptions.ServiceUrl,
-    string.IsNullOrWhiteSpace(decisionsOptions.ServiceUrl) ? "not configured" : decisionsOptions.ServiceUrl,
     documentOptions.EffectiveMaxConcurrentAnalyses, extractionOptions.MaxConcurrentExtractions,
     string.IsNullOrWhiteSpace(app.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]) ? "off" : "on"));
 

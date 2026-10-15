@@ -92,6 +92,31 @@ public class GatewayExtractionTests
         Assert.Equal("Degraded", checks.GetProperty("extraction-service").GetProperty("status").GetString());
     }
 
+    /// <summary>Says it can extract, then its sidecar cannot complete the extract call itself.</summary>
+    private sealed class SidecarFailsTheCall(HttpStatusCode status) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
+            request.RequestUri!.AbsolutePath == "/extraction/status"
+                ? Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new ExtractionStatus(true), options: IntakeJson.Options) })
+                : new SidecarErrorHandler(status, message: "access control policy has denied docintake-api").SendForTest(request, ct);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task A_sidecar_that_cannot_reach_the_extraction_service_is_unavailable_with_retry_and_leaks_nothing(HttpStatusCode status)
+    {
+        using var api = Gateway(() => new SidecarFailsTheCall(status));
+
+        var res = await Extract(api.CreateClient());
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, res.StatusCode);
+        Assert.NotNull(res.Headers.RetryAfter);
+        var body = await res.Content.ReadAsStringAsync(Ct);
+        Assert.DoesNotContain("ERR_DIRECT_INVOKE", body);
+        Assert.DoesNotContain("access control", body);
+    }
+
     /// <summary>Says it can extract, then dies on the request itself.</summary>
     private sealed class DiesOnTheRequest : HttpMessageHandler
     {

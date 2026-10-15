@@ -6,7 +6,6 @@
     "api",
     "document",
     "extraction",
-    "decisions",
     "gateway"
   ],
   "properties": {
@@ -199,15 +198,6 @@
         }
       }
     },
-    "decisions": {
-      "type": "object",
-      "properties": {
-        "replicas": {
-          "type": "integer",
-          "minimum": 0
-        }
-      }
-    },
     "telemetry": {
       "type": "object",
       "properties": {
@@ -314,8 +304,40 @@
                 "closed",
                 "open"
               ]
+            },
+            "scan": {
+              "type": "object",
+              "properties": {
+                "image": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "resources": {
+              "type": "object"
             }
           }
+        }
+      }
+    },
+    "internalTls": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "caValidityDays": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "certDuration": {
+          "type": "string",
+          "pattern": "^[0-9]+h$"
+        },
+        "certRenewBefore": {
+          "type": "string",
+          "pattern": "^[0-9]+h$"
         }
       }
     }

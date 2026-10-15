@@ -27,9 +27,9 @@ internal static partial class Log
     public static partial void DocumentFailed(this ILogger logger, LogLevel level, Exception? exception, string outcome, long bytes, string kind, int status, string reason, string cause, string hint);
 
     [LoggerMessage(EventId = 1020, EventName = "Started", Level = LogLevel.Information,
-        Message = "DocIntake API {Version} started in {Environment}: document service {DocumentService}, extraction service {Extraction}, decisions service {Decisions}, "
+        Message = "DocIntake API {Version} started in {Environment}: document service {DocumentService}, extraction service {Extraction}, "
                   + "{Analyses} analyses and {Extractions} extractions at once, telemetry export {Telemetry}")]
-    public static partial void Started(this ILogger logger, string version, string environment, string? documentService, string extraction, string decisions,
+    public static partial void Started(this ILogger logger, string version, string environment, string? documentService, string extraction,
         int analyses, int extractions, string telemetry);
 
     [LoggerMessage(EventId = 1030, EventName = "ReadinessChanged", Message = "{Component} readiness changed from {Before} to {Now}")]
@@ -46,8 +46,8 @@ internal static partial class Log
         Message = "Accepting a {Bytes}-byte upload without a malware verdict (FailMode is open): {Reason}")]
     public static partial void AcceptedWithoutVerdict(this ILogger logger, long bytes, string? reason);
 
-    [LoggerMessage(EventId = 5004, EventName = "ScannerNoVerdict", Level = LogLevel.Warning, Message = "Malware scanner at {Host}:{Port} gave no verdict: {Reason}")]
-    public static partial void ScannerNoVerdict(this ILogger logger, string host, int port, string reason);
+    [LoggerMessage(EventId = 5004, EventName = "ScannerNoVerdict", Level = LogLevel.Warning, Message = "Malware scan service at {Url} gave no verdict: {Reason}")]
+    public static partial void ScannerNoVerdict(this ILogger logger, string url, string reason);
 
     [LoggerMessage(EventId = 5010, EventName = "AnswerRejected", Level = LogLevel.Warning,
         Message = "Rejected an extraction whose answer repeated instruction-like text ({Count} finding(s))")]
