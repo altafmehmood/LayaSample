@@ -6,11 +6,11 @@
   "status": "pass",
   "visualReview": "pending",
   "provenance": "current",
-  "deliveryReceiptId": "dd670422-f740-4344-a0a1-90f65d1b38aa",
+  "deliveryReceiptId": "e84d39ca-f0f8-4b61-af55-6039cb9f5478",
   "artifact": {
     "path": "/Users/altafmehmood/Repos/LayaSample/.archify/current/laya-architecture.html",
-    "sha256": "f8fe3d64c85fd99b4cea7b0409bc691923bd6c4c87c2e8787e92bdd02ebfacf1",
-    "bytes": 779684
+    "sha256": "3aa8a6f9f5b3ecd796b035c55a8505a0cad07aa35ce82635e039f80550dc16cc",
+    "bytes": 847211
   },
   "state": {
     "detail": "read",
@@ -906,23 +906,23 @@
         "file": "laya-architecture.visual-check.html"
       },
       {
-        "sha256": "f4c07f9ca6763eda4bc6f8f5462c3e01a35933bf29583877dae591a4e3c3fa7d",
-        "bytes": 148016,
+        "sha256": "e6dd94ee619076695a8d8077664b8d5a33cab1529ab52389ce5be4b7b6a62e99",
+        "bytes": 154748,
         "file": "laya-architecture.visual-check.1440x900.light.png"
       },
       {
-        "sha256": "3e2b99befc07113795dfc949fed12b38441dd16b158aa403e2d2e46fd03f21bc",
-        "bytes": 145546,
+        "sha256": "cceeab5a8f5d591e282242dfbf845eb351e1d06c548d6fabda3d414306de16c0",
+        "bytes": 151659,
         "file": "laya-architecture.visual-check.1440x900.dark.png"
       },
       {
-        "sha256": "9dbc3a36a9b6017073fc3baab9e7f756c861e425fcc9ccf07b1677f9b4e649ec",
-        "bytes": 322052,
+        "sha256": "06f8996ecaba752904d760f9b5c2fe76b9cefc747dad9dd8828ce541792e570c",
+        "bytes": 326045,
         "file": "laya-architecture.visual-check.2048x1320.light.png"
       },
       {
-        "sha256": "9a955aec6a0f5eeb19963018a5fe6635e4e96b4058bcb796688df5c2cef30b52",
-        "bytes": 322677,
+        "sha256": "8bcadd1a9e7f07b0c0c6b007f41a7006b32b8350ef32451268bbfbf710b97bd0",
+        "bytes": 325066,
         "file": "laya-architecture.visual-check.2048x1320.dark.png"
       }
     ]

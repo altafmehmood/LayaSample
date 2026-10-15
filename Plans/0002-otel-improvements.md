@@ -43,7 +43,7 @@ scan and extraction services arrive). Reading a trace was still harder than it s
 **D. Docs and checks**
 - [x] D1. `docs/otel-observability.md`; README dated entry and link; update note in `docs/internal-transport-security.md`.
 - [x] D2. `dotnet test`, `helm lint`, `deploy/check-chart.py`.
-- [ ] D3. After a commit, regenerate the archify diagram from HEAD (uncommitted regeneration already done for the Dapr control plane).
+- [x] D3. After a commit, regenerate the archify diagram from HEAD. **Done:** pinned to `6af5186`; citations re-anchored (collector-config, ClamdClient, LocalPageRasterizer moved by a few lines).
 
 ## Operator quickstart
 
