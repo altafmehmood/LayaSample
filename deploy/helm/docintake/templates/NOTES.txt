@@ -13,5 +13,5 @@ Certificate status (it is issued once the DNS record resolves):
 {{- end }}
 {{- end }}
 
-Pods start slowly on a small node (the API loads an 840 MB model):
+Pods start slowly on a small node (the ClamAV pod downloads its signature database on its first start):
   kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }} -w

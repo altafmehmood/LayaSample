@@ -110,6 +110,9 @@ public sealed class ExtractionServiceClient(IHttpClientFactory httpClientFactory
 
     private static async Task<Exception> ReadFailureAsync(HttpResponseMessage response, CancellationToken ct)
     {
+        if (await DaprErrors.ReadAsync(response, ct) is { } sidecar)
+            // The sidecar's text names internal services: it goes to the log and the trace through the cause, never to the caller.
+            return new IntakeFailureException(FailureKind.DependencyUnavailable, "the extraction service is unreachable; retry later", 10, inner: new HttpRequestException(sidecar));
         var problem = await ReadProblemAsync(response, ct);
         var detail = problem?.Detail ?? response.ReasonPhrase ?? "extraction service error";
         if (problem?.Extensions.TryGetValue(ServiceProblems.KindExtension, out var named) == true

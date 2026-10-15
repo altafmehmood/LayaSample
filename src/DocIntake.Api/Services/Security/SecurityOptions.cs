@@ -22,15 +22,16 @@ public sealed class SecurityOptions
 public sealed class MalwareOptions : IValidatableObject
 {
     public const string None = "none";
-    public const string Clamd = "clamd";
+    public const string ScanService = "scan-service";
 
-    /// <summary><c>clamd</c> (a ClamAV daemon, the default) or <c>none</c> (development and tests, where there is no daemon).</summary>
-    public string Provider { get; set; } = Clamd;
+    /// <summary><c>scan-service</c> (the service in front of ClamAV, the default) or <c>none</c> (development and tests, where there is no scanner).</summary>
+    public string Provider { get; set; } = ScanService;
 
-    public string Host { get; set; } = "clamav";
-
-    [Range(1, 65535)]
-    public int Port { get; set; } = 3310;
+    /// <summary>
+    /// Where the scan service is. In Kubernetes it is the gateway's own Dapr sidecar, addressed by the service's app id
+    /// (<c>http://localhost:3500/v1.0/invoke/&lt;app-id&gt;/method</c>), which encrypts the call.
+    /// </summary>
+    public string ServiceUrl { get; set; } = "";
 
     /// <summary>Connecting, sending the document and waiting for the verdict.</summary>
     [Range(1, 600)]
@@ -44,14 +45,14 @@ public sealed class MalwareOptions : IValidatableObject
 
     public bool FailClosed => !string.Equals(FailMode, "open", StringComparison.OrdinalIgnoreCase);
 
-    public bool Enabled => string.Equals(Provider, Clamd, StringComparison.OrdinalIgnoreCase);
+    public bool Enabled => string.Equals(Provider, ScanService, StringComparison.OrdinalIgnoreCase);
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         if (!Enabled && !string.Equals(Provider, None, StringComparison.OrdinalIgnoreCase))
-            yield return new ValidationResult($"Security:Malware:Provider '{Provider}' is not supported; use '{Clamd}' or '{None}'.", [nameof(Provider)]);
-        if (Enabled && string.IsNullOrWhiteSpace(Host))
-            yield return new ValidationResult("Security:Malware:Host is required when the provider is clamd.", [nameof(Host)]);
+            yield return new ValidationResult($"Security:Malware:Provider '{Provider}' is not supported; use '{ScanService}' or '{None}'.", [nameof(Provider)]);
+        if (Enabled && !Uri.TryCreate(ServiceUrl, UriKind.Absolute, out _))
+            yield return new ValidationResult("Security:Malware:ServiceUrl is required when the provider is scan-service.", [nameof(ServiceUrl)]);
         if (!string.Equals(FailMode, "closed", StringComparison.OrdinalIgnoreCase) && !string.Equals(FailMode, "open", StringComparison.OrdinalIgnoreCase))
             yield return new ValidationResult($"Security:Malware:FailMode '{FailMode}' is not supported; use 'closed' or 'open'.", [nameof(FailMode)]);
     }

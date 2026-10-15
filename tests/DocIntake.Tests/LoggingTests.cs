@@ -109,8 +109,8 @@ public partial class LoggingTests
     [InlineData("src/DocIntake.Api/Log.cs", 1000, 1999, 5000, 6999)]
     [InlineData("src/DocIntake.DocumentService/Log.cs", 2000, 2999, 2000, 2999)]
     [InlineData("src/DocIntake.ExtractionService/Log.cs", 3000, 3999, 3000, 3999)]
-    [InlineData("src/DocIntake.DecisionsService/Log.cs", 7100, 7199, 7100, 7199)]
     [InlineData("src/DocIntake.Rendering/Log.cs", 7200, 7299, 7200, 7299)]
+    [InlineData("src/DocIntake.ScanService/Log.cs", 7300, 7399, 7300, 7399)]
     public void Event_ids_stay_in_the_range_of_the_project_that_writes_them(string path, int lo, int hi, int lo2, int hi2)
     {
         var ids = EventIdPattern().Matches(File.ReadAllText(Path.Combine(Root(), path))).Select(m => int.Parse(m.Groups[1].Value)).ToList();

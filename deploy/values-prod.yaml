@@ -1,6 +1,10 @@
 # Release `docintake` in namespace `docintake`: the Deployments, Services, Gateway, PVC and Secrets all take the release name
-# (docintake-api, docintake-document, docintake-extraction, docintake-decisions, docintake-usage, ...).
+# (docintake-api, docintake-document, docintake-extraction, docintake-usage, ...).
 # The cutover from the old `laya` release is in deploy/README.md ("Cutting over from the laya names").
+# DocIntake runs on the 2 vCPU / 4 GB `api` pool (autoscales 1 to 3); ClamAV (below) and the Dapr control plane run on the 2 vCPU / 4 GB `tools` pool.
+nodeSelector:
+  role: api
+
 image:
   tag: sha-000000002  # will be overridden by CI with actual commit SHA
 
@@ -14,6 +18,11 @@ telemetry:
 malware:
   clamd:
     enabled: true
+    nodeSelector:
+      role: tools   # ClamAV and the Dapr control plane live on the tools pool
+    # A request, not a limit: if the tools node cannot hold ClamAV the pod goes Pending and the autoscaler adds a node (a limit would kill clamd during a signature reload).
+    resources:
+      requests: { memory: 1200Mi }
 
 gateway:
   create: true
@@ -66,15 +75,3 @@ extraction:
     limits:
       cpu: 500m
       memory: 768Mi
-
-decisions:
-  replicas: 1
-  # The Laya model is ~850 MB on disk and OOM-killed at 1Gi. The request is what makes the scheduler place the pod on a node
-  # with room (ClamAV already uses ~1Gi of the first node). Measured 2026-10-13: ~1.96Gi after the model loaded, idle. The 3Gi limit leaves headroom for inference, which was not measured.
-  resources:
-    requests:
-      cpu: 100m
-      memory: 2Gi
-    limits:
-      cpu: 1000m
-      memory: 3Gi

@@ -91,6 +91,22 @@ public class GatewayDocumentServiceTests(DefaultDocumentService documentService)
         Assert.Equal("Degraded", health.RootElement.GetProperty("checks").GetProperty("document-service").GetProperty("status").GetString());
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.InternalServerError)] // the callee's pod is gone
+    [InlineData(HttpStatusCode.Forbidden)]           // the callee's access policy refuses the gateway
+    public async Task A_sidecar_that_cannot_reach_the_document_service_is_unavailable_not_a_crash_and_leaks_nothing(HttpStatusCode status)
+    {
+        using var api = Gateway(() => new SidecarErrorHandler(status));
+
+        var res = await Post(api.CreateClient(), DocumentFixtures.TextPdf(), "text.pdf");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, res.StatusCode);
+        Assert.NotNull(res.Headers.RetryAfter);
+        var body = await res.Content.ReadAsStringAsync(Ct);
+        Assert.DoesNotContain("ERR_DIRECT_INVOKE", body);
+        Assert.DoesNotContain("docintake-document", body);
+    }
+
     [Fact]
     public async Task A_document_service_crashing_on_a_document_is_a_bad_gateway()
     {

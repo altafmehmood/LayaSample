@@ -1,9 +1,13 @@
-# One replica each, one document at a time, short queues. The API, the document service, the extraction and the decisions service alone fit a 1 vCPU / 2 GB node, but the
+# One replica each, one document at a time, short queues. The API, the document service and the extraction service alone fit a 1 vCPU / 2 GB node, but the
 # ClamAV pod (malware.clamd, on by default) needs about 4 GB more: use a node with 8 GB, or turn it off.
 # See deploy/README.md. Settings under `config` map to DocumentAnalysis__* environment variables.
 
 nameOverride: ""
 fullnameOverride: ""
+
+# Node labels every DocIntake pod must match (all five Deployments). Empty lets the scheduler use any node. On DOKS the pools carry
+# `role=<name>` labels, e.g. `nodeSelector: { role: api }`. Dapr's and cert-manager's own pods are placed by their charts, not this.
+nodeSelector: {}
 
 image:
   registry: ghcr.io/altafmehmood
@@ -86,10 +90,13 @@ telemetry:
       requests: { cpu: 25m, memory: 96Mi }
       limits: { memory: 256Mi }
 
-# Malware scanning: the API streams every upload to a ClamAV daemon before anything parses it, and refuses the upload
-# (422) when it is infected. ClamAV is GPL-2.0; it runs as its own pod and is not part of the application.
+# Malware scanning: the API streams every upload to the scan service, which passes it to a ClamAV daemon in the same pod, before
+# anything parses it, and refuses the upload (422) when it is infected. ClamAV is GPL-2.0; it runs as its own container
+# and is not part of the application.
 malware:
   clamd:
+    # Overrides the top-level nodeSelector for the ClamAV pod only (it is the one pod that needs a big node and nothing else beside it).
+    nodeSelector: {}
     enabled: true
     image: docker.io/clamav/clamav
     # Debian, multi-arch, without a baked-in database: the pod downloads the signatures on start (a few minutes) and
@@ -98,10 +105,19 @@ malware:
     # What the API does while the scanner gives no verdict: `closed` refuses uploads with 503 + Retry-After, `open` lets
     # them through unscanned (and logs a warning).
     failMode: closed
-    # There are deliberately no `resources` here: no requests and no limits. clamd keeps the signature database in memory
-    # (about 1 GiB measured at rest; ClamAV's documentation advises 3-4 GiB because a database reload can double it), so the
-    # node needs that much free. With no requests the pod is BestEffort, so under memory pressure it is evicted first and,
-    # while it is down, uploads answer 503.
+    # The scan service runs next to clamd in the same pod and is the only thing that talks to it (over the pod's loopback).
+    # A new GHCR package starts private on GitHub: make docintake-scan public after CI first pushes it (deploy/README.md).
+    scan:
+      image: docintake-scan
+      resources:
+        requests: { cpu: 25m, memory: 64Mi }
+        limits: { memory: 256Mi }
+    # clamd keeps the signature database in memory (about 1 GiB measured at rest; ClamAV's documentation advises 3-4 GiB because a
+    # database reload can double it), so the node needs that much free. There is deliberately no memory LIMIT: a limit would kill clamd
+    # at the moment of a reload. A REQUEST is optional: with none the pod is BestEffort, so the scheduler ignores its size, the cluster
+    # autoscaler never adds a node for it, and under memory pressure it is evicted first (uploads answer 503 meanwhile). On a
+    # pool that autoscales, set one (deploy/values-prod.yaml does).
+    resources: {}
 
 document:
   image: docintake-document
@@ -115,19 +131,6 @@ document:
     requests: { cpu: 100m, memory: 384Mi }
     # Measured peak is about 550 MiB OCRing a five-page scan.
     limits: { memory: 1Gi }
-  startupProbe: { periodSeconds: 10, failureThreshold: 60 }
-  extraEnv: []
-
-# The decisions service: Laya, the local model that scores hotel-guest feedback (POST /api/feedback/analyze is answered by the
-# gateway, which calls this). It carries the 850 MB model and needs no network. A new GHCR package starts private on GitHub:
-# make docintake-decisions public after CI first pushes it (deploy/README.md).
-decisions:
-  image: docintake-decisions
-  replicas: 1
-  resources:
-    requests: { cpu: 100m, memory: 256Mi }
-    limits: { memory: 1Gi }
-  # The Laya model loads at startup; allow failureThreshold x periodSeconds (default 10 minutes) before restarting.
   startupProbe: { periodSeconds: 10, failureThreshold: 60 }
   extraEnv: []
 
@@ -160,9 +163,53 @@ extraction:
 
 # The document service reads every untrusted document: only the API may reach it, and it may reach nothing.
 # The extraction service may be reached only by the API and may reach only the internet on 443 (the model provider), DNS and
-# the collector. The decisions service may be reached only by the API and may reach nothing but the collector.
+# the collector.
 networkPolicy:
   enabled: true
+
+# Encryption of the hops inside the release. A private CA (made here, kept in a Secret) lets cert-manager issue the API's serving
+# certificate: the API serves HTTPS on 8443 and the Gateway checks that certificate (BackendTLSPolicy). Needs cert-manager (the
+# same one that issues the public certificate). Off: the API serves plain HTTP on 8080, as under docker-compose.
+internalTls:
+  enabled: true
+  caValidityDays: 3650
+  certDuration: 2160h
+  certRenewBefore: 720h
+
+# Dapr sidecars carry the API's calls to the document, extraction and scan services over mutual TLS, and each of those accepts
+# only the API (deny by default, per operation). Dapr must be installed in the cluster first (deploy/README.md). Off: the
+# calls are plain HTTP between Services, as under docker-compose. Dapr is used for service invocation only: no SDK, no
+# state, no pub/sub, no secrets.
+dapr:
+  enabled: true
+  # Where Dapr's control plane is installed.
+  namespace: dapr-system
+  # The trust domain of the Kubernetes cluster's Dapr control plane (Dapr's default is the cluster domain).
+  controlPlaneTrustDomain: cluster.local
+  # The trust domain of Dapr's Sentry (its default is `public`).
+  trustDomain: public
+  # Documents are sent through the sidecars; the default request limit of 4 MB would refuse most of them.
+  maxBodySize: 32Mi
+  # Spans from the sidecars themselves: 0 sends none (the trace context still travels, so the services' spans stay in one trace).
+  tracing:
+    samplingRate: "0"
+  sidecar:
+    # Measured on kind (arm64), Dapr 1.18.7, one 19 MB upload: the callees' sidecars peaked at about 60 MiB, so 192Mi is room.
+    resources:
+      requests: { cpu: 25m, memory: 64Mi }
+      limits: { cpu: 250m, memory: 192Mi }
+    # Per service (api | document | extraction | scan). The gateway's sidecar carries every upload out and holds it while it
+    # does: at 192Mi it was OOM-killed on the second 19 MB upload in a row, so it gets more. The extraction sidecar carries the
+    # page images and has not been measured (that needs the paid model path): see docs/internal-transport-security.md.
+    overrides:
+      api:
+        resources:
+          requests: { cpu: 50m, memory: 128Mi }
+          limits: { cpu: 500m, memory: 512Mi }
+      extraction:
+        resources:
+          requests: { cpu: 25m, memory: 64Mi }
+          limits: { cpu: 250m, memory: 384Mi }
 
 gateway:
   enabled: true

@@ -1,6 +1,5 @@
 using DocIntake.ServiceDefaults;
 using DocIntake.Api.Services.Documents;
-using DocIntake.Api.Services.Decisions;
 using DocIntake.Api.Services.Documents.Extraction;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
@@ -53,31 +52,6 @@ public sealed class ExtractionServiceHealthCheck(ExtractionServiceClient client,
         var now = $"{result.Status}: {result.Description}";
         if (Interlocked.Exchange(ref _last, now) is { } before && before != now)
             logger.ReadinessChanged(result.Status == HealthStatus.Healthy ? LogLevel.Information : LogLevel.Warning, "Extraction service", before, now);
-        return result;
-    }
-}
-
-/// <summary>
-/// The decisions service's readiness. Degraded when it does not answer or its model is still loading: the rest of the gateway
-/// works, and feedback analysis answers 503 until it is ready. Not configuring a service URL is a choice and reports Healthy.
-/// </summary>
-public sealed class DecisionsServiceHealthCheck(DecisionsServiceClient client, ILogger<DecisionsServiceHealthCheck> logger) : IHealthCheck
-{
-    private string? _last;
-
-    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken ct = default)
-    {
-        var result = !client.IsConfigured
-            ? HealthCheckResult.Healthy("not configured: Decisions:ServiceUrl is empty; feedback analysis answers 503")
-            : await client.GetReadinessAsync(ct) switch
-            {
-                null => HealthCheckResult.Degraded("unreachable; feedback analysis is unavailable"),
-                "Healthy" => HealthCheckResult.Healthy("ready"),
-                var status => HealthCheckResult.Degraded($"decisions service is {status}; feedback analysis answers 503 meanwhile")
-            };
-        var now = $"{result.Status}: {result.Description}";
-        if (Interlocked.Exchange(ref _last, now) is { } before && before != now)
-            logger.ReadinessChanged(result.Status == HealthStatus.Healthy ? LogLevel.Information : LogLevel.Warning, "Decisions service", before, now);
         return result;
     }
 }

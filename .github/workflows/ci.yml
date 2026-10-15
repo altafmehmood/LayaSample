@@ -60,7 +60,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        target: [api, document, extraction, decisions]
+        target: [api, document, extraction, scan]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -110,6 +110,9 @@ jobs:
           curl -sfL -o kubeconform.tar.gz "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
           echo "${KUBECONFORM_SHA256}  kubeconform.tar.gz" | sha256sum -c -
           tar -xzf kubeconform.tar.gz kubeconform
+
+      - name: Check the internal transport security rules
+        run: python3 deploy/check-chart.py
 
       - name: Lint, render and validate
         run: |
@@ -189,6 +192,15 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f -
           echo "OTEL_CHECKSUM=$(printf %s "$HONEYCOMB_API_KEY" | sha256sum | cut -c1-16)" >> "$GITHUB_ENV"
 
+      # The chart's sidecars and certificates need Dapr and cert-manager in the cluster. Without Dapr the API would call a
+      # sidecar that is not there and every upload would fail, so stop before anything changes (deploy/README.md, "Dapr").
+      - name: Check the cluster has what the chart needs
+        run: |
+          kubectl get crd configurations.dapr.io certificates.cert-manager.io backendtlspolicies.gateway.networking.k8s.io > /dev/null \
+            || { echo "::error::Dapr, cert-manager or the Gateway API BackendTLSPolicy CRD is missing; see deploy/README.md (Dapr, Internal TLS)"; exit 1; }
+          kubectl -n dapr-system rollout status deploy/dapr-sidecar-injector deploy/dapr-sentry deploy/dapr-operator --timeout=60s \
+            || { echo "::error::Dapr's control plane is not running"; exit 1; }
+
       - name: Deploy Helm chart
         run: |
           # Get the commit SHA short form
@@ -210,7 +222,6 @@ jobs:
           kubectl rollout status deploy/docintake-api -n docintake --timeout=5m
           kubectl rollout status deploy/docintake-document -n docintake --timeout=5m
           kubectl rollout status deploy/docintake-extraction -n docintake --timeout=5m
-          kubectl rollout status deploy/docintake-decisions -n docintake --timeout=15m
           kubectl get gateway -n docintake -o wide
           kubectl get pods -n docintake
 

@@ -1,6 +1,6 @@
 # DocIntake
 
-Formerly LayaSample; Laya is now the name of the feedback model only (see [docs/docintake-architecture.md](docs/docintake-architecture.md)).
+Formerly LayaSample (see [docs/docintake-architecture.md](docs/docintake-architecture.md)). The Laya feedback model was removed on 2026-10-14; `/api/feedback/analyze` answers 503 until its replacement exists.
 
 Lending-document intelligence on .NET 10. Upload a loan application, UCC-1, UCC-3 or loan and security agreement as a
 PDF, image or Office file. The service works out how to read it (text layer, rendered page image, OCR for scans and
@@ -14,7 +14,7 @@ OpenAI vision and text models.
 | [Document analysis](#document-analysis) | Classifies a PDF, image or Office file and prepares it for an agent: page images, markdown, OCR text, form values. No model, no cost | `curl -F file=@docs/samples/pdf/corpus/redwood-mechanical-ucc1-fax.pdf localhost:5091/api/documents/analyze` |
 | [AI extraction](#ai-extraction) | Borrower, lender, collateral and every UCC box as structured data with page citations (OpenAI vision and text) | `dotnet user-secrets set "Extraction:ApiKey" "sk-..." --project src/DocIntake.ExtractionService`, run that service, then `POST /api/documents/extract` |
 | [Usage and cost](#ai-extraction) | Every model call recorded (API key fingerprint, file name, input, cached, reasoning, output tokens, list-price cost) and served as JSON or CSV | `curl -H "X-Api-Key: $KEY" "localhost:5091/api/usage?format=csv"` |
-| [Security layers](#security) | Malware scan (ClamAV), active-content, hidden-text and prompt-injection checks, all reported in `risks` and refused with 422 by default | `docker compose up -d clamav`, then upload the EICAR test file |
+| [Security layers](#security) | Malware scan (ClamAV behind the scan service), active-content, hidden-text and prompt-injection checks, all reported in `risks` and refused with 422 by default | `docker compose up -d scan` (starts ClamAV too), then upload the EICAR test file |
 | [Authentication](#authentication) | `X-Api-Key` on the endpoints that spend money; key fingerprints in the usage history; optional admin keys | `dotnet user-secrets set "Auth:ApiKeys:0" "$(openssl rand -base64 32)" --project src/DocIntake.Api` |
 | [Extraction service](#architecture) | The only process with the model provider's key and internet access. It reports every model call; the gateway records them as usage, so a failed or refused call is still counted | `dotnet run --project src/DocIntake.ExtractionService`, or `docker compose up --build` with `OPENAI_API_KEY` |
 | [Document service](#architecture) | Classification, preparation, PDFium, ImageMagick and OCR in a separate container: no network, read-only file system. The gateway reads no document | `docker compose up --build` |
@@ -22,11 +22,13 @@ OpenAI vision and text models.
 | [Lending corpus and evaluation](#lending-corpus) | 39 synthetic lending PDFs with ground truth, and an opt-in accuracy score for the model | `RUN_EXTRACTION_EVAL=1 dotnet run --project tests/DocIntake.Tests -c Release -- -trait "Category=Evaluation"` (paid) |
 | [Red team](redteam/README.md) | garak attacks the extraction API through a shim, with the defences on and in `flag` mode | `redteam/run.sh --smoke` (paid) |
 | [Kubernetes deploy](#kubernetes) | Helm chart and CI deploy to DOKS: Gateway API, TLS, ClamAV, usage PVC, collector | see [deploy/README.md](deploy/README.md) |
-| [Feedback sentiment](#feedback-sentiment) | The original sample: hotel feedback sentiment with the Laya decision model | `dotnet run --project src/DocIntake.DecisionsService`, then `curl -H 'Content-Type: application/json' -d '{"text":"The room was dirty"}' localhost:5091/api/feedback/analyze` |
+| [Internal transport security](#internal-transport-security) | Every hop inside the cluster over TLS: Dapr mutual TLS between services with a per-caller allow-list, a private-CA certificate from the Gateway to the API, TLS to the telemetry collector, and ClamAV behind its own scan service | `python3 deploy/check-chart.py`; the cluster steps are in [docs/internal-transport-security.md](docs/internal-transport-security.md) |
+| [Feedback sentiment](#feedback-sentiment) | Removed: the endpoint answers 503 until the OpenAI-based replacement exists | `curl -H 'Content-Type: application/json' -d '{"text":"The room was dirty"}' localhost:5091/api/feedback/analyze` (503) |
 
 Longer notes on how each feature set works, its settings, limits and what was verified:
 [docs/security-cost-hardening.md](docs/security-cost-hardening.md) (usage tracking, ClamAV, content checks, streaming, red team) and
-[docs/threat-model.md](docs/threat-model.md) (what could go wrong at each trust boundary, and what is still open) and
+[docs/threat-model.md](docs/threat-model.md) (what could go wrong at each trust boundary, and what is still open),
+[docs/internal-transport-security.md](docs/internal-transport-security.md) (Dapr, the private CA and TLS on every internal hop; plan [`Plans/0001`](Plans/0001-internal-transport-security.md)) and
 [docs/docintake-architecture.md](docs/docintake-architecture.md) (the DocIntake rename and the move to a gateway and
 services, with the full list of telemetry renames and the pre-deploy checklists).
 
@@ -38,17 +40,16 @@ or its own section if it needs setup.
 You need the .NET 10 SDK. Steps 1 to 3 need no Docker, API key or cluster.
 
 1. **Start the services.** The gateway (the API) reads no document itself: every upload is classified and prepared by
-   the document service, so run both, each in its own terminal. The gateway is ready in seconds. Two more services are only
-   needed for what they do: the decisions service for feedback analysis (it downloads the Laya model, ~850 MB, on its first
-   run, several minutes), and the extraction service for AI extraction (step 4). The OCR models ship with the document service.
+   the document service, so run both, each in its own terminal. The gateway is ready in seconds. The extraction service is
+   only needed for AI extraction (step 4). The OCR models ship with the document service. There is no malware scan under
+   `dotnet run` (see below).
 
        dotnet run --project src/DocIntake.DocumentService        # http://localhost:5092
-       dotnet run --project src/DocIntake.Api                    # http://localhost:5091 (finds the services at 5092, 5093, 5094)
-       dotnet run --project src/DocIntake.DecisionsService       # http://localhost:5094, optional: feedback analysis
+       dotnet run --project src/DocIntake.Api                    # http://localhost:5091 (finds the services at 5092 and 5093)
 
 2. **Wait until they are ready.** `503` means a model is still loading, `200` means ready. The gateway is ready at once and
-   lists the other services as `document-service`, `extraction-service` and `decisions-service` (`Degraded` while one is down
-   or loading: only what needs it answers 503).
+   lists the other services as `document-service` and `extraction-service` (`Degraded` while one is down: only what needs it
+   answers 503).
 
        curl -i localhost:5092/health/ready
        curl -i localhost:5091/health/ready
@@ -88,7 +89,7 @@ You need the .NET 10 SDK. Steps 1 to 3 need no Docker, API key or cluster.
    paid OpenAI API; it needs `RUN_EXTRACTION_EVAL=1`, even when a key is set, see [AI extraction](#ai-extraction)), the
    ClamAV tests (`CLAMD_HOST`) and the real-OCR check (`REAL_OCR=1`), both described under [Security](#security).
 
-Without the document service the gateway still starts and serves feedback analysis, but every document upload answers `503`.
+Without the document service the gateway still starts, but every document upload answers `503`.
 `dotnet run` does not scan uploads for malware (Development sets `Security:Malware:Provider` to `none`, because there is no
 ClamAV daemon). To run with the isolated document service and the scanner, as in production, use
 `docker compose up --build` (http://localhost:8080); see [Docker](#docker).
@@ -98,6 +99,40 @@ ClamAV daemon). To run with the isolated document service and the scanner, as in
 One entry per day's work, newest first: what was added, the commands to try it and what you should see. Steps marked
 **(paid)** call the OpenAI API; **(opt-in)** tests do not run unless you ask. Ports: `dotnet run` listens on 5091, Docker
 Compose on 8080.
+
+### 2026-10-14
+
+**Internal transport security: Dapr mutual TLS, a scan service in front of ClamAV, a private CA, TLS to the collector. The decisions
+service (Laya) is gone.** In Kubernetes the API now calls the document, extraction and scan services through Dapr sidecars (mutual TLS;
+each callee accepts only the API's app id and only the operations it uses), serves HTTPS to the Gateway with a certificate from a
+private CA that the Gateway checks (`BackendTLSPolicy`), and sends telemetry to the collector over TLS. ClamAV moved behind a new C#
+service, `DocIntake.ScanService`, in the same pod, so clamd's plaintext socket never leaves the pod. **Behaviour changes:**
+`/api/feedback/analyze` answers `503` (the model was removed to make room); `Security:Malware:Host` and `Port` are replaced by
+`Security:Malware:ServiceUrl` and the provider name `clamd` by `scan-service`; the chart **needs Dapr installed first** and the API
+pod serves HTTPS on 8443 (not HTTP on 8080) when `internalTls.enabled`. docker-compose stays plain HTTP between containers. Long version:
+[docs/internal-transport-security.md](docs/internal-transport-security.md), plan [`Plans/0001`](Plans/0001-internal-transport-security.md).
+
+    dotnet test --solution DocIntake.slnx                  # offline; 492 tests, 486 pass, 6 opt-in skipped
+    python3 deploy/check-chart.py                          # 27 checks of the rendered chart (needs helm)
+    docker compose up -d --build                           # the scan service shares clamav's network namespace
+    printf 'X5O!P%%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > /tmp/eicar.pdf
+    curl -s -F file=@/tmp/eicar.pdf "localhost:8080/api/documents/analyze?dispatch=false"          # 422 malware detected
+    curl -s -F file=@docs/samples/pdf/text.pdf "localhost:8080/api/documents/analyze?dispatch=false"  # 200
+    curl -s -X POST localhost:8080/api/feedback/analyze -H 'content-type: application/json' -d '{"text":"fine"}'   # 503
+
+You should see the tests pass, 27 `ok` lines from the chart check, `422` with `"detail":"document rejected: malware detected"` for the
+EICAR file (the first compose start downloads ClamAV's signatures, a minute or two), `200` for the sample, and `503` for feedback. In
+Kubernetes (Dapr installed, see [deploy/README.md](deploy/README.md#dapr)) the pods show `2/2`, ClamAV `3/3`, and a pod with another
+Dapr app id calling the document service gets `403` naming its identity. Nothing here is paid. **Opt-in:** the ClamAV integration tests
+(`CLAMD_HOST=localhost`), and a real extraction through Dapr (spends OpenAI tokens).
+
+**Run here:** the tests, `helm lint` and `helm template` for every values file, kubeconform with the CI schemas, `check-chart.py`, a server-side dry run of the
+`BackendTLSPolicy` against the DOKS API server (nothing created), compose with real ClamAV (EICAR 422, sample 200), and the whole chart on a
+**local kind cluster** with cert-manager, Dapr 1.18.7 and the real images (HTTPS-only API verified against the private CA, 403 for a foreign app id,
+the NetworkPolicies, 19 MB uploads, trace ids across sidecars, memory). That run found three bugs the chart check could not: the sidecar crashed
+without a service account token, the API's sidecar was OOM-killed at 192 MiB, and the Dapr `Configuration` schema wanted two more `mtls` fields.
+**Not run:** the DOKS cluster itself (nothing was deployed), whether its Cilium enforces the `BackendTLSPolicy`, certificate renewal in a running
+cluster, Honeycomb receiving data over the TLS collector, the GitHub workflow, and a paid extraction through Dapr (the extraction sidecar's memory limit is a guess).
 
 ### 2026-10-13
 
@@ -574,21 +609,21 @@ Details and the other, smaller samples are in [docs/samples](docs/samples/README
 
 ## Architecture
 
-Four services. The **gateway** (`DocIntake.Api`) is the public API: access keys, rate limits, the malware scan, the risk
+Three services plus the scan service. The **gateway** (`DocIntake.Api`) is the public API: access keys, rate limits, the malware scan, the risk
 policy and the usage history. The **document service** (`DocIntake.DocumentService`) reads every upload: it classifies and
 prepares it with PdfPig, the Office libraries and the native C/C++ libraries (PDFium, ImageMagick, Skia, ONNX Runtime for
 OCR). The **extraction service** (`DocIntake.ExtractionService`) turns a prepared document into structured data with the
-model provider. The **decisions service** (`DocIntake.DecisionsService`) runs Laya, the local model that scores hotel-guest
-feedback. Each holds only what it needs, so a malformed file that takes over a parser cannot reach the model key, nothing
+model provider. The **scan service**
+(`DocIntake.ScanService`) fronts the ClamAV daemon in its pod. Each holds only what it needs, so a malformed file that takes over a parser cannot reach the model key, nothing
 that holds the key ever parses a file, and the gateway, which has no native library at all, starts in seconds:
 
-| | `DocIntake.Api` (gateway) | `DocIntake.DocumentService` | `DocIntake.ExtractionService` | `DocIntake.DecisionsService` |
+| | `DocIntake.Api` (gateway) | `DocIntake.DocumentService` | `DocIntake.ExtractionService` | `DocIntake.ScanService` |
 |---|---|---|---|---|
-| Does | Auth, scanning, risk policy, routing, usage | File-type detection, PDF classification and text, Office conversion, form data, signatures, rendering, image decoding, OCR | Agent choice, prompts, the model call, validation of the answer, list-price cost | Laya: scores feedback for dissatisfaction, level and main driver |
-| Reads untrusted document bytes | No: it streams the upload on | Yes, isolated | No: it receives prepared pages and text | No |
-| Holds | No key, no model | The OCR models | **The model provider's key** | **The 850 MB Laya model** |
-| Network | Calls the services and ClamAV | No egress | Egress to the model provider only (443) | No egress |
-| Ready after | Seconds | About a minute (OCR models) | Seconds | Minutes on a small node (model load) |
+| Does | Auth, scanning, risk policy, routing, usage | File-type detection, PDF classification and text, Office conversion, form data, signatures, rendering, image decoding, OCR | Agent choice, prompts, the model call, validation of the answer, list-price cost | Streams a document to clamd and returns a verdict |
+| Reads untrusted document bytes | No: it streams the upload on | Yes, isolated | No: it receives prepared pages and text | No: it only passes bytes to clamd |
+| Holds | No key, no model | The OCR models | **The model provider's key** | No key, no parser |
+| Network | Calls the three services | No egress | Egress to the model provider only (443) | clamd on the pod's loopback only |
+| Ready after | Seconds | About a minute (OCR models) | Seconds | When clamd answers (its signature database: minutes on the first start) |
 
 The gateway asks the document service twice per upload, over HTTP: `POST /documents/classify`, then, if the risk policy
 lets the document through, `POST /documents/prepare`. For extraction it then sends the prepared document to the extraction
@@ -598,18 +633,17 @@ never sees, and applies the risk policy to the findings: the service finds, the 
 carries the calls made before it failed, so a call the provider billed is recorded even when the answer was refused.
 
 The services' addresses are `DocumentAnalysis:DocumentServiceUrl` (required: the gateway refuses to start without it),
-`Extraction:ServiceUrl` and `Decisions:ServiceUrl` (optional: empty, that feature answers `503` "not configured" and the
-gateway starts). If the document service dies on a document, that request gets 502 and it restarts; if it is down, **every**
+`Extraction:ServiceUrl` and `Security:Malware:ServiceUrl` (the scan service; required unless `Security:Malware:Provider` is
+`none`). An empty `Extraction:ServiceUrl` answers `503` "not configured" and the gateway starts. In Kubernetes these are the
+gateway's own Dapr sidecar (`http://localhost:3500/v1.0/invoke/<app-id>/method`), see [Internal transport security](#internal-transport-security). If the document service dies on a document, that request gets 502 and it restarts; if it is down, **every**
 document upload gets 503 with `Retry-After`. If the extraction service is down, extraction gets 503 with `Retry-After` while
-analysis and feedback keep working; if the decisions service is down or still loading its model, feedback analysis gets 503
-(with `Retry-After` when it cannot be reached, none while it loads) and documents are unaffected. The gateway's readiness
-reports `document-service`, `extraction-service` and `decisions-service` as `Degraded`: **the gateway no longer waits for Laya
-to load before it is ready**. Shared types are in `src/DocIntake.Contracts`
+analysis keeps working; if the scan service or clamd is down, uploads get 503 with `Retry-After` while `FailMode` is `closed`.
+The gateway's readiness reports `document-service`, `extraction-service` and `scanner` as `Degraded`. Shared types are in `src/DocIntake.Contracts`
 and the telemetry setup in `src/DocIntake.ServiceDefaults`; the rendering code the document service uses is in
 `src/DocIntake.Rendering`.
 
 There is no in-process mode: `appsettings.Development.json` points the gateway at `http://localhost:5092` and
-`http://localhost:5093` and `http://localhost:5094`. See [Quick start](#quick-start) for running them.
+`http://localhost:5093`, with the malware scan off. See [Quick start](#quick-start) for running them.
 
 ## Limits
 
@@ -636,7 +670,7 @@ An upload goes through these layers. The scan, the policy decisions, the prompt 
 
 | Layer | What it does | Refuses with |
 |---|---|---|
-| **Malware scan** | Before anything parses the file, it is streamed to ClamAV (its own container, clamd's `INSTREAM`), 64 KB at a time. | 422 `malware detected`. While the scanner gives no verdict: 503 with `Retry-After` (`Security:Malware:FailMode`, `closed` by default) |
+| **Malware scan** | Before anything parses the file, it is streamed to the scan service, which passes it to ClamAV (its own container, clamd's `INSTREAM`) 64 KB at a time. | 422 `malware detected`. While the scanner gives no verdict: 503 with `Retry-After` (`Security:Malware:FailMode`, `closed` by default) |
 | **File structure** | PDF: Launch actions and RichMedia/3D (block), JavaScript and form scripts (reported), embedded programs (block), hidden text: tiny, near-white or off-page (block). Office: macros, ActiveX, embedded programs and linked templates or objects (block), embedded objects and external workbook links (reported). | 422 for the blocking ones |
 | **Text** | The text the model will read (text layer, OCR, form values, attachments) is checked for phrases aimed at the model: "ignore the previous instructions", "you are now an AI", a system-prompt request, chat-template tokens. | 422 `instructions addressed to an AI model` |
 | **Prompt** | The document sits in a `<document>` block that the system prompt declares to be data. A `<document>` tag inside the text is made inert, so it cannot close the block. The model has no tools and answers in a fixed JSON schema. | |
@@ -650,8 +684,8 @@ the malware signature stays in the log and the trace.
 | Setting | Default | Effect |
 |---|---|---|
 | `Security:OnFinding` | `reject` | `reject` refuses a request with a blocking finding (422). `flag` reports it and carries on, which is also how to test the model without the filters in front of it |
-| `Security:Malware:Provider` | `clamd` | `none` switches scanning off (Development sets it, since `dotnet run` has no ClamAV) |
-| `Security:Malware:Host`, `Port` | `clamav`, 3310 | Where the clamd daemon is |
+| `Security:Malware:Provider` | `scan-service` | `none` switches scanning off (Development sets it, since `dotnet run` has no ClamAV) |
+| `Security:Malware:ServiceUrl` | empty | Where the scan service is (required with `scan-service`); the scan service's own `Scan:ClamdHost`, `ClamdPort` say where clamd is |
 | `Security:Malware:FailMode` | `closed` | While there is no verdict: `closed` answers 503, `open` accepts the upload unscanned (and logs a warning) |
 | `Security:Malware:TimeoutSeconds` | 60 | Connecting, sending and waiting for the verdict |
 
@@ -663,8 +697,9 @@ it does not yet compare the layer with what the image shows. Page-level addition
 phrases are tuned to leave ordinary lending paperwork alone: every sample document under `docs/samples` has no blocking
 finding, including the scans and faxes read by the real OCR. Treat the extracted values as untrusted data downstream.
 
-ClamAV is GPL-2.0 and runs as its own container, which the API talks to over TCP; it is not part of the application (see
-`CLAUDE.md`). Run the tests that use a real daemon with `docker compose up -d clamav` and then
+ClamAV is GPL-2.0 and runs as its own container, which only the scan service talks to over TCP (on the pod's or the
+container's own loopback); it is not part of the application (see `CLAUDE.md`). Run the tests that use a real daemon with
+`docker compose up -d clamav` (its port 3310 is published on the host's loopback for this) and then
 `CLAMD_HOST=localhost dotnet run --project tests/DocIntake.Tests -c Release -- -trait "Category=Integration"`; the real-OCR
 check of the sample scans runs with `REAL_OCR=1` in the same command.
 
@@ -699,8 +734,7 @@ rather than being reported as unreadable. Local models live in [`models/`](model
 
 ## Docker
 
-`docker-compose.yml` runs the gateway, the hardened document service (service `document`), the extraction service and the decisions service. The images bake in their models (Laya in the decisions
-service, OCR in the document service; the gateway and the extraction service have none), so containers never download
+`docker-compose.yml` runs the gateway, the hardened document service (service `document`), the extraction service and the scan service in front of ClamAV. The document image bakes in its OCR model (the other images have none), so containers never download
 anything and run offline. The gateway image is small and starts in seconds. The build itself takes models from the local
 [`models/`](models/README.md) folder when their SHA-256 matches the pinned version and downloads only what is missing,
 so a machine that cannot download (a proxy or TLS inspection blocking curl) can build once the files are there: run
@@ -710,8 +744,11 @@ the API once with `dotnet run`, or copy `models/` from another machine.
     OCR_MODEL=PPOCRv6Small docker compose up --build           # multilingual OCR
     OPENAI_API_KEY=sk-... DOCINTAKE_API_KEY=$(openssl rand -base64 32) docker compose up --build   # enables /api/documents/extract
 
-A third container, `clamav`, scans every upload for malware; see [Security](#security). Its first start downloads the
-signature database (a minute or two), and the API starts once it reports healthy. It has no memory or CPU limit and uses
+Two more containers scan every upload for malware; see [Security](#security): `clamav` (its first start downloads the
+signature database, a minute or two) and `scan`, which shares clamav's network namespace like a second container in the
+Kubernetes pod, so it reaches clamd on its loopback and the API reaches it as `clamav:8080`. The API starts once `scan` reports
+healthy. Compose keeps plain HTTP between containers on its internal network; the encryption described under
+[Internal transport security](#internal-transport-security) is for Kubernetes. It has no memory or CPU limit and uses
 about 1 GiB when idle.
 
 Containers run in Production, where user secrets are not read, so the keys come from the environment: `OPENAI_API_KEY` goes to
@@ -719,9 +756,8 @@ the **extraction service only**, and extraction answers 503 without `DOCINTAKE_A
 gateway checks it). The renderer is on an internal network with no route out, and the extraction service is on the public
 network only (it needs the internet for the model provider). Both have a read-only file system (`/tmp` is a tmpfs), drop all
 Linux capabilities, and have their own memory, CPU and process limits; they restart automatically after a crash. All run as
-non-root users and have a `HEALTHCHECK` on `/health/ready`. The decisions service is on the internal network with no route
-out, like the document service. The images are built from one `Dockerfile`
-(`--target api` / `--target document` / `--target extraction` / `--target decisions`); model downloads use a BuildKit cache, so rebuilds don't fetch
+non-root users and have a `HEALTHCHECK` on `/health/ready`. The images are built from one `Dockerfile`
+(`--target api` / `--target document` / `--target extraction` / `--target scan`); model downloads use a BuildKit cache, so rebuilds don't fetch
 them again.
 
 ## Kubernetes
@@ -729,11 +765,12 @@ them again.
 [`deploy/`](deploy/README.md) has a Helm chart that deploys the services to a DigitalOcean Kubernetes cluster: the API
 is public through the Gateway API with a Let's Encrypt certificate, the document service is reachable only
 from the API and has no egress, and the extraction service, the only pod that gets the OpenAI key, is reachable only from the
-API and may reach only port 443, DNS and the collector; the decisions service (Laya) is reachable only from the API and
-reaches nothing but the collector. The CI `deploy` job runs it on every push to `main`, with the cluster credentials, the Let's Encrypt
+API and may reach only port 443, DNS and the collector. The API reaches them through Dapr sidecars (mutual TLS, deny by
+default), serves HTTPS to the Gateway with a certificate from a private CA, and sends telemetry to the collector over TLS: see
+[Internal transport security](#internal-transport-security). **Dapr must be installed in the cluster first** (deploy/README.md),
+and the CI `deploy` job stops with a clear error if it is not. The CI `deploy` job runs it on every push to `main`, with the cluster credentials, the Let's Encrypt
 e-mail, the OpenAI key and the API access key (`LAYA_API_KEY`) taken from GitHub secrets. The chart also runs a ClamAV
-pod that scans uploads, and keeps the usage history on a PersistentVolumeClaim. ClamAV has no resource requests or
-limits, so the cluster's node needs the memory for it (see [deploy/README.md](deploy/README.md#malware-scanning-clamav)).
+pod (ClamAV, the scan service and a sidecar) that scans uploads, and keeps the usage history on a PersistentVolumeClaim. ClamAV has no memory limit (and a request only if you set one), so the cluster's node needs the memory for it (see [deploy/README.md](deploy/README.md#malware-scanning-clamav)).
 The chart, the secrets and the cluster setup are described in [deploy/README.md](deploy/README.md).
 
 ## Telemetry (Honeycomb)
@@ -797,21 +834,30 @@ Collector (`http://localhost:4318`, protocol `http/protobuf`).
 
 ## Feedback sentiment
 
-`POST /api/feedback/analyze` is the original sample: hotel guest feedback to dissatisfaction, using the open-weight
-[Laya](https://huggingface.co/elbruno/laya-onnx) "System 1" decision model on ONNX Runtime, via the
-`ElBruno.LocalLLMs.Decisions` package. The model runs in the **decisions service** (`DocIntake.DecisionsService`), which the
-gateway calls; run it with `dotnet run --project src/DocIntake.DecisionsService` (the first run downloads the model). Until the
-model has loaded, or while the service is down, the endpoint answers `503`.
+`POST /api/feedback/analyze` was the original sample: hotel guest feedback to dissatisfaction with the open-weight Laya model.
+**The model and its service were removed on 2026-10-14** (the pod needed 2 to 3 GiB the cluster could not spare, and an OpenAI-based
+replacement is planned). The route stays so callers keep their contract: it still checks its input (400 for empty text or text over
+4000 characters) and otherwise answers `503` "feedback analysis is not available".
 
-    curl -X POST localhost:5091/api/feedback/analyze -H 'content-type: application/json' \
-      -d '{"text":"Room was filthy and the staff were rude."}'
+    curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:5091/api/feedback/analyze -H 'content-type: application/json' \
+      -d '{"text":"Room was filthy and the staff were rude."}'     # 503
 
-The response has `dissatisfied`, `dissatisfactionScore` (P(dissatisfied), 0 to 1), `rating` (1 to 5 dissatisfaction),
-`level` (None when not dissatisfied, otherwise Mild/Moderate/Severe from the rating), `primaryDriver` (null when unclear
-or not dissatisfied) and `confidence`. Confidences are **uncalibrated**; tune thresholds on your own labeled feedback
-before relying on them. Model settings go under the `Laya` section of the decisions service's `appsettings.json` (`ModelRepository`,
-`ModelPath`, `CacheDirectory`, `IntraOpNumThreads`, `DecisionThreshold`); `ModelPath` loads a local copy and skips the
-download.
+The `AnalyzeResponse` type remains in `DocIntake.Contracts` for the replacement. The earlier sections of this README that describe
+the decisions service and Laya's settings are history.
+
+## Internal transport security
+
+Every hop inside the cluster is encrypted and, between services, authenticated and authorised. In short: Dapr sidecars carry the
+API's calls to the document, extraction and scan services over mutual TLS and each callee accepts only the API's app id and only
+the operations the API uses; the API serves HTTPS to the Gateway with a certificate from a private CA that the Gateway checks;
+services send telemetry to the collector over TLS; ClamAV's plaintext socket is only reachable from the scan service in its own pod.
+The long version, with what was verified (a kind cluster, not the live one) and what was not, is
+[docs/internal-transport-security.md](docs/internal-transport-security.md); the install is in [deploy/README.md](deploy/README.md#dapr).
+
+    python3 deploy/check-chart.py          # 27 checks of the rendered chart (needs helm)
+
+**Not covered:** docker-compose (plain HTTP on its internal network), the API pod has no NetworkPolicy, clamd listens on all interfaces
+of its pod, and whether the Gateway's `BackendTLSPolicy` is enforced by DOKS's Cilium is only known after a deploy.
 
 ## Test and CI
 

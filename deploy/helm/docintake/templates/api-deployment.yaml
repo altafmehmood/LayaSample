@@ -1,3 +1,4 @@
+{{- $port := ternary "https" "http" .Values.internalTls.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,8 +20,9 @@ spec:
     metadata:
       labels:
         {{- include "docintake.labels" (dict "root" . "component" "api") | nindent 8 }}
-      {{- if or .Values.api.auth.keyChecksum .Values.telemetry.headersChecksum }}
+      {{- if or .Values.dapr.enabled .Values.api.auth.keyChecksum .Values.telemetry.headersChecksum }}
       annotations:
+        {{- include "docintake.daprAnnotations" (dict "root" . "name" "api") | nindent 8 }}
         # Environment variables from a Secret are read at start, so a changed key needs new pods.
         {{- with .Values.api.auth.keyChecksum }}
         checksum/api-key: {{ . | quote }}
@@ -31,6 +33,10 @@ spec:
       {{- end }}
     spec:
       automountServiceAccountToken: false
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         {{- include "docintake.podSecurityContext" . | nindent 8 }}
         {{- if .Values.api.usage.persistence.enabled }}
@@ -47,12 +53,26 @@ spec:
           image: {{ include "docintake.image" (dict "root" . "image" .Values.api.image) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
+            {{- if .Values.internalTls.enabled }}
+            - name: https
+              containerPort: 8443
+            {{- else }}
             - name: http
               containerPort: 8080
+            {{- end }}
           env:
+            {{- if .Values.internalTls.enabled }}
+            # Serve HTTPS only, from the certificate cert-manager issued (mounted below). Plain HTTP is not listened on.
+            - name: Tls__CertificatePath
+              value: /tls/tls.crt
+            - name: Tls__KeyPath
+              value: /tls/tls.key
+            - name: Tls__Port
+              value: "8443"
+            {{- end }}
             # The gateway refuses to start without the document service (the document-service Deployment) to talk to.
             - name: DocumentAnalysis__DocumentServiceUrl
-              value: {{ printf "http://%s-document:8080" (include "docintake.fullname" .) | quote }}
+              value: {{ include "docintake.serviceUrl" (dict "root" . "name" "document") | quote }}
             - name: DocumentAnalysis__MaxConcurrentAnalyses
               value: {{ .Values.api.config.maxConcurrentAnalyses | int64 | quote }}
             - name: DocumentAnalysis__MaxQueuedAnalyses
@@ -63,10 +83,7 @@ spec:
               value: {{ .Values.api.config.maxFileBytes | int64 | quote }}
             # Where the extraction service is. The gateway holds no model provider key and no model: they are the service's.
             - name: Extraction__ServiceUrl
-              value: {{ printf "http://%s-extraction:8080" (include "docintake.fullname" .) | quote }}
-            # Where Laya (the feedback model) is. The gateway loads no model.
-            - name: Decisions__ServiceUrl
-              value: {{ printf "http://%s-decisions:8080" (include "docintake.fullname" .) | quote }}
+              value: {{ include "docintake.serviceUrl" (dict "root" . "name" "extraction") | quote }}
             - name: Extraction__MaxConcurrentExtractions
               value: {{ .Values.extraction.maxConcurrent | int64 | quote }}
             {{- if .Values.api.auth.existingSecret }}
@@ -90,13 +107,11 @@ spec:
             {{- end }}
             {{- end }}
             {{- if .Values.malware.clamd.enabled }}
-            # Every upload is scanned by the ClamAV pod before anything parses it.
+            # Every upload is scanned before anything parses it: the scan service, in the ClamAV pod, talks to clamd.
             - name: Security__Malware__Provider
-              value: clamd
-            - name: Security__Malware__Host
-              value: {{ printf "%s-clamav" (include "docintake.fullname" .) | quote }}
-            - name: Security__Malware__Port
-              value: "3310"
+              value: scan-service
+            - name: Security__Malware__ServiceUrl
+              value: {{ include "docintake.serviceUrl" (dict "root" . "name" "clamav" "appId" "scan") | quote }}
             - name: Security__Malware__FailMode
               value: {{ .Values.malware.clamd.failMode | quote }}
             {{- else }}
@@ -132,15 +147,15 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           startupProbe:
-            httpGet: { path: /health/ready, port: http }
+            httpGet: { path: /health/ready, port: {{ $port }}{{ if .Values.internalTls.enabled }}, scheme: HTTPS{{ end }} }
             periodSeconds: {{ .Values.api.startupProbe.periodSeconds }}
             failureThreshold: {{ .Values.api.startupProbe.failureThreshold }}
           readinessProbe:
-            httpGet: { path: /health/ready, port: http }
+            httpGet: { path: /health/ready, port: {{ $port }}{{ if .Values.internalTls.enabled }}, scheme: HTTPS{{ end }} }
             periodSeconds: 15
             timeoutSeconds: 5
           livenessProbe:
-            httpGet: { path: /health/live, port: http }
+            httpGet: { path: /health/live, port: {{ $port }}{{ if .Values.internalTls.enabled }}, scheme: HTTPS{{ end }} }
             periodSeconds: 30
             timeoutSeconds: 5
           resources:
@@ -150,9 +165,21 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- include "docintake.caMount" . | nindent 12 }}
             - name: data
               mountPath: /data
+            {{- if .Values.internalTls.enabled }}
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            {{- end }}
       volumes:
+        {{- include "docintake.caVolume" . | nindent 8 }}
+        {{- if .Values.internalTls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ include "docintake.fullname" . }}-api-tls
+        {{- end }}
         - name: tmp
           emptyDir:
             sizeLimit: 512Mi

@@ -67,24 +67,10 @@
           "System.IO.Packaging": "10.0.2"
         }
       },
-      "ElBruno.HuggingFace.Downloader": {
-        "type": "Transitive",
-        "resolved": "1.4.4",
-        "contentHash": "PPdOw/iKanEHl4aOU2c/QiZ8cxw5scMeLNDZWXU/N19uFG6r3v3pZ440WRvMT19yISSOdtcDLPqXVoSlV7qf+g==",
-        "dependencies": {
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.5",
-          "Microsoft.Extensions.Logging.Abstractions": "10.0.5"
-        }
-      },
       "ExcelNumberFormat": {
         "type": "Transitive",
         "resolved": "1.1.0",
         "contentHash": "R3BVHPs9O+RkExbZYTGT0+9HLbi8ZrNij1Yziyw6znd3J7P3uoIR07uwTLGOogtz1p6+0sna66eBoXu7tBiVQA=="
-      },
-      "Google.Protobuf": {
-        "type": "Transitive",
-        "resolved": "3.30.2",
-        "contentHash": "Y2aOVLIt75yeeEWigg9V9YnjsEm53sADtLGq0gLhwaXpk3iu8tYSoauolyhenagA2sWno2TQ2WujI0HQd6s1Vw=="
       },
       "Magick.NET.Core": {
         "type": "Transitive",
@@ -427,14 +413,6 @@
           "System.Numerics.Tensors": "9.0.0"
         }
       },
-      "Microsoft.ML.Tokenizers": {
-        "type": "Transitive",
-        "resolved": "2.0.0",
-        "contentHash": "+b8lT4cLLO/sBR2hjvE/qG6qrZG15h7/PBvnIrzTh4xDaAxdHUY6449rC+1pHzQUsBiCHZVbj+VMn+xS0sL7TA==",
-        "dependencies": {
-          "Google.Protobuf": "3.30.2"
-        }
-      },
       "Microsoft.OpenApi": {
         "type": "Transitive",
         "resolved": "2.12.0",
@@ -686,14 +664,6 @@
       "docintake.contracts": {
         "type": "Project"
       },
-      "docintake.decisionsservice": {
-        "type": "Project",
-        "dependencies": {
-          "DocIntake.Contracts": "[1.0.0, )",
-          "DocIntake.ServiceDefaults": "[1.0.0, )",
-          "ElBruno.LocalLLMs.Decisions": "[0.22.0, )"
-        }
-      },
       "docintake.documentservice": {
         "type": "Project",
         "dependencies": {
@@ -723,6 +693,13 @@
           "Magick.NET-Q8-AnyCPU": "[14.17.2, )",
           "PDFtoImage": "[5.4.0, )",
           "RapidOcrNet": "[4.2.0, )"
+        }
+      },
+      "docintake.scanservice": {
+        "type": "Project",
+        "dependencies": {
+          "DocIntake.Contracts": "[1.0.0, )",
+          "DocIntake.ServiceDefaults": "[1.0.0, )"
         }
       },
       "docintake.servicedefaults": {
@@ -759,18 +736,6 @@
         "contentHash": "zxdOf5VVCe/uNklbRhj8dVBzQGj3DoqkUuqOp9cAZVuN8mNYDjof1lvSQA2OQNr8Ptc9d7pbA7Azq/ReaI3FpA==",
         "dependencies": {
           "DocumentFormat.OpenXml.Framework": "3.5.1"
-        }
-      },
-      "ElBruno.LocalLLMs.Decisions": {
-        "type": "CentralTransitive",
-        "requested": "[0.22.0, )",
-        "resolved": "0.22.0",
-        "contentHash": "mWWEaY8afcJMKb4YJwkvWSfZKukgpGV5mZ1iecJTAP8Nxjt1kDISQPhyGfL9vb81mQ1+KLYYxIQSdMJyIdT/MQ==",
-        "dependencies": {
-          "ElBruno.HuggingFace.Downloader": "1.4.4",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.12",
-          "Microsoft.ML.OnnxRuntime": "1.28.0",
-          "Microsoft.ML.Tokenizers": "2.0.0"
         }
       },
       "Magick.NET-Q8-AnyCPU": {

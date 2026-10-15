@@ -1,0 +1,63 @@
+{{- if .Values.dapr.enabled }}
+{{- $fullname := include "docintake.fullname" . }}
+{{- $api := printf "%s-api" $fullname }}
+{{- /* Per service: the operations the API may call. Everything else, and every other caller, is refused by the sidecar. */}}
+{{- $callees := dict
+      "document" (list (dict "name" "/documents/classify" "verbs" (list "POST")) (dict "name" "/documents/prepare" "verbs" (list "POST")) (dict "name" "/health/ready" "verbs" (list "GET")))
+      "extraction" (list (dict "name" "/extract" "verbs" (list "POST")) (dict "name" "/extraction/status" "verbs" (list "GET")) (dict "name" "/health/ready" "verbs" (list "GET")))
+      "scan" (list (dict "name" "/scan" "verbs" (list "POST")) (dict "name" "/health/ready" "verbs" (list "GET"))) }}
+# Dapr sidecars: mutual TLS between them is on, certificates come from Dapr's Sentry (short-lived, rotated). Each callee
+# accepts the API's app id and nothing else, and only the operations the API uses (deny by default).
+{{- range $name, $operations := $callees }}
+---
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: {{ $fullname }}-dapr-{{ $name }}
+  labels:
+    {{- include "docintake.labels" (dict "root" $ "component" $name) | nindent 4 }}
+spec:
+  mtls:
+    enabled: true
+    controlPlaneTrustDomain: {{ $.Values.dapr.controlPlaneTrustDomain | quote }}
+    sentryAddress: {{ printf "dapr-sentry.%s.svc.cluster.local:443" $.Values.dapr.namespace | quote }}
+  accessControl:
+    defaultAction: deny
+    trustDomain: {{ $.Values.dapr.trustDomain | quote }}
+    policies:
+      - appId: {{ $api }}
+        defaultAction: deny
+        trustDomain: {{ $.Values.dapr.trustDomain | quote }}
+        namespace: {{ $.Release.Namespace | quote }}
+        operations:
+          {{- range $operations }}
+          - name: {{ .name }}
+            httpVerb: {{ toJson .verbs }}
+            action: allow
+          {{- end }}
+  {{- with $.Values.dapr.tracing }}
+  tracing:
+    samplingRate: {{ .samplingRate | quote }}
+  {{- end }}
+{{- end }}
+---
+# The API only calls out: nothing is allowed to call it through Dapr.
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: {{ $fullname }}-dapr-api
+  labels:
+    {{- include "docintake.labels" (dict "root" . "component" "api") | nindent 4 }}
+spec:
+  mtls:
+    enabled: true
+    controlPlaneTrustDomain: {{ .Values.dapr.controlPlaneTrustDomain | quote }}
+    sentryAddress: {{ printf "dapr-sentry.%s.svc.cluster.local:443" .Values.dapr.namespace | quote }}
+  accessControl:
+    defaultAction: deny
+    trustDomain: {{ .Values.dapr.trustDomain | quote }}
+  {{- with .Values.dapr.tracing }}
+  tracing:
+    samplingRate: {{ .samplingRate | quote }}
+  {{- end }}
+{{- end }}

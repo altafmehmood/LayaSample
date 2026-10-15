@@ -25,7 +25,7 @@ spec:
               replacePrefixMatch: /
       backendRefs:
         - name: {{ include "docintake.fullname" . }}-api
-          port: 8080
+          port: {{ ternary 8443 8080 .Values.internalTls.enabled }}
       timeouts:
         request: {{ .Values.gateway.requestTimeout }}
 {{- if $tls.enabled }}

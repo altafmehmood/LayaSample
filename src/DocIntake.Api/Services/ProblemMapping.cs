@@ -88,7 +88,7 @@ public sealed class ProblemMapping(ILogger<ProblemMapping> logger, DocumentMetri
     public IResult ToServiceResult(Exception ex, HttpContext httpContext)
     {
         var failure = Describe(ex);
-        // "extraction_failed" is what a failed model call is called; the same kinds also describe the decisions service.
+        // "extraction_failed" is what a failed model call is called; the same kinds also describe a feedback failure.
         // The exception middleware clears the request's endpoint before it calls a handler; the feature keeps the original.
         var endpoint = httpContext.Features.Get<IExceptionHandlerFeature>()?.Endpoint ?? httpContext.GetEndpoint();
         if (failure.Outcome == "extraction_failed" && endpoint?.Metadata.GetMetadata<EndpointNameMetadata>()?.EndpointName == "AnalyzeFeedback")

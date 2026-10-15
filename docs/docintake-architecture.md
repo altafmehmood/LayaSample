@@ -4,6 +4,8 @@ Started 2026-10-11. This page tracks a plan delivered in phases: a rename, then 
 three services, then better logs and OpenTelemetry (phases 8 to 10). Each phase adds its section here when it lands. The README keeps
 the short versions.
 
+**Update 2026-10-14:** the decisions service described in the phases below was removed (its pod needed 2 to 3 GiB), and a scan service in front of ClamAV was added; the services now talk to each other over Dapr mutual TLS. See [internal-transport-security.md](internal-transport-security.md). The text below is left as written.
+
 ## Why
 
 An architectural review of the code as of commit `174247c` found these problems:

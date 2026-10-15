@@ -1,5 +1,4 @@
 using DocIntake.Api.Services;
-using DocIntake.Api.Services.Decisions;
 using DocIntake.Api.Services.Documents;
 using DocIntake.Api.Services.Documents.Extraction;
 using DocIntake.Contracts;
@@ -8,7 +7,7 @@ using DocIntake.ServiceDefaults;
 namespace DocIntake.Api;
 
 /// <summary>
-/// How the gateway reaches the three services behind it: an options class, an HTTP client with the service's address, a typed
+/// How the gateway reaches the services behind it: an options class, an HTTP client with the service's address, a typed
 /// client and a readiness check each. The gateway reads no document, calls no model provider and runs no model itself.
 /// </summary>
 internal static class ServiceClients
@@ -44,20 +43,6 @@ internal static class ServiceClients
         services.AddSingleton<ExtractionServiceClient>();
         services.AddSingleton<IDocumentExtractor, DocumentExtractor>();
         health.AddCheck<ExtractionServiceHealthCheck>("extraction-service", tags: [HealthReporting.Ready], timeout: TimeSpan.FromSeconds(5));
-        return services;
-    }
-
-    /// <summary>Laya, the feedback model, runs in the decisions service. Without a URL, feedback analysis answers 503.</summary>
-    public static IServiceCollection AddDecisionsServiceClient(this IServiceCollection services, IConfiguration configuration, IHealthChecksBuilder health)
-    {
-        services.AddOptions<DecisionsGatewayOptions>()
-            .Bind(configuration.GetSection(DecisionsGatewayOptions.Section))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
-        var options = configuration.GetSection(DecisionsGatewayOptions.Section).Get<DecisionsGatewayOptions>() ?? new();
-        services.AddServiceHttpClient(DecisionsServiceClient.HttpClientName, options.ServiceUrl);
-        services.AddSingleton<DecisionsServiceClient>();
-        health.AddCheck<DecisionsServiceHealthCheck>("decisions-service", tags: [HealthReporting.Ready], timeout: TimeSpan.FromSeconds(5));
         return services;
     }
 

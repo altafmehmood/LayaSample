@@ -32,6 +32,22 @@ the document service finds them in what it prepares and the extraction service f
 the policy (`Security:OnFinding`). Where rows 2.5 and 3.1 name `RiskScanner`, read `RiskPolicy` for the decision and the services'
 `TextRisks` and `AnswerRisks` for the detection. Nothing a request can do changed.
 
+**Update 2026-10-14 (internal transport security):** the hops inside the cluster are now encrypted, and the services behind the
+API authenticate their caller. The rows below are left as written; this is what changed (design and a local kind cluster, not the
+live cluster, see [`internal-transport-security.md`](internal-transport-security.md) for what was verified):
+
+| Row | Was | Now |
+|---|---|---|
+| 4.2 Spoofing: something other than the API calls the document, extraction (and scan) service | NetworkPolicy only; "no shared secret or mTLS" | **mitigated.** Dapr sidecars with mutual TLS; each callee's `Configuration` is deny-by-default and allows only the API's app id and only the operations it uses. A pod with another app id got 403 naming its SPIFFE id on kind, even with the NetworkPolicies removed. The plaintext port 8080 is no longer open to other pods (NetworkPolicy), and Dapr's 50002 refuses a client without a certificate |
+| 4.1 Sideways movement | the API pod has no NetworkPolicy | **partial, unchanged.** Callees now accept only Dapr's port from the API. The API pod still has no NetworkPolicy: the Gateway's traffic arrives with Cilium's ingress identity, which a plain NetworkPolicy cannot select (a `CiliumNetworkPolicy` with `fromEntities: ingress` could). Any pod can reach its HTTPS port |
+| 1.7 Eavesdropping, Gateway to the API pod | TLS ended at the Gateway; HTTP to the pod | **covered, not verified live.** The API serves HTTPS only with a certificate from a private CA; the Gateway checks it with a `BackendTLSPolicy`. Whether DOKS's Cilium enforces that policy is only known after a deploy |
+| Boundary 3, API to ClamAV | raw clamd TCP over the cluster network | **covered.** The API talks to the scan service through Dapr; the scan service talks to clamd on the pod's loopback. clamd still binds all interfaces of its pod, and only the NetworkPolicy keeps other pods off 3310 (confirmed on kind) |
+| Boundary 6, services to the collector | HTTP 4318 | **covered, not verified against Honeycomb.** TLS with the private CA's certificate, checked by the exporter. Client certificates are not used: callers are limited by the NetworkPolicy |
+| 4.3 / new | n/a | **new risk.** The private CA's key is in the Helm release record and a Secret in the namespace; whoever can read Secrets there can mint certificates. Anyone who can edit Dapr `Configuration` resources or pod annotations in the namespace can change who may call whom |
+| 4.5 Availability | ClamAV memory | **worse and better.** The decisions pod (2 to 3 GiB) is gone; Dapr adds about 240 MiB of control plane and sidecars (the API's peaks near 190 MiB under a 19 MB upload and was OOM-killed at 192 MiB). Untested on the live nodes |
+
+The decisions service no longer exists, so its mentions in the updates above are history.
+
 ## What is protected
 
 | Asset | Why it matters |

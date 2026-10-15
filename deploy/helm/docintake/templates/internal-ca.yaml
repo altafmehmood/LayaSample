@@ -1,0 +1,111 @@
+{{- if .Values.internalTls.enabled }}
+{{- $fullname := include "docintake.fullname" . }}
+{{- $ns := .Release.Namespace }}
+{{- $name := printf "%s-internal-ca" $fullname }}
+# A private certificate authority for the release's internal TLS: the API's serving certificate (Gateway -> pod) and the
+# collector's (services -> collector). It is self-signed and trusted by nothing outside the release; the public certificate
+# on the load balancer is still Let's Encrypt's. cert-manager issues and renews the leaf certificates from it.
+#
+# The CA is made here, once, and reused on every upgrade (looked up from the Secret below), because the Gateway needs its
+# certificate in a ConfigMap (a BackendTLSPolicy cannot read a Secret) and cert-manager cannot publish one. Its key therefore
+# also sits in the Helm release record, in this namespace, next to the Secret itself: whoever can read Secrets here can
+# already mint certificates. Rotate by deleting both and upgrading (every leaf certificate is then reissued).
+{{- $cert := "" }}
+{{- $key := "" }}
+{{- $existing := lookup "v1" "Secret" $ns $name }}
+{{- if and $existing $existing.data (hasKey $existing.data "tls.crt") (hasKey $existing.data "tls.key") }}
+{{- $cert = index $existing.data "tls.crt" | b64dec }}
+{{- $key = index $existing.data "tls.key" | b64dec }}
+{{- else }}
+{{- $ca := genCA (printf "%s internal CA" $fullname) (int .Values.internalTls.caValidityDays) }}
+{{- $cert = $ca.Cert }}
+{{- $key = $ca.Key }}
+{{- end }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "docintake.labels" (dict "root" . "component" "internal-ca") | nindent 4 }}
+type: kubernetes.io/tls
+stringData:
+  tls.crt: |
+    {{- $cert | nindent 4 }}
+  tls.key: |
+    {{- $key | nindent 4 }}
+---
+# The CA certificate (public) for the Gateway's BackendTLSPolicy and for the clients of the collector.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "docintake.labels" (dict "root" . "component" "internal-ca") | nindent 4 }}
+data:
+  ca.crt: |
+    {{- $cert | nindent 4 }}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "docintake.labels" (dict "root" . "component" "internal-ca") | nindent 4 }}
+spec:
+  ca:
+    secretName: {{ $name }}
+---
+# The API's serving certificate, for the Service's names. cert-manager renews it before it expires; the API re-reads the files.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $fullname }}-api-tls
+  labels:
+    {{- include "docintake.labels" (dict "root" . "component" "api") | nindent 4 }}
+spec:
+  secretName: {{ $fullname }}-api-tls
+  duration: {{ .Values.internalTls.certDuration }}
+  renewBefore: {{ .Values.internalTls.certRenewBefore }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages: [digital signature, server auth]
+  dnsNames:
+    - {{ $fullname }}-api
+    - {{ $fullname }}-api.{{ $ns }}
+    - {{ $fullname }}-api.{{ $ns }}.svc
+    - {{ $fullname }}-api.{{ $ns }}.svc.cluster.local
+  issuerRef:
+    name: {{ $name }}
+    kind: Issuer
+    group: cert-manager.io
+{{- if .Values.telemetry.collector.enabled }}
+---
+# The collector's serving certificate: the services send telemetry to it over TLS and check it against the private CA.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $fullname }}-otel-collector-tls
+  labels:
+    {{- include "docintake.labels" (dict "root" . "component" "otel-collector") | nindent 4 }}
+spec:
+  secretName: {{ $fullname }}-otel-collector-tls
+  duration: {{ .Values.internalTls.certDuration }}
+  renewBefore: {{ .Values.internalTls.certRenewBefore }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages: [digital signature, server auth]
+  dnsNames:
+    - {{ $fullname }}-otel-collector
+    - {{ $fullname }}-otel-collector.{{ $ns }}
+    - {{ $fullname }}-otel-collector.{{ $ns }}.svc
+    - {{ $fullname }}-otel-collector.{{ $ns }}.svc.cluster.local
+  issuerRef:
+    name: {{ $name }}
+    kind: Issuer
+    group: cert-manager.io
+{{- end }}
+{{- end }}

@@ -1,0 +1,21 @@
+{{- if and .Values.gateway.enabled .Values.internalTls.enabled }}
+# The hop from the Gateway (Cilium's Envoy) to the API pod is TLS: the Gateway checks the pod's certificate against the
+# release's private CA and the Service's name, so a pod that is not the API cannot answer in its place.
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: {{ include "docintake.fullname" . }}-api
+  labels:
+    {{- include "docintake.labels" (dict "root" . "component" "api") | nindent 4 }}
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: {{ include "docintake.fullname" . }}-api
+  validation:
+    hostname: {{ printf "%s-api.%s.svc" (include "docintake.fullname" .) .Release.Namespace }}
+    caCertificateRefs:
+      - group: ""
+        kind: ConfigMap
+        name: {{ include "docintake.fullname" . }}-internal-ca
+{{- end }}
